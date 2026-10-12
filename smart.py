@@ -317,7 +317,7 @@ if st.sidebar.button("🚪 Logout Vault", use_container_width=True):
     st.rerun()
 
 # --- TOP HEADER BAR: LANGUAGE SWITCHER & TOP-RIGHT VAULT STATUS BADGE ---
-col_space, col_lang_btn, col_vault_badge = [2.2, 0.9, 0.9]
+col_space, col_lang_btn, col_vault_badge = st.columns([2.2, 0.9, 0.9])
 
 with col_lang_btn:
     btn_label = "🇮🇳 हिन्दी" if st.session_state.lang == "en" else "🇬🇧 English"
