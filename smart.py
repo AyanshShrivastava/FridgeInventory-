@@ -13,24 +13,25 @@ from firebase_admin import credentials, firestore
 @st.cache_resource
 def get_db():
     if not firebase_admin._apps:
-        # Check if running on Streamlit Cloud with Secrets configured
-        if "firebase" in st.secrets:
-            secrets_data = st.secrets["firebase"]
-            # Automatically handle both TOML table/dict and JSON string formats
-            if isinstance(secrets_data, str):
-                key_dict = json.loads(secrets_data)
+        try:
+            # Check if running on Streamlit Cloud with Secrets configured
+            if "firebase" in st.secrets:
+                sec = st.secrets["firebase"]
+                # Safely handle whether Streamlit passes it as a dict/AttrDict or a string
+                if isinstance(sec, str):
+                    key_dict = json.loads(sec)
+                else:
+                    key_dict = dict(sec)
+                    
+                cred = credentials.Certificate(key_dict)
+                firebase_admin.initialize_app(cred)
             else:
-                key_dict = dict(secrets_data)
-                
-            cred = credentials.Certificate(key_dict)
-            firebase_admin.initialize_app(cred)
-        else:
-            # Fallback to local serviceAccountKey.json if present
-            try:
+                # Fallback to local serviceAccountKey.json if present
                 cred = credentials.Certificate("serviceAccountKey.json")
                 firebase_admin.initialize_app(cred)
-            except Exception:
-                return None
+        except Exception as e:
+            st.error(f"⚠️ Firebase Connection Error: {e}")
+            return None
     return firestore.client()
 
 db = get_db()
@@ -41,9 +42,12 @@ def hash_password(password):
 
 def get_vault_password(fridge_code):
     if db:
-        doc = db.collection("vault_registry").document(fridge_code).get()
-        if doc.exists:
-            return doc.to_dict().get("password")
+        try:
+            doc = db.collection("vault_registry").document(fridge_code).get()
+            if doc.exists:
+                return doc.to_dict().get("password")
+        except Exception:
+            pass
     return None
 
 def register_vault(fridge_code, hashed_pwd):
@@ -52,9 +56,12 @@ def register_vault(fridge_code, hashed_pwd):
 
 def load_inventory(fridge_code):
     if db:
-        doc = db.collection("vault_inventories").document(fridge_code).get()
-        if doc.exists:
-            return doc.to_dict().get("inventory", {})
+        try:
+            doc = db.collection("vault_inventories").document(fridge_code).get()
+            if doc.exists:
+                return doc.to_dict().get("inventory", {})
+        except Exception:
+            pass
     return {}
 
 def save_inventory(fridge_code, inventory_dict):
