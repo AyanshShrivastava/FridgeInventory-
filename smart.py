@@ -14,19 +14,18 @@ from firebase_admin import credentials, firestore
 def get_db():
     if not firebase_admin._apps:
         try:
-            # Check if running on Streamlit Cloud with Secrets configured
             if "firebase" in st.secrets:
                 sec = st.secrets["firebase"]
-                # Safely handle whether Streamlit passes it as a dict/AttrDict or a string
-                if isinstance(sec, str):
-                    key_dict = json.loads(sec)
-                else:
-                    key_dict = dict(sec)
+                key_dict = dict(sec) if not isinstance(sec, str) else json.loads(sec)
+                
+                # Automatically fix private key formatting and wrap in triple quotes / clean breaks
+                if "private_key" in key_dict:
+                    pk = str(key_dict["private_key"]).replace("\\n", "\n").strip()
+                    key_dict["private_key"] = f"""{pk}"""
                     
                 cred = credentials.Certificate(key_dict)
                 firebase_admin.initialize_app(cred)
             else:
-                # Fallback to local serviceAccountKey.json if present
                 cred = credentials.Certificate("serviceAccountKey.json")
                 firebase_admin.initialize_app(cred)
         except Exception as e:
