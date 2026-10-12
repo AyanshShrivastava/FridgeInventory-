@@ -15,7 +15,13 @@ def get_db():
     if not firebase_admin._apps:
         # Check if running on Streamlit Cloud with Secrets configured
         if "firebase" in st.secrets:
-            key_dict = json.loads(st.secrets["firebase"])
+            secrets_data = st.secrets["firebase"]
+            # Automatically handle both TOML table/dict and JSON string formats
+            if isinstance(secrets_data, str):
+                key_dict = json.loads(secrets_data)
+            else:
+                key_dict = dict(secrets_data)
+                
             cred = credentials.Certificate(key_dict)
             firebase_admin.initialize_app(cred)
         else:
