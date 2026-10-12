@@ -1,15 +1,59 @@
 import streamlit as st
 import speech_recognition as sr
-import shelve
 import pandas as pd
 from datetime import datetime, timedelta
 import time
 import hashlib
+import json
 
-# --- PASSWORD HASHING HELPER ---
+# --- PERSISTENT CLOUD DATABASE (FIREBASE FIRESTORE) INITIALIZATION ---
+import firebase_admin
+from firebase_admin import credentials, firestore
+
+@st.cache_resource
+def get_db():
+    if not firebase_admin._apps:
+        # Check if running on Streamlit Cloud with Secrets configured
+        if "firebase" in st.secrets:
+            key_dict = json.loads(st.secrets["firebase"])
+            cred = credentials.Certificate(key_dict)
+            firebase_admin.initialize_app(cred)
+        else:
+            # Fallback to local serviceAccountKey.json if present
+            try:
+                cred = credentials.Certificate("serviceAccountKey.json")
+                firebase_admin.initialize_app(cred)
+            except Exception:
+                return None
+    return firestore.client()
+
+db = get_db()
+
+# --- HELPER FUNCTIONS FOR PERMANENT STORAGE ---
 def hash_password(password):
-    """Securely hashes a password using SHA-256."""
     return hashlib.sha256(password.encode()).hexdigest()
+
+def get_vault_password(fridge_code):
+    if db:
+        doc = db.collection("vault_registry").document(fridge_code).get()
+        if doc.exists:
+            return doc.to_dict().get("password")
+    return None
+
+def register_vault(fridge_code, hashed_pwd):
+    if db:
+        db.collection("vault_registry").document(fridge_code).set({"password": hashed_pwd})
+
+def load_inventory(fridge_code):
+    if db:
+        doc = db.collection("vault_inventories").document(fridge_code).get()
+        if doc.exists:
+            return doc.to_dict().get("inventory", {})
+    return {}
+
+def save_inventory(fridge_code, inventory_dict):
+    if db:
+        db.collection("vault_inventories").document(fridge_code).set({"inventory": inventory_dict})
 
 # --- PAGE CONFIGURATION ---
 st.set_page_config(
@@ -156,43 +200,43 @@ LANG_PACK = {
     }
 }
 
-# --- CUSTOM UI STYLES ---
+# --- CUSTOM WHITE UI STYLES ---
 def apply_custom_ui(is_recording=False):
     glow_style = ""
     if is_recording:
         glow_style = """
         .stApp {
             box-shadow: inset 0 0 50px 10px #3B82F6 !important;
-            border: 4px solid #60A5FA !important;
+            border: 4px solid #3B82F6 !important;
             transition: all 0.3s ease-in-out;
         }
         """
     st.markdown(f"""
         <style>
         @import url('https://fonts.googleapis.com/css2?family=Fredoka+One&family=Lexend:wght@400;500;600;700&display=swap');
-        .stApp {{ background-color: #0B0E14; font-family: 'Lexend', sans-serif; {glow_style} }}
-        .cartoon-title {{ font-family: 'Fredoka One', cursive; font-size: 34px; color: #00F2FE; text-shadow: 2px 2px 0px #050505; margin: 0; }}
-        .header-bubble {{ background: linear-gradient(135deg, #1E2638 0%, #111827 100%); padding: 24px; border-radius: 20px; border: 3px solid #3B82F6; box-shadow: 0px 8px 0px #1D4ED8; margin-bottom: 30px; }}
-        .header-sub {{ color: #9CA3AF; font-size: 15px; font-weight: 500; margin-top: 6px; }}
-        .bubble-empty {{ background-color: #0284C7; color: #FFFFFF; padding: 20px; border-radius: 18px; border: 3px solid #38BDF8; box-shadow: 0px 6px 0px #0369A1; font-size: 15px; line-height: 1.6; }}
-        .bubble-alert-note {{ background-color: #701A75; color: #FDF4FF; padding: 22px; border-radius: 18px; border: 3px solid #F472B6; box-shadow: 0px 6px 0px #4A044E; font-size: 16px; line-height: 1.6; }}
-        .modal-card {{ background: #1E2638; border: 3px solid #F472B6; padding: 24px; border-radius: 20px; box-shadow: 0px 8px 0px #BE185D; margin-bottom: 20px; }}
-        .lang-block {{ margin-top: 10px; font-size: 15px; color: #E5E7EB; line-height: 1.5; }}
-        div.stButton > button:first-child {{ font-family: 'Fredoka One', cursive !important; background-color: #EC4899 !important; color: white !important; border: 3px solid #F472B6 !important; box-shadow: 0px 5px 0px #BE185D !important; border-radius: 15px !important; font-size: 18px !important; transition: all 0.1s ease; }}
-        div.stButton > button:first-child:active {{ transform: translateY(4px); box-shadow: 0px 1px 0px #BE185D !important; }}
+        .stApp {{ background-color: #FFFFFF !important; font-family: 'Lexend', sans-serif; color: #111827; {glow_style} }}
+        .cartoon-title {{ font-family: 'Fredoka One', cursive; font-size: 34px; color: #2563EB; text-shadow: 1px 1px 0px #1D4ED8; margin: 0; }}
+        .header-bubble {{ background: #F3F4F6; padding: 24px; border-radius: 20px; border: 3px solid #2563EB; box-shadow: 0px 8px 0px #1E40AF; margin-bottom: 30px; }}
+        .header-sub {{ color: #4B5563; font-size: 15px; font-weight: 500; margin-top: 6px; }}
+        .bubble-empty {{ background-color: #E0F2FE; color: #0369A1; padding: 20px; border-radius: 18px; border: 3px solid #0284C7; box-shadow: 0px 6px 0px #0369A1; font-size: 15px; line-height: 1.6; }}
+        .bubble-alert-note {{ background-color: #FCE7F3; color: #831843; padding: 22px; border-radius: 18px; border: 3px solid #DB2777; box-shadow: 0px 6px 0px #9D174D; font-size: 16px; line-height: 1.6; }}
+        .modal-card {{ background: #FFF1F2; border: 3px solid #E11D48; padding: 24px; border-radius: 20px; box-shadow: 0px 8px 0px #9F1239; margin-bottom: 20px; }}
+        .lang-block {{ margin-top: 10px; font-size: 15px; color: #1F2937; line-height: 1.5; }}
+        div.stButton > button:first-child {{ font-family: 'Fredoka One', cursive !important; background-color: #EC4899 !important; color: white !important; border: 3px solid #DB2777 !important; box-shadow: 0px 5px 0px #9D174D !important; border-radius: 15px !important; font-size: 18px !important; transition: all 0.1s ease; }}
+        div.stButton > button:first-child:active {{ transform: translateY(4px); box-shadow: 0px 1px 0px #9D174D !important; }}
         </style>
     """, unsafe_allow_html=True)
 
 def show_center_modal(items_en, items_hi):
     st.markdown(f"""
         <div class="modal-card">
-            <span style="color: #FCA5A5; font-size: 26px; font-weight: bold;">OH NO! / ओहो नहीं!</span>
+            <span style="color: #9F1239; font-size: 26px; font-weight: bold;">OH NO! / ओहो नहीं!</span>
             <div class="lang-block lang-en">
-                <span style="color: #60A5FA; font-weight: bold;">English:</span><br>
+                <span style="color: #2563EB; font-weight: bold;">English:</span><br>
                 You had to throw away your <b>{items_en}</b>. Let's try to cook or consume items before their expiry window alerts trigger next time to minimize household waste.
             </div>
             <div class="lang-block lang-hi">
-                <span style="color: #34D399; font-weight: bold;">हिंदी:</span><br>
+                <span style="color: #059669; font-weight: bold;">हिंदी:</span><br>
                 आपको अपना <b>{items_hi}</b> फेंकना पड़ा। घर के कचरे को कम करने के लिए अगली बार खराब होने की चेतावनी से पहले ही वस्तुओं का उपयोग करने का प्रयास करें।
             </div>
         </div>
@@ -233,44 +277,38 @@ auth_mode = st.sidebar.radio("Choose Action:", ["Log Into Vault", "Create New Va
 family_input_code = st.sidebar.text_input("Fridge / Family Code", placeholder="e.g., sharma_kitchen").strip().lower()
 family_input_pass = st.sidebar.text_input("Vault Password / PIN", type="password", placeholder="e.g., Tiger-99!").strip()
 
-master_registry_db = "fridge_vault_registry_db"
-
 if auth_mode == "Create New Vault":
     if st.sidebar.button("🚀 Create Family Vault", use_container_width=True):
         if not family_input_code or not family_input_pass:
             st.sidebar.error("⚠️ Please fill in both Fridge Name and Password.")
         else:
-            with shelve.open(master_registry_db, writeback=True) as reg:
-                if family_input_code in reg:
-                    st.sidebar.error(f"❌ Fridge name '{family_input_code}' is already taken! Please choose a different name.")
-                else:
-                    # Save hashed password securely
-                    reg[family_input_code] = hash_password(family_input_pass)
-                    st.session_state.logged_in_family = family_input_code
-                    st.sidebar.success("🎉 Vault created and logged in successfully!")
-                    st.rerun()
+            existing_pwd = get_vault_password(family_input_code)
+            if existing_pwd:
+                st.sidebar.error(f"❌ Fridge name '{family_input_code}' is already taken! Please choose a different name.")
+            else:
+                register_vault(family_input_code, hash_password(family_input_pass))
+                st.session_state.logged_in_family = family_input_code
+                st.sidebar.success("🎉 Vault created and logged in successfully!")
+                st.rerun()
 else:
     if st.sidebar.button("🔑 Login to Vault", use_container_width=True):
         if not family_input_code or not family_input_pass:
             st.sidebar.error("⚠️ Please enter your Fridge Name and Password.")
         else:
-            with shelve.open(master_registry_db, writeback=True) as reg:
-                if family_input_code not in reg:
-                    st.sidebar.error("❌ Fridge Name not found. Create it first!")
-                elif reg[family_input_code] != hash_password(family_input_pass):
-                    st.sidebar.error("⛔ Incorrect password for this fridge.")
-                else:
-                    st.session_state.logged_in_family = family_input_code
-                    st.sidebar.success("✅ Logged into family vault successfully!")
-                    st.rerun()
+            stored_pwd = get_vault_password(family_input_code)
+            if not stored_pwd:
+                st.sidebar.error("❌ Fridge Name not found. Create it first!")
+            elif stored_pwd != hash_password(family_input_pass):
+                st.sidebar.error("⛔ Incorrect password for this fridge.")
+            else:
+                st.session_state.logged_in_family = family_input_code
+                st.sidebar.success("✅ Logged into family vault successfully!")
+                st.rerun()
 
 # Check if authenticated
 if not st.session_state.logged_in_family:
     st.warning("🔒 **Please log into or create your Family Vault in the left sidebar to access FridgeInventory.**")
     st.stop()
-
-# Active isolated database for this specific family vault
-db_filename = f"fridge_vault_{st.session_state.logged_in_family}_db"
 
 st.sidebar.markdown("---")
 st.sidebar.success(f"🏡 Active Vault: `{st.session_state.logged_in_family}`")
@@ -346,68 +384,68 @@ apply_custom_ui(is_recording=is_currently_recording)
 
 final_command = text_input if 'text_input' in locals() and text_input else voice_text
 
-# --- SHELF DATABASE PERSISTENCE LOGIC ---
+# --- CLOUD DATABASE PERSISTENCE LOGIC ---
 if final_command:
-    with shelve.open(db_filename, writeback=True) as db:
-        if 'inventory' not in db: db['inventory'] = {}
-        inventory = db['inventory']
-        today = datetime.now().date()
+    inventory = load_inventory(st.session_state.logged_in_family)
+    today = datetime.now().date()
 
-        if any(w in final_command for w in ["used everything", "cooked everything", "ate everything", "clear fridge"]):
-            db['inventory'] = {}
-            st.toast("Cleared storage matrix: Marked all items as consumed!")
-            st.balloons()
+    if any(w in final_command for w in ["used everything", "cooked everything", "ate everything", "clear fridge"]):
+        save_inventory(st.session_state.logged_in_family, {})
+        st.toast("Cleared storage matrix: Marked all items as consumed!")
+        st.balloons()
+        st.rerun()
+    elif any(w in final_command for w in ["threw", "discarded", "thrown away", "dumped"]):
+        wasted_en, wasted_hi = [], []
+        for trigger_word, (days, name_en, name_hi) in EXPIRY_DATABASE.items():
+            if trigger_word in final_command and (name_en in inventory or name_hi in inventory):
+                if name_en in inventory: del inventory[name_en]
+                if name_hi in inventory: del inventory[name_hi]
+                wasted_en.append(name_en)
+                wasted_hi.append(name_hi)
+        if wasted_en:
+            save_inventory(st.session_state.logged_in_family, inventory)
+            st.session_state.waste_modal_items = ', '.join(list(set(wasted_en)))
+            st.session_state.waste_modal_items_hi = ', '.join(list(set(wasted_hi)))
+            st.session_state.waste_modal_time = time.time()
+            st.session_state.show_waste_modal = True
+            st.toast("Food waste parameter recorded.")
             st.rerun()
-        elif any(w in final_command for w in ["threw", "discarded", "thrown away", "dumped"]):
-            wasted_en, wasted_hi = [], []
-            for trigger_word, (days, name_en, name_hi) in EXPIRY_DATABASE.items():
-                if trigger_word in final_command and (name_en in inventory or name_hi in inventory):
-                    if name_en in inventory: del inventory[name_en]
-                    if name_hi in inventory: del inventory[name_hi]
-                    wasted_en.append(name_en)
-                    wasted_hi.append(name_hi)
-            if wasted_en:
-                st.session_state.waste_modal_items = ', '.join(list(set(wasted_en)))
-                st.session_state.waste_modal_items_hi = ', '.join(list(set(wasted_hi)))
-                st.session_state.waste_modal_time = time.time()
-                st.session_state.show_waste_modal = True
-                st.toast("Food waste parameter recorded.")
-                st.rerun()
-        elif any(w in final_command for w in ["used", "ate", "cooked", "forgot", "remove", "delete"]):
-            removed_items = []
-            for trigger_word, (days, name_en, name_hi) in EXPIRY_DATABASE.items():
+    elif any(w in final_command for w in ["used", "ate", "cooked", "forgot", "remove", "delete"]):
+        removed_items = []
+        for trigger_word, (days, name_en, name_hi) in EXPIRY_DATABASE.items():
+            target_name = name_en if current_lang == "en" else name_hi
+            if trigger_word in final_command and (name_en in inventory or name_hi in inventory):
+                if name_en in inventory: del inventory[name_en]
+                if name_hi in inventory: del inventory[name_hi]
+                removed_items.append(target_name)
+        if removed_items:
+            save_inventory(st.session_state.logged_in_family, inventory)
+            st.toast(f"Removed: {', '.join(removed_items)}")
+            st.balloons()
+    elif any(w in final_command for w in ["brought", "bought", "added", "add", "market", "came"]):
+        added_items = []
+        for trigger_word, (days, name_en, name_hi) in EXPIRY_DATABASE.items():
+            if trigger_word in final_command:
                 target_name = name_en if current_lang == "en" else name_hi
-                if trigger_word in final_command and (name_en in inventory or name_hi in inventory):
-                    if name_en in inventory: del inventory[name_en]
-                    if name_hi in inventory: del inventory[name_hi]
-                    removed_items.append(target_name)
-            if removed_items:
-                st.toast(f"Removed: {', '.join(removed_items)}")
-                st.balloons()
-        elif any(w in final_command for w in ["brought", "bought", "added", "add", "market", "came"]):
-            added_items = []
-            for trigger_word, (days, name_en, name_hi) in EXPIRY_DATABASE.items():
-                if trigger_word in final_command:
-                    target_name = name_en if current_lang == "en" else name_hi
-                    if target_name not in added_items:
-                        expiry_date = today + timedelta(days=days)
-                        inventory[target_name] = {"date_brought": today.strftime("%Y-%m-%d"), "expiry_date": expiry_date.strftime("%Y-%m-%d"), "core_id": name_en}
-                        added_items.append(target_name)
-            if added_items: st.toast(f"Logged: {', '.join(added_items)}")
+                if target_name not in added_items:
+                    expiry_date = today + timedelta(days=days)
+                    inventory[target_name] = {"date_brought": today.strftime("%Y-%m-%d"), "expiry_date": expiry_date.strftime("%Y-%m-%d"), "core_id": name_en}
+                    added_items.append(target_name)
+        if added_items:
+            save_inventory(st.session_state.logged_in_family, inventory)
+            st.toast(f"Logged: {', '.join(added_items)}")
 
 st.markdown("<br>", unsafe_allow_html=True)
 st.markdown(f"### {T['ledger_hdr']}")
 
-with shelve.open(db_filename, writeback=True) as db:
-    inventory_data = db.get('inventory', {})
-    synchronized_data = {}
-    for item, details in list(inventory_data.items()):
-        core_ref = details.get("core_id", "")
-        for trigger_word, (days, name_en, name_hi) in EXPIRY_DATABASE.items():
-            if core_ref == name_en:
-                synchronized_data[name_en if current_lang == "en" else name_hi] = details
-                break
-    db['inventory'] = synchronized_data
+inventory_data = load_inventory(st.session_state.logged_in_family)
+synchronized_data = {}
+for item, details in list(inventory_data.items()):
+    core_ref = details.get("core_id", "")
+    for trigger_word, (days, name_en, name_hi) in EXPIRY_DATABASE.items():
+        if core_ref == name_en:
+            synchronized_data[name_en if current_lang == "en" else name_hi] = details
+            break
 
 if synchronized_data:
     today = datetime.now().date()
@@ -428,10 +466,8 @@ if synchronized_data:
         if days_left <= 1:
             urgent_alerts_list.append(row_item)
     
-    # Render main inventory table
     st.dataframe(pd.DataFrame(display_rows), use_container_width=True, hide_index=True)
     
-    # Render live Expiry Alerts inside Tab 3
     with tab3:
         if urgent_alerts_list:
             st.warning("⚠️ **Immediate Action Required: The following items are expiring today or tomorrow!**")
