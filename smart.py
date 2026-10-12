@@ -18,10 +18,16 @@ def get_db():
                 sec = st.secrets["firebase"]
                 key_dict = dict(sec) if not isinstance(sec, str) else json.loads(sec)
                 
-                # Automatically fix private key formatting and wrap in triple quotes / clean breaks
+                # Automatically strip out accidental '...' placeholder lines from private key
                 if "private_key" in key_dict:
-                    pk = str(key_dict["private_key"]).replace("\\n", "\n").strip()
-                    key_dict["private_key"] = f"""{pk}"""
+                    pk = str(key_dict["private_key"])
+                    clean_lines = [line for line in pk.splitlines() if "..." not in line and "paste" not in line.lower()]
+                    pk = "\n".join(clean_lines).replace("\\n", "\n").strip()
+                    if not pk.startswith("-----BEGIN PRIVATE KEY-----"):
+                        pk = "-----BEGIN PRIVATE KEY-----\n" + pk
+                    if not pk.endswith("-----END PRIVATE KEY-----"):
+                        pk = pk + "\n-----END PRIVATE KEY-----"
+                    key_dict["private_key"] = pk
                     
                 cred = credentials.Certificate(key_dict)
                 firebase_admin.initialize_app(cred)
@@ -443,52 +449,4 @@ if final_command:
                     expiry_date = today + timedelta(days=days)
                     inventory[target_name] = {"date_brought": today.strftime("%Y-%m-%d"), "expiry_date": expiry_date.strftime("%Y-%m-%d"), "core_id": name_en}
                     added_items.append(target_name)
-        if added_items:
-            save_inventory(st.session_state.logged_in_family, inventory)
-            st.toast(f"Logged: {', '.join(added_items)}")
-
-st.markdown("<br>", unsafe_allow_html=True)
-st.markdown(f"### {T['ledger_hdr']}")
-
-inventory_data = load_inventory(st.session_state.logged_in_family)
-synchronized_data = {}
-for item, details in list(inventory_data.items()):
-    core_ref = details.get("core_id", "")
-    for trigger_word, (days, name_en, name_hi) in EXPIRY_DATABASE.items():
-        if core_ref == name_en:
-            synchronized_data[name_en if current_lang == "en" else name_hi] = details
-            break
-
-if synchronized_data:
-    today = datetime.now().date()
-    display_rows = []
-    urgent_alerts_list = []
-    
-    for item, details in synchronized_data.items():
-        expiry_dt = datetime.strptime(details['expiry_date'], "%Y-%m-%d").date()
-        days_left = (expiry_dt - today).days
-        if days_left < 0: status_text = T['status_expired'].format(days=abs(days_left))
-        elif days_left == 0: status_text = T['status_today']
-        elif days_left == 1: status_text = T['status_tomorrow']
-        else: status_text = T['status_fresh'].format(days=days_left)
-        
-        row_item = { T['col_item']: item, T['col_logged']: details['date_brought'], T['col_target']: details['expiry_date'], T['col_status']: status_text }
-        display_rows.append(row_item)
-        
-        if days_left <= 1:
-            urgent_alerts_list.append(row_item)
-    
-    st.dataframe(pd.DataFrame(display_rows), use_container_width=True, hide_index=True)
-    
-    with tab3:
-        if urgent_alerts_list:
-            st.warning("⚠️ **Immediate Action Required: The following items are expiring today or tomorrow!**")
-            st.dataframe(pd.DataFrame(urgent_alerts_list), use_container_width=True, hide_index=True)
-        else:
-            st.success("✅ **All clear!** No items are expiring immediately.")
-
-    urgent_items = [r[T['col_item']] for r in display_rows if any(k in r[T['col_status']] for k in ["EXPIRED", "CRITICAL", "WARNING", "खराब", "आपातकालीन", "चेतावनी"])]
-    if urgent_items:
-        st.markdown(f'<div class="bubble-alert-note">{T["note_msg"].format(items=", ".join(urgent_items))}</div>', unsafe_allow_html=True)
-else:
-    st.markdown(f'<div class="bubble-empty">{T["empty_msg"]}</div>', unsafe_allow_html=True)
+        if
