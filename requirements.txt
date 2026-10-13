@@ -1,0 +1,5 @@
+streamlit
+pandas
+firebase-admin
+SpeechRecognition
+google-generativeai
