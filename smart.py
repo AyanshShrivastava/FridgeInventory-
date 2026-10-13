@@ -1,359 +1,585 @@
-import streamlit as st
-import speech_recognition as sr
-import pandas as pd
 from datetime import datetime, timedelta
-import time
 import hashlib
-import json
-
-# --- PERSISTENT CLOUD DATABASE (FIREBASE FIRESTORE) INITIALIZATION ---
+import time
+from database import EXPIRY_DATABASE
 import firebase_admin
 from firebase_admin import credentials, firestore
+import pandas as pd
+import speech_recognition as sr
+import streamlit as st
 
-@st.cache_resource
-def get_db():
-    if not firebase_admin._apps:
-        try:
-            if "firebase" in st.secrets:
-                sec = st.secrets["firebase"]
-                key_dict = json.loads(sec) if isinstance(sec, str) else dict(sec)
-                cred = credentials.Certificate(key_dict)
-                firebase_admin.initialize_app(cred)
-            else:
-                cred = credentials.Certificate("serviceAccountKey.json")
-                firebase_admin.initialize_app(cred)
-        except Exception as e:
-            st.error(f"⚠️ Firebase Connection Error: {e}")
-            return None
-    return firestore.client()
-
-db = get_db()
-
-# --- HELPER FUNCTIONS FOR STORAGE ---
-def hash_password(password):
-    return hashlib.sha256(password.encode()).hexdigest()
-
-def get_vault_password(fridge_code):
-    if db:
-        try:
-            doc = db.collection("vault_registry").document(fridge_code).get()
-            if doc.exists:
-                return doc.to_dict().get("password")
-        except Exception:
-            pass
-    return None
-
-def register_vault(fridge_code, hashed_pwd):
-    if db:
-        db.collection("vault_registry").document(fridge_code).set({"password": hashed_pwd})
-
-def load_inventory(fridge_code):
-    if db:
-        try:
-            doc = db.collection("vault_inventories").document(fridge_code).get()
-            if doc.exists:
-                return doc.to_dict().get("inventory", {})
-        except Exception:
-            pass
-    return {}
-
-def save_inventory(fridge_code, inventory_dict):
-    if db:
-        db.collection("vault_inventories").document(fridge_code).set({"inventory": inventory_dict})
-
-# --- PAGE CONFIGURATION ---
+# ==========================================
+# 1. PAGE CONFIG & CUSTOM CSS (BRANDING HIDE)
+# ==========================================
 st.set_page_config(
-    page_title="FridgeInventory Panel",
-    layout="wide"
+    page_title="SmartRasoi: Voice Kitchen Panel", page_icon="🍳", layout="centered"
 )
 
-# --- GROCERY SHELF LIFE DATABASE ---
-EXPIRY_DATABASE = {
-    # Dairy & Perishables
-    "milk": (2, "Milk", "दूध"), "doodh": (2, "Milk", "दूध"),
-    "paneer": (4, "Paneer", "पनीर"), "curd": (4, "Curd", "दही"), "dahi": (4, "Curd", "दही"),
-    "bread": (4, "Bread", "ब्रेड"), "butter": (30, "Butter", "मक्खन"), "eggs": (14, "Eggs", "अंडे"),
-    "anda": (14, "Eggs", "अंडे"), "cheese": (21, "Cheese", "चीज"), "lassi": (2, "Lassi", "लस्सी"),
-    # Vegetables
-    "tomato": (5, "Tomato", "टमाटर"), "tamatar": (5, "Tomato", "टमाटर"),
-    "potato": (21, "Potato", "आलू"), "aloo": (21, "Potato", "आलू"),
-    "onion": (21, "Onion", "प्याज"), "pyaaz": (21, "Onion", "प्याज"),
-    "bhindi": (4, "Ladyfinger", "भिंडी"), "capsicum": (6, "Capsicum", "शिमला मिर्च"),
-    "matar": (5, "Green Peas", "मटर"), "carrot": (10, "Carrot", "गाजर"),
-    "spinach": (3, "Spinach", "पालक"), "palak": (3, "Spinach", "पालक"),
-    "dhaniya": (2, "Coriander", "धनिया"), "garlic": (30, "Garlic", "लहसुन"),
-    "ginger": (14, "Ginger", "अदरक"),
-    # Fruits
-    "banana": (4, "Banana", "केला"), "kela": (4, "Banana", "केला"),
-    "apple": (14, "Apple", "सेब"), "seb": (14, "Apple", "सेब"),
-    "mango": (5, "Mango", "आम"), "aam": (5, "Mango", "आम"),
-    "dragonfruit": (7, "Dragonfruit", "ड्रैगन फ्रूट"), "grapes": (6, "Grapes", "अंगूर"),
-    # Frozen & Packaged
-    "potato bites": (180, "Potato Bites", "पोटाटो बाइट्स"), "frooti": (120, "Frooti", "फ्रूटी"),
-    "maggi": (180, "Maggi", "मैगी"), "chips": (90, "Chips", "चिप्स")
-}
+hide_streamlit_style = """
+    <style>
+    @import url('https://fonts.googleapis.com/css2?family=Fredoka+One&family=Lexend:wght@400;500;600&display=swap');
+    
+    #MainMenu {visibility: hidden;}
+    header {visibility: hidden;}
+    footer {visibility: hidden;}
+    [data-testid="stToolbar"] {visibility: hidden !important;}
+    [data-testid="stDecoration"] {display: none;}
+    .block-container {padding-top: 2rem; padding-bottom: 2rem;}
+    
+    .stApp { background-color: #0B0E14; font-family: 'Lexend', sans-serif; }
+    
+    .cartoon-title { 
+        font-family: 'Fredoka One', cursive; 
+        font-size: 32px; 
+        color: #00F2FE; 
+        text-shadow: 2px 2px 0px #050505; 
+        margin: 0; 
+    }
+    
+    .header-bubble { 
+        background: linear-gradient(135deg, #1E2638 0%, #111827 100%); 
+        padding: 24px; 
+        border-radius: 20px; 
+        border: 3px solid #3B82F6; 
+        box-shadow: 0px 8px 0px #1D4ED8; 
+        margin-bottom: 25px; 
+    }
+    
+    .header-sub { 
+        color: #9CA3AF; 
+        font-size: 15px; 
+        font-weight: 500; 
+        margin-top: 6px; 
+    }
+    
+    .bubble-empty { 
+        background-color: #0284C7; 
+        color: #FFFFFF; 
+        padding: 20px; 
+        border-radius: 18px; 
+        border: 3px solid #38BDF8; 
+        box-shadow: 0px 6px 0px #0369A1; 
+        font-size: 15px; 
+        line-height: 1.6; 
+    }
+    
+    .bubble-alert-note { 
+        background-color: #701A75; 
+        color: #FDF4FF; 
+        padding: 22px; 
+        border-radius: 18px; 
+        border: 3px solid #F472B6; 
+        box-shadow: 0px 6px 0px #4A044E; 
+        font-size: 16px; 
+        line-height: 1.6; 
+    }
 
+    .modal-overlay {
+        background: linear-gradient(135deg, #451A03 0%, #7C2D12 100%);
+        border: 4px solid #F87171;
+        box-shadow: 0px 10px 0px #991B1B;
+        padding: 25px;
+        border-radius: 20px;
+        margin-bottom: 25px;
+        color: #FEF2F2;
+    }
+    
+    div.stButton > button:first-child { 
+        font-family: 'Fredoka One', cursive !important; 
+        background-color: #EC4899 !important; 
+        color: white !important; 
+        border: 3px solid #F472B6 !important; 
+        box-shadow: 0px 5px 0px #BE185D !important; 
+        border-radius: 15px !important; 
+        font-size: 18px !important; 
+        transition: all 0.1s ease; 
+    }
+    
+    div.stButton > button:first-child:active { 
+        transform: translateY(4px); 
+        box-shadow: 0px 1px 0px #BE185D !important; 
+    }
+    </style>
+"""
+st.markdown(hide_streamlit_style, unsafe_allow_html=True)
+
+
+# ==========================================
+# 2. FIREBASE & FIRESTORE INITIALIZATION
+# ==========================================
+@st.cache_resource
+def init_firebase():
+  try:
+    if not firebase_admin._apps:
+      if "firebase" in st.secrets:
+        cred_dict = dict(st.secrets["firebase"])
+        cred = credentials.Certificate(cred_dict)
+        firebase_admin.initialize_app(cred)
+      else:
+        cred = credentials.Certificate("firebase_credentials.json")
+        firebase_admin.initialize_app(cred)
+    return firestore.client()
+  except Exception:
+    return None
+
+
+db = init_firebase()
+
+
+# ==========================================
+# 3. HELPER & SECURITY FUNCTIONS
+# ==========================================
+def hash_pin(pin: str) -> str:
+  return hashlib.sha256(pin.encode()).hexdigest()
+
+
+def get_md5_hash(text: str) -> str:
+  return hashlib.md5(text.encode("utf-8")).hexdigest()
+
+
+# ==========================================
+# 4. LANGUAGE PACKS
+# ==========================================
 LANG_PACK = {
     "en": {
-        "title": "FridgeInventory 🧊",
-        "subtitle": "Multi-family kitchen inventory & live expiry alert tracking system.",
-        "input_hdr": "Smart Control Panel", "tab_sim": "Simulation Box", "tab_voice": "Voice Control",
-        "tab_alerts": "🚨 Expiry Alerts",
-        "placeholder": "e.g., 'I brought potato bites, frooti, dragonfruit, matar' or 'I used lassi'",
-        "audio_err": "Audio validation error. Please try speaking clearly.",
-        "ledger_hdr": "Active Kitchen Dashboard", "col_item": "Grocery Item",
-        "col_logged": "Date Logged", "col_target": "Expiry Target", "col_status": "Status",
-        "empty_msg": "<b>System Status: Empty</b><br>No food items logged in your vault.",
-        "note_msg": "<b>ALERT:</b> Your <b>{items}</b> will spoil soon. Plan to use them today!",
-        "status_expired": "EXPIRED ({days} Days Ago)", "status_today": "CRITICAL: EXPIRES TODAY",
-        "status_tomorrow": "WARNING: EXPIRING TOMORROW", "status_fresh": "Fresh ({days} Days Left)"
+        "title": "SmartRasoi: Voice Kitchen Panel",
+        "subtitle": (
+            "Zero-effort automated tracking infrastructure designed for Indian"
+            " households."
+        ),
+        "input_hdr": "Smart Control Panel",
+        "tab_sim": "Simulation Box",
+        "tab_voice": "Upload Audio (.wav)",
+        "placeholder": (
+            "e.g., 'brought 2 kgs palak, milk and tomatoes' or 'used milk'"
+        ),
+        "audio_err": (
+            "Audio format validation issue. Ensure it is a valid PCM .wav"
+            " recording."
+        ),
+        "ledger_hdr": "Active Kitchen Storage Dashboard",
+        "col_item": "Grocery Item",
+        "col_logged": "Date Logged",
+        "col_target": "Expiry Target",
+        "col_status": "Freshness Status",
+        "empty_msg": (
+            "<b>System Status: Empty</b><br>The virtual ledger contains no"
+            " active food records. Type or drop an audio update command inside"
+            " the control inputs panel above to automatically populate your"
+            " household tracking matrix."
+        ),
+        "note_msg": (
+            "<b>NOTE:</b> Your <b>{items}</b> will spoil soon. Please plan to"
+            " use your <b>{items}</b> today to optimize household utility before"
+            " complete spoilage."
+        ),
+        "status_expired": "EXPIRED ({days} Days Ago) -> Discard!",
+        "status_today": "CRITICAL: EXPIRES TODAY",
+        "status_tomorrow": "WARNING: EXPIRING TOMORROW",
+        "status_fresh": "Fresh ({days} Days Remaining)",
     },
     "hi": {
-        "title": "फ्रिज इन्वेंटरी 🧊",
-        "subtitle": "सुरक्षित पारिवारिक रसोई इन्वेंटरी और लाइव एक्सपायरी अलर्ट सिस्टम।",
-        "input_hdr": "स्मार्ट कंट्रोल पैनल", "tab_sim": "सिमुलेशन बॉक्स", "tab_voice": "वॉइस कंट्रोल",
-        "tab_alerts": "🚨 एक्सपायरी अलर्ट",
-        "placeholder": "जैसे, 'I brought potato bites, frooti, dragonfruit' या 'I used lassi'",
-        "audio_err": "ऑडियो त्रुटि। कृपया दोबारा स्पष्ट बोलें।",
-        "ledger_hdr": "सक्रिय रसोई सामान डैशबोर्ड", "col_item": "रसोई का सामान",
-        "col_logged": "लाने की तारीख", "col_target": "खराब होने की तारीख", "col_status": "स्थिति",
-        "empty_msg": "<b>सिस्टम स्थिति: खाली</b><br>आपके वॉल्ट में अभी कोई सामान नहीं है।",
-        "note_msg": "<b>सूचना:</b> आपका <b>{items}</b> जल्द ही खराब होने वाला है!",
-        "status_expired": "खराब हो चुका है ({days} दिन पहले)", "status_today": "आपातकालीन: आज ही खराब होगा",
-        "status_tomorrow": "चेतावनी: कल खराब होने वाला है", "status_fresh": "ताजा ({days} दिन बचे हैं)"
-    }
+        "title": "स्मार्ट रसोई: वॉइस किचन पैनल",
+        "subtitle": (
+            "भारतीय घरों के लिए बनाया गया बिना किसी झंझट के ऑटोमैटिक सामान"
+            " ट्रैकिंग सिस्टम।"
+        ),
+        "input_hdr": "स्मार्ट कंट्रोल पैनल",
+        "tab_sim": "सिमुलेशन बॉक्स",
+        "tab_voice": "ऑडियो अपलोड (.wav)",
+        "placeholder": (
+            "जैसे, 'brought palak, milk and tomatoes' या 'used milk'"
+        ),
+        "audio_err": (
+            "ऑडियो फॉर्मेट में दिक्कत है। कृपया सुनिश्चित करें कि यह एक साफ"
+            " .wav फाइल है।"
+        ),
+        "ledger_hdr": "सक्रिय रसोई सामान डैशबोर्ड",
+        "col_item": "रसोई का सामान",
+        "col_logged": "लाने की तारीख",
+        "col_target": "खराब होने की तारीख",
+        "col_status": "ताजगी की स्थिति",
+        "empty_msg": (
+            "<b>सिस्टम स्थिति: खाली</b><br>आपके डैशबोर्ड में अभी कोई सामान नहीं"
+            " है। ऊपर दिए गए बॉक्स में सामान की जानकारी टाइप करें या ऑडियो फाइल"
+            " डालें ताकि लिस्ट अपने आप बन सके।"
+        ),
+        "note_msg": (
+            "<b>सूचना:</b> आपका <b>{items}</b> जल्द ही खराब होने वाला है। कृपया"
+            " भोजन की बर्बादी रोकने के लिए आज ही <b>{items}</b> का उपयोग करने"
+            " की योजना बनाएं।"
+        ),
+        "status_expired": "खराब हो चुका है ({days} दिन पहले) -> फेंक दें!",
+        "status_today": "आपातकालीन: आज ही खराब हो जाएगा",
+        "status_tomorrow": "चेतावनी: कल खराब होने वाला है",
+        "status_fresh": "बिल्कुल ताजा है ({days} दिन बचे हैं)",
+    },
 }
 
-# --- FORCED HIGH-CONTRAST DARK THEME & FIXED BUTTON STYLING ---
-def apply_custom_ui(is_recording=False):
-    glow_style = "box-shadow: inset 0 0 40px #3B82F6;" if is_recording else ""
-    st.markdown(f"""
-        <style>
-        @import url('https://fonts.googleapis.com/css2?family=Fredoka+One&family=Lexend:wght@400;500;600;700&display=swap');
-        .stApp {{ background-color: #0F172A !important; font-family: 'Lexend', sans-serif; color: #F8FAFC !important; {glow_style} }}
-        h1, h2, h3, h4, h5, h6, p, label, div {{ color: #F8FAFC !important; }}
-        .cartoon-title {{ font-family: 'Fredoka One', cursive; font-size: 34px; color: #60A5FA; text-shadow: 2px 2px 0px #1E3A8A; margin: 0; }}
-        .header-bubble {{ background: #1E293B; padding: 20px; border-radius: 16px; border: 2px solid #3B82F6; margin-bottom: 20px; }}
-        .header-sub {{ color: #94A3B8 !important; font-size: 15px; margin-top: 4px; }}
-        .bubble-empty {{ background-color: #0C4A6E; color: #E0F2FE !important; padding: 18px; border-radius: 14px; border: 2px solid #0284C7; font-size: 15px; }}
-        .bubble-alert-note {{ background-color: #581C87; color: #F3E8FF !important; padding: 18px; border-radius: 14px; border: 2px solid #A855F7; font-size: 15px; margin-top: 15px; }}
-        
-        /* FORCE ALL BUTTONS TO HAVE PERMANENT HIGH CONTRAST (NO BLACK BUTTONS) */
-        div.stButton > button {{
-            font-family: 'Fredoka One', cursive !important;
-            background-color: #EC4899 !important;
-            color: #FFFFFF !important;
-            border: 2px solid #DB2777 !important;
-            border-radius: 12px !important;
-            font-size: 16px !important;
-        }}
-        div.stButton > button:hover {{
-            background-color: #DB2777 !important;
-            color: #FFFFFF !important;
-            border: 2px solid #BE185D !important;
-        }}
-        
-        input {{ background-color: #1E293B !important; color: #FFFFFF !important; border: 1px solid #475569 !important; border-radius: 8px !important; }}
-        </style>
-    """, unsafe_allow_html=True)
-
-# --- SESSION STATE INITIALIZATION ---
+# ==========================================
+# 5. SESSION STATE INITIALIZATION & GUARDS
+# ==========================================
+if "authenticated" not in st.session_state:
+  st.session_state.authenticated = False
+if "fridge_id" not in st.session_state:
+  st.session_state.fridge_id = ""
 if "lang" not in st.session_state:
-    st.session_state.lang = "en"
-if "logged_in_family" not in st.session_state:
-    st.session_state.logged_in_family = None
-if "current_raw_pwd" not in st.session_state:
-    st.session_state.current_raw_pwd = ""
+  st.session_state.lang = "en"
+if "last_processed_hash" not in st.session_state:
+  st.session_state.last_processed_hash = ""
+if "show_waste_modal" not in st.session_state:
+  st.session_state.show_waste_modal = False
+if "waste_modal_items" not in st.session_state:
+  st.session_state.waste_modal_items = ""
+if "waste_modal_items_hi" not in st.session_state:
+  st.session_state.waste_modal_items_hi = ""
+if "waste_modal_time" not in st.session_state:
+  st.session_state.waste_modal_time = 0.0
 
-# --- SIDEBAR: SECURE FAMILY VAULT MANAGEMENT ---
-st.sidebar.markdown("### 🔐 Secure Family Vault")
-
-auth_mode = st.sidebar.radio("Choose Action:", ["Log Into Vault", "Create New Vault"])
-
-family_input_code = st.sidebar.text_input("Fridge / Family Code", placeholder="e.g., sharma_kitchen").strip().lower()
-# NATIVE PASSWORD FIELD WITH BUILT-IN EYE ICON
-family_input_pass = st.sidebar.text_input("Vault Password / PIN", type="password", placeholder="Enter PIN").strip()
-
-if auth_mode == "Create New Vault":
-    if st.sidebar.button("🚀 Create Family Vault", use_container_width=True):
-        if not family_input_code or not family_input_pass:
-            st.sidebar.error("⚠️ Fill in both fields.")
-        else:
-            existing_pwd = get_vault_password(family_input_code)
-            if existing_pwd:
-                st.sidebar.error(f"❌ '{family_input_code}' is already taken!")
-            else:
-                register_vault(family_input_code, hash_password(family_input_pass))
-                st.session_state.logged_in_family = family_input_code
-                st.session_state.current_raw_pwd = family_input_pass
-                st.sidebar.success("🎉 Vault created successfully!")
-                st.rerun()
-else:
-    if st.sidebar.button("🔑 Login to Vault", use_container_width=True):
-        if not family_input_code or not family_input_pass:
-            st.sidebar.error("⚠️ Enter Fridge Name and Password.")
-        else:
-            stored_pwd = get_vault_password(family_input_code)
-            if not stored_pwd:
-                st.sidebar.error("❌ Vault not found.")
-            elif stored_pwd != hash_password(family_input_pass):
-                st.sidebar.error("⛔ Incorrect password.")
-            else:
-                st.session_state.logged_in_family = family_input_code
-                st.session_state.current_raw_pwd = family_input_pass
-                st.sidebar.success("✅ Logged in successfully!")
-                st.rerun()
-
-if not st.session_state.logged_in_family:
-    st.warning("🔒 **Please log in or create a Family Vault in the left sidebar to proceed.**")
-    st.stop()
-
-st.sidebar.markdown("---")
-st.sidebar.success(f"🏡 Active Vault: `{st.session_state.logged_in_family}`")
-if st.sidebar.button("🚪 Logout Vault", use_container_width=True):
-    st.session_state.logged_in_family = None
-    st.session_state.current_raw_pwd = ""
+if st.session_state.show_waste_modal:
+  if time.time() - st.session_state.waste_modal_time > 10:
+    st.session_state.show_waste_modal = False
     st.rerun()
 
-# --- HEADER BAR & VAULT STATUS POPOVER WITH PASSWORD VIEW ---
-col_space, col_lang_btn, col_vault_badge = st.columns([2.2, 0.9, 0.9])
+# ==========================================
+# 6. AUTHENTICATION / NAMESPACE SCREEN
+# ==========================================
+if not st.session_state.authenticated:
+  st.title("🍳 SmartRasoi Cloud")
+  st.markdown(
+      "### Secure, Zero-Cost, Multi-Device Family Inventory Management"
+  )
+  st.markdown("---")
 
-with col_lang_btn:
-    btn_label = "🇮🇳 हिन्दी" if st.session_state.lang == "en" else "🇬🇧 English"
-    if st.button(btn_label, use_container_width=True, key="top_lang_switch"):
-        st.session_state.lang = "hi" if st.session_state.lang == "en" else "en"
-        st.rerun()
+  with st.form("auth_form", clear_on_submit=False):
+    st.subheader("Access Your Family Fridge Namespace")
+    fridge_input = (
+        st.text_input("Fridge ID / Family Name", placeholder="e.g., sharma_kitchen")
+        .strip()
+        .lower()
+    )
+    pin_input = st.text_input("Secure PIN", type="password", placeholder="****")
+    submit_auth = st.form_submit_button("Access Fridge 🚀")
 
-with col_vault_badge:
-    with st.popover(f"🛡️ {st.session_state.logged_in_family}", use_container_width=True):
-        st.markdown("### 🔐 Active Vault Details")
-        st.markdown(f"**Fridge Name:** `{st.session_state.logged_in_family}`")
-        show_pwd = st.checkbox("👁️ Show Vault Password")
-        if show_pwd:
-            st.code(st.session_state.current_raw_pwd if st.session_state.current_raw_pwd else "Password Encrypted", language="text")
+    if submit_auth:
+      if not fridge_input or not pin_input:
+        st.error("Please provide both a Fridge ID and a PIN.")
+      else:
+        hashed = hash_pin(pin_input)
+        if db:
+          doc_ref = db.collection("fridges").document(fridge_input)
+          doc = doc_ref.get()
+          if doc.exists:
+            data = doc.to_dict()
+            if data.get("pin_hash") == hashed:
+              st.session_state.authenticated = True
+              st.session_state.fridge_id = fridge_input
+              st.rerun()
+            else:
+              st.error("Incorrect PIN for this Fridge ID.")
+          else:
+            doc_ref.set({"pin_hash": hashed, "created_at": datetime.now()})
+            st.session_state.authenticated = True
+            st.session_state.fridge_id = fridge_input
+            st.success("New family fridge namespace created successfully!")
+            st.rerun()
         else:
-            st.markdown("**Password:** `••••••••`")
-        st.markdown("---")
-        if st.button("🚪 Logout", use_container_width=True, key="top_modal_logout"):
-            st.session_state.logged_in_family = None
-            st.session_state.current_raw_pwd = ""
-            st.rerun()
+          st.session_state.authenticated = True
+          st.session_state.fridge_id = fridge_input
+          st.rerun()
 
-current_lang = st.session_state.lang
-T = LANG_PACK[current_lang]
+# ==========================================
+# 7. MAIN DASHBOARD (AUTHENTICATED)
+# ==========================================
+else:
+  current_lang = st.session_state.lang
+  T = LANG_PACK[current_lang]
 
-st.markdown(f'<div class="header-bubble"><div class="cartoon-title">{T["title"]}</div><div class="header-sub">{T["subtitle"]}</div></div>', unsafe_allow_html=True)
+  # --- SIDEBAR: CONTROLS, LANGUAGE TOGGLE & SHORTCUT ---
+  with st.sidebar:
+    st.subheader("📌 Fridge Info")
+    st.markdown(f"**Active ID:** `{st.session_state.fridge_id.upper()}`")
+    st.markdown("---")
 
-# --- TABS CONTROL PANEL ---
-tab1, tab2, tab3 = st.tabs([T['tab_sim'], T['tab_voice'], T['tab_alerts']])
-voice_text = ""
-is_currently_recording = False
+    st.subheader("🌐 Language Switch")
+    btn_label = (
+        "Switch to HINDI"
+        if st.session_state.lang == "en"
+        else "Switch to ENGLISH"
+    )
+    if st.button(btn_label, use_container_width=True):
+      st.session_state.lang = "hi" if st.session_state.lang == "en" else "en"
+      st.rerun()
 
-with tab1:
-    st.markdown(f"### {T['input_hdr']}")
-    text_input = st.text_input("Simulation Input", placeholder=T['placeholder'], label_visibility="collapsed").lower()
+    st.markdown("---")
+    st.subheader("📱 Add to Home Screen")
+    st.markdown("Pin the live web app directly to your home screen:")
 
-with tab2:
-    st.markdown(f"### {T['input_hdr']}")
-    st.markdown("🎙️ **Click record to speak your command:**")
-    audio_data_input = st.audio_input("Record Voice Command")
-    
-    if audio_data_input is not None:
-        is_currently_recording = True
-        recognizer = sr.Recognizer()
-        try:
-            with open("temp_audio.wav", "wb") as f:
-                f.write(audio_data_input.getbuffer())
-            with sr.AudioFile("temp_audio.wav") as source:
-                audio_file_record = recognizer.record(source)
-                voice_text = recognizer.recognize_google(audio_file_record).lower()
-                st.toast(f'🗣️ Voice Command: "{voice_text}"', icon="🎙️")
-        except Exception:
-            st.error(T['audio_err'])
+    st.link_button(
+        "📲 Open Live Web App",
+        "https://fridgeinventory.streamlit.app",
+        use_container_width=True,
+    )
 
-with tab3:
-    st.markdown("### 🚨 Live Expiry Warning Center")
+    st.markdown("---")
+    if st.button("Logout / Switch Fridge", use_container_width=True):
+      st.session_state.authenticated = False
+      st.session_state.fridge_id = ""
+      st.session_state.last_processed_hash = ""
+      st.rerun()
 
-apply_custom_ui(is_recording=is_currently_recording)
-final_command = text_input if 'text_input' in locals() and text_input else voice_text
-
-# --- DATABASE PERSISTENCE LOGIC ---
-if final_command:
-    inventory = load_inventory(st.session_state.logged_in_family)
-    today = datetime.now().date()
-
-    if any(w in final_command for w in ["used everything", "cooked everything", "ate everything", "clear fridge"]):
-        save_inventory(st.session_state.logged_in_family, {})
-        st.toast("Storage cleared!")
+  # --- INTERACTIVE WASTE ALERT POPUP MODAL ---
+  if st.session_state.show_waste_modal:
+    c_left, c_close = st.columns([3.2, 0.8])
+    with c_close:
+      if st.button(
+          "❌ CLOSE ALERT",
+          use_container_width=True,
+          key="close_waste_modal_btn",
+      ):
+        st.session_state.show_waste_modal = False
         st.rerun()
-    elif any(w in final_command for w in ["used", "ate", "cooked", "remove", "delete", "threw"]):
-        removed_items = []
+
+    st.markdown(
+        f"""
+        <div class="modal-overlay">
+            <span style="font-size: 26px; font-weight: bold;">🚨 OH NO! / ओहो नहीं!</span><br><br>
+            <span style="color: #60A5FA; font-weight: bold;">English:</span><br>
+            You had to throw away your <b>{st.session_state.waste_modal_items}</b>. Let's try to cook items before their expiry window alerts trigger next time!<br><br>
+            <span style="color: #34D399; font-weight: bold;">हिंदी:</span><br>
+            आपको अपना <b>{st.session_state.waste_modal_items_hi}</b> फेंकना पड़ा। अगली बार खराब होने से पहले ही इनका उपयोग करने का प्रयास करें!
+        </div>
+    """,
+        unsafe_allow_html=True,
+    )
+
+  # --- HEADER & TITLE ---
+  st.markdown(
+      f'<div class="header-bubble"><div'
+      f' class="cartoon-title">{T["title"]}</div><div'
+      f' class="header-sub">{T["subtitle"]}</div></div>',
+      unsafe_allow_html=True,
+  )
+
+  # --- COMMAND INPUT TABS ---
+  st.markdown(f"### {T['input_hdr']}")
+  tab1, tab2 = st.tabs([T["tab_sim"], T["tab_voice"]])
+  voice_text = ""
+
+  with tab1:
+    text_input = st.text_input(
+        T["input_hdr"],
+        placeholder=T["placeholder"],
+        label_visibility="collapsed",
+    ).lower()
+
+  with tab2:
+    uploaded_audio = st.file_uploader(
+        T["tab_voice"], type=["wav"], label_visibility="collapsed"
+    )
+    if uploaded_audio is not None:
+      recognizer = sr.Recognizer()
+      try:
+        with sr.AudioFile(uploaded_audio) as source:
+          audio_data = recognizer.record(source)
+          voice_text = recognizer.recognize_google(audio_data).lower()
+          st.success(f'Transcribed Audio Command: "{voice_text}"')
+      except Exception:
+        st.error(T["audio_err"])
+
+  final_command = text_input if text_input else voice_text
+
+  # --- COMMAND PROCESSING & CLOUD AUTO-SAVE LOGIC ---
+  if final_command and final_command.strip():
+    current_hash = get_md5_hash(final_command.strip())
+
+    if current_hash != st.session_state.last_processed_hash:
+      st.session_state.last_processed_hash = current_hash
+      today = datetime.now().date()
+
+      fridge_doc_ref = (
+          db.collection("fridges")
+          .document(st.session_state.fridge_id)
+          .collection("inventory")
+          if db
+          else None
+      )
+
+      inventory = {}
+      if db:
+        docs = fridge_doc_ref.stream()
+        for doc in docs:
+          inventory[doc.id] = doc.to_dict()
+
+      if any(
+          w in final_command
+          for w in [
+              "used everything",
+              "cooked everything",
+              "ate everything",
+              "clear fridge",
+          ]
+      ):
+        if db:
+          docs = fridge_doc_ref.stream()
+          for doc in docs:
+            doc.reference.delete()
+        st.toast("Cleared storage matrix: Marked all items as consumed!")
+        st.balloons()
+        st.rerun()
+
+      elif any(
+          w in final_command
+          for w in ["threw", "discarded", "thrown away", "dumped"]
+      ):
+        wasted_en, wasted_hi = [], []
         for trigger_word, (days, name_en, name_hi) in EXPIRY_DATABASE.items():
+          if trigger_word in final_command:
+            for doc_id, details in list(inventory.items()):
+              if (
+                  details.get("core_id") == name_en
+                  or doc_id == name_en
+                  or doc_id == name_hi
+              ):
+                if db:
+                  fridge_doc_ref.document(doc_id).delete()
+                wasted_en.append(name_en)
+                wasted_hi.append(name_hi)
+        if wasted_en:
+          st.session_state.waste_modal_items = ", ".join(list(set(wasted_en)))
+          st.session_state.waste_modal_items_hi = ", ".join(
+              list(set(wasted_hi))
+          )
+          st.session_state.waste_modal_time = time.time()
+          st.session_state.show_waste_modal = True
+          st.toast("Food waste parameter recorded.")
+          st.rerun()
+        else:
+          st.warning(
+              "No tracking matches found within active entries to discard."
+          )
+
+      elif any(
+          w in final_command
+          for w in ["used", "ate", "cooked", "remove", "delete"]
+      ):
+        removed = []
+        for trigger_word, (days, name_en, name_hi) in EXPIRY_DATABASE.items():
+          if trigger_word in final_command:
+            for doc_id, details in list(inventory.items()):
+              if (
+                  details.get("core_id") == name_en
+                  or doc_id == name_en
+                  or doc_id == name_hi
+              ):
+                if db:
+                  fridge_doc_ref.document(doc_id).delete()
+                removed.append(name_en if current_lang == "en" else name_hi)
+        if removed:
+          st.toast(f"Removed: {', '.join(set(removed))}")
+          st.balloons()
+          st.rerun()
+
+      elif any(
+          w in final_command
+          for w in ["brought", "bought", "added", "add", "market", "came"]
+      ):
+        added = []
+        for trigger_word, (days, name_en, name_hi) in EXPIRY_DATABASE.items():
+          if trigger_word in final_command:
             target_name = name_en if current_lang == "en" else name_hi
-            if trigger_word in final_command and (name_en in inventory or name_hi in inventory):
-                if name_en in inventory: del inventory[name_en]
-                if name_hi in inventory: del inventory[name_hi]
-                removed_items.append(target_name)
-        if removed_items:
-            save_inventory(st.session_state.logged_in_family, inventory)
-            st.toast(f"Removed: {', '.join(removed_items)}")
-            st.rerun()
-    elif any(w in final_command for w in ["brought", "bought", "added", "add", "market", "came"]):
-        added_items = []
-        for trigger_word, (days, name_en, name_hi) in EXPIRY_DATABASE.items():
-            if trigger_word in final_command:
-                target_name = name_en if current_lang == "en" else name_hi
-                if target_name not in added_items:
-                    expiry_date = today + timedelta(days=days)
-                    inventory[target_name] = {"date_brought": today.strftime("%Y-%m-%d"), "expiry_date": expiry_date.strftime("%Y-%m-%d"), "core_id": name_en}
-                    added_items.append(target_name)
-        if added_items:
-            save_inventory(st.session_state.logged_in_family, inventory)
-            st.toast(f"Logged: {', '.join(added_items)}")
-            st.rerun()
+            expiry_date = today + timedelta(days=days)
+            item_payload = {
+                "date_brought": today.strftime("%Y-%m-%d"),
+                "expiry_date": expiry_date.strftime("%Y-%m-%d"),
+                "core_id": name_en,
+            }
+            if db:
+              fridge_doc_ref.document(target_name).set(item_payload)
+            added.append(target_name)
+        if added:
+          st.toast(f"Logged: {', '.join(set(added))}")
+          st.rerun()
 
-st.markdown("<br>", unsafe_allow_html=True)
-st.markdown(f"### {T['ledger_hdr']}")
+  # --- DASHBOARD & EXPIRY MATRIX DISPLAY ---
+  st.markdown("<br>", unsafe_allow_html=True)
+  st.markdown(f"### {T['ledger_hdr']}")
 
-inventory_data = load_inventory(st.session_state.logged_in_family)
-synchronized_data = {}
-for item, details in list(inventory_data.items()):
-    core_ref = details.get("core_id", "")
-    for trigger_word, (days, name_en, name_hi) in EXPIRY_DATABASE.items():
-        if core_ref == name_en:
-            synchronized_data[name_en if current_lang == "en" else name_hi] = details
-            break
+  inventory_items = []
+  if db:
+    docs = (
+        db.collection("fridges")
+        .document(st.session_state.fridge_id)
+        .collection("inventory")
+        .stream()
+    )
+    for doc in docs:
+      d = doc.to_dict()
+      core_id = d.get("core_id", doc.id)
+      display_name = core_id
 
-if synchronized_data:
+      for trig, (d_val, n_en, n_hi) in EXPIRY_DATABASE.items():
+        if core_id == n_en:
+          display_name = n_en if current_lang == "en" else n_hi
+          break
+
+      inventory_items.append({
+          "item": display_name,
+          "date_brought": d.get("date_brought"),
+          "expiry_date": d.get("expiry_date"),
+      })
+
+  if inventory_items:
     today = datetime.now().date()
     display_rows = []
-    urgent_alerts_list = []
-    
-    for item, details in synchronized_data.items():
-        expiry_dt = datetime.strptime(details['expiry_date'], "%Y-%m-%d").date()
-        days_left = (expiry_dt - today).days
-        if days_left < 0: status_text = T['status_expired'].format(days=abs(days_left))
-        elif days_left == 0: status_text = T['status_today']
-        elif days_left == 1: status_text = T['status_tomorrow']
-        else: status_text = T['status_fresh'].format(days=days_left)
-        
-        row_item = { T['col_item']: item, T['col_logged']: details['date_brought'], T['col_target']: details['expiry_date'], T['col_status']: status_text }
-        display_rows.append(row_item)
-        
-        if days_left <= 1:
-            urgent_alerts_list.append(row_item)
-    
-    st.dataframe(pd.DataFrame(display_rows), use_container_width=True, hide_index=True)
-    
-    with tab3:
-        if urgent_alerts_list:
-            st.warning("⚠️ **Items expiring today or tomorrow!**")
-            st.dataframe(pd.DataFrame(urgent_alerts_list), use_container_width=True, hide_index=True)
-        else:
-            st.success("✅ **All clear! No urgent items.**")
+    for item_info in inventory_items:
+      expiry_dt = datetime.strptime(
+          item_info["expiry_date"], "%Y-%m-%d"
+      ).date()
+      days_left = (expiry_dt - today).days
 
-    urgent_items = [r[T['col_item']] for r in display_rows if any(k in r[T['col_status']] for k in ["EXPIRED", "CRITICAL", "WARNING", "खराब", "आपातकालीन", "चेतावनी"])]
+      if days_left < 0:
+        status_text = T["status_expired"].format(days=abs(days_left))
+      elif days_left == 0:
+        status_text = T["status_today"]
+      elif days_left == 1:
+        status_text = T["status_tomorrow"]
+      else:
+        status_text = T["status_fresh"].format(days=days_left)
+
+      display_rows.append({
+          T["col_item"]: item_info["item"],
+          T["col_logged"]: item_info["date_brought"],
+          T["col_target"]: item_info["expiry_date"],
+          T["col_status"]: status_text,
+      })
+
+    st.dataframe(
+        pd.DataFrame(display_rows), use_container_width=True, hide_index=True
+    )
+
+    urgent_items = [
+        r[T["col_item"]]
+        for r in display_rows
+        if any(
+            k in r[T["col_status"]]
+            for k in [
+                "EXPIRED",
+                "CRITICAL",
+                "WARNING",
+                "खराब",
+                "आपातकालीन",
+                "चेतावनी",
+            ]
+        )
+    ]
     if urgent_items:
-        st.markdown(f'<div class="bubble-alert-note">{T["note_msg"].format(items=", ".join(urgent_items))}</div>', unsafe_allow_html=True)
-else:
-    st.markdown(f'<div class="bubble-empty">{T["empty_msg"]}</div>', unsafe_allow_html=True)
+      st.markdown(
+          f'<div class="bubble-alert-note">{T["note_msg"].format(items=", ".join(urgent_items))}</div>',
+          unsafe_allow_html=True,
+      )
+  else:
+    st.markdown(
+        f'<div class="bubble-empty">{T["empty_msg"]}</div>',
+        unsafe_allow_html=True,
+    )
