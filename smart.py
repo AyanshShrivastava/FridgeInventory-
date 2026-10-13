@@ -22,9 +22,14 @@ cartoon_css = """
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Fredoka+One&family=Lexend:wght@400;500;600&display=swap');
     
-    #MainMenu {visibility: hidden;}
-    footer {visibility: hidden;}
-    [data-testid="stDecoration"] {display: none;}
+    /* KEEP THREE DOTS MENU VISIBLE FOR LIGHT/DARK MODE TOGGLE */
+    #MainMenu {visibility: visible !important;}
+    footer {visibility: hidden !important;}
+    [data-testid="stDecoration"] {display: none !important;}
+    
+    /* HIDE GITHUB LOGO / FORK BADGES */
+    .stAppToolbar {visibility: visible !important;}
+    [data-testid="stHeaderActionElements"] {display: none !important;}
     
     /* FIX BLUE TINT & FOCUS RINGS */
     button:focus, input:focus, select:focus, textarea:focus, [data-baseweb="input"]:focus-within {
