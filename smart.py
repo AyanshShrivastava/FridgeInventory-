@@ -9,11 +9,11 @@ import speech_recognition as sr
 import streamlit as st
 
 # ==========================================
-# 1. PAGE CONFIG & POLISHED CARTOON CSS
+# 1. PAGE CONFIG & PROFESSIONAL CARTOON CSS
 # ==========================================
 st.set_page_config(
-    page_title="FridgeInventory: Voice Kitchen Panel",
-    page_icon="🛒",
+    page_title="FridgeInventory",
+    page_icon="FI",
     layout="centered",
     initial_sidebar_state="expanded",
 )
@@ -31,7 +31,7 @@ cartoon_css = """
     .stAppToolbar {visibility: visible !important;}
     [data-testid="stHeaderActionElements"] {display: none !important;}
     
-    /* FIX BLUE TINT & FOCUS RINGS */
+    /* FOCUS RINGS */
     button:focus, input:focus, select:focus, textarea:focus, [data-baseweb="input"]:focus-within {
         border-color: #EC4899 !important;
         box-shadow: 0 0 0 2px rgba(236, 72, 153, 0.3) !important;
@@ -187,7 +187,7 @@ LANG_PACK = {
         ),
         "input_hdr": "Smart Control Panel",
         "tab_sim": "Simulation Box",
-        "tab_mic": "Live Voice Record 🎙️",
+        "tab_mic": "Live Voice Record",
         "tab_voice": "Upload Audio (.wav)",
         "placeholder": (
             "e.g., 'brought 2 kgs palak, milk and tomatoes' or 'used milk'"
@@ -224,7 +224,7 @@ LANG_PACK = {
         ),
         "input_hdr": "स्मार्ट कंट्रोल पैनल",
         "tab_sim": "सिमुलेशन बॉक्स",
-        "tab_mic": "लाइव वॉइस रिकॉर्ड 🎙️",
+        "tab_mic": "लाइव वॉइस रिकॉर्ड",
         "tab_voice": "ऑडियो अपलोड (.wav)",
         "placeholder": (
             "जैसे, 'brought palak, milk and tomatoes' या 'used milk'"
@@ -281,10 +281,10 @@ if st.session_state.show_waste_modal:
     st.rerun()
 
 # ==========================================
-# 6. SIDEBAR FRIDGE FIREWALL & CONTROLS
+# 6. SIDEBAR FRIDGE ACCESS & CONTROLS
 # ==========================================
 with st.sidebar:
-  st.title("🔐 Fridge Firewall")
+  st.title("Fridge Security")
   st.markdown(
       "<p style='color: #9CA3AF; font-size: 13px; line-height: 1.4;'>A"
       " <b>Fridge</b> is a secure, isolated cloud namespace for your household"
@@ -295,10 +295,10 @@ with st.sidebar:
   st.markdown("---")
 
   if st.session_state.authenticated:
-    st.success(f"🔓 Logged into Fridge:\n**{st.session_state.fridge_id.upper()}**")
+    st.success(f"Logged into Fridge:\n**{st.session_state.fridge_id.upper()}**")
     st.markdown("---")
 
-    st.subheader("🌐 Language Switch")
+    st.subheader("Language Switch")
     btn_label = (
         "Switch to HINDI"
         if st.session_state.lang == "en"
@@ -309,22 +309,22 @@ with st.sidebar:
       st.rerun()
 
     st.markdown("---")
-    st.subheader("📱 Add to Home Screen")
+    st.subheader("Add to Home Screen")
     st.link_button(
-        "📲 Open App Bookmark",
+        "Open App Bookmark",
         "https://fridgeinventory.streamlit.app",
         use_container_width=True,
     )
 
     st.markdown("---")
-    if st.button("🔒 Logout / Lock Fridge", use_container_width=True):
+    if st.button("Logout / Lock Fridge", use_container_width=True):
       st.session_state.authenticated = False
       st.session_state.fridge_id = ""
       st.session_state.last_processed_hash = ""
       st.rerun()
 
   else:
-    fridge_tab1, fridge_tab2 = st.tabs(["🔑 Login Fridge", "✨ Create Fridge"])
+    fridge_tab1, fridge_tab2 = st.tabs(["Login Fridge", "Create Fridge"])
 
     with fridge_tab1:
       st.subheader("Access Active Fridge")
@@ -336,7 +336,7 @@ with st.sidebar:
       login_f_pass = st.text_input(
           "Fridge PIN", type="password", key="login_pass"
       )
-      if st.button("Unlock Fridge 🔓", use_container_width=True):
+      if st.button("Unlock Fridge", use_container_width=True):
         if not login_f_id or not login_f_pass:
           st.error("Please enter both Fridge ID and PIN.")
         else:
@@ -350,9 +350,9 @@ with st.sidebar:
                 st.session_state.fridge_id = login_f_id
                 st.rerun()
               else:
-                st.error("Firewall Rejected: Incorrect Fridge PIN!")
+                st.error("Access Denied: Incorrect Fridge PIN.")
             else:
-              st.error("Fridge not found! Create it in the next tab.")
+              st.error("Fridge not found. Create it in the next tab.")
           else:
             st.session_state.authenticated = True
             st.session_state.fridge_id = login_f_id
@@ -370,7 +370,7 @@ with st.sidebar:
       create_f_pass = st.text_input(
           "Set Master PIN", type="password", key="create_pass"
       )
-      if st.button("Create New Fridge ✨", use_container_width=True):
+      if st.button("Create New Fridge", use_container_width=True):
         if not create_f_id or not create_f_pass:
           st.error("Please provide a Fridge ID and PIN.")
         else:
@@ -378,14 +378,12 @@ with st.sidebar:
           if db:
             doc_ref = db.collection("fridges").document(create_f_id)
             if doc_ref.get().exists:
-              st.error(
-                  "Fridge ID already exists! Choose another name or Login."
-              )
+              st.error("Fridge ID already exists. Choose another name or Login.")
             else:
               doc_ref.set({"pin_hash": hashed, "created_at": datetime.now()})
               st.session_state.authenticated = True
               st.session_state.fridge_id = create_f_id
-              st.success("New secure Fridge created successfully!")
+              st.success("New secure Fridge created successfully.")
               st.rerun()
           else:
             st.session_state.authenticated = True
@@ -396,11 +394,11 @@ with st.sidebar:
 # 7. MAIN DASHBOARD (LOGGED IN STATE)
 # ==========================================
 if not st.session_state.authenticated:
-  st.title("🍳 FridgeInventory Firewall")
+  st.title("FridgeInventory")
   st.markdown(
-      '<div class="bubble-yellow-warning">⚠️ Please log in or create a fridge'
+      '<div class="bubble-yellow-warning">Please log in or create a fridge'
       " using the sidebar tabs on the left to unlock your active kitchen"
-      " inventory panel!</div>",
+      " inventory panel.</div>",
       unsafe_allow_html=True,
   )
 
@@ -412,9 +410,7 @@ else:
     c_left, c_close = st.columns([3.2, 0.8])
     with c_close:
       if st.button(
-          "❌ CLOSE ALERT",
-          use_container_width=True,
-          key="close_waste_modal_btn",
+          "CLOSE ALERT", use_container_width=True, key="close_waste_modal_btn"
       ):
         st.session_state.show_waste_modal = False
         st.rerun()
@@ -422,11 +418,11 @@ else:
     st.markdown(
         f"""
         <div class="modal-overlay">
-            <span style="font-size: 26px; font-weight: bold;">🚨 OH NO! / ओहो नहीं!</span><br><br>
+            <span style="font-size: 24px; font-weight: bold;">NOTICE / सूचना</span><br><br>
             <span style="color: #60A5FA; font-weight: bold;">English:</span><br>
-            You had to throw away your <b>{st.session_state.waste_modal_items}</b>. Let's try to cook items before their expiry window alerts trigger next time!<br><br>
+            You discarded: <b>{st.session_state.waste_modal_items}</b>. Plan ahead to use items before expiry next time.<br><br>
             <span style="color: #34D399; font-weight: bold;">हिंदी:</span><br>
-            आपको अपना <b>{st.session_state.waste_modal_items_hi}</b> फेंकना पड़ा। अगली बार खराब होने से पहले ही इनका उपयोग करने का प्रयास करें!
+            आपने हटाया: <b>{st.session_state.waste_modal_items_hi}</b>। अगली बार समय रहते इसका उपयोग करने का प्रयास करें।
         </div>
     """,
         unsafe_allow_html=True,
@@ -513,7 +509,7 @@ else:
           docs = fridge_doc_ref.stream()
           for doc in docs:
             doc.reference.delete()
-        st.toast("Cleared storage matrix: Marked all items as consumed!")
+        st.toast("Cleared storage matrix: Marked all items as consumed.")
         st.balloons()
         st.rerun()
 
