@@ -9,6 +9,7 @@ import speech_recognition as sr
 from database import EXPIRY_DATABASE
 from gemini import get_ai_expiry_and_names
 from help import render_expiry_helper
+
 # ==========================================
 # 1. PAGE CONFIG & PROFESSIONAL CARTOON CSS
 # ==========================================
@@ -88,18 +89,6 @@ cartoon_css = """
         line-height: 1.5;
         margin-top: 20px;
         text-align: center;
-    }
-    
-    .bubble-alert-note { 
-        background-color: #701A75; 
-        color: #FDF4FF; 
-        padding: 22px; 
-        border-radius: 18px; 
-        border: 3px solid #F472B6; 
-        box-shadow: 0px 6px 0px #4A044E; 
-        font-size: 16px; 
-        line-height: 1.6; 
-        margin-top: 20px;
     }
 
     .modal-overlay {
@@ -201,11 +190,6 @@ LANG_PACK = {
             " control panel above to automatically populate your household"
             " tracking matrix."
         ),
-        "note_msg": (
-            "<b>NOTE:</b> Your <b>{items}</b> will spoil soon. Please plan to"
-            " use your <b>{items}</b> today to optimize household utility before"
-            " complete spoilage."
-        ),
         "status_today": "CRITICAL: EXPIRES TODAY",
         "status_tomorrow": "WARNING: EXPIRING TOMORROW",
         "status_fresh": "Fresh ({days} Days Remaining)",
@@ -236,11 +220,6 @@ LANG_PACK = {
             "<b>सिस्टम स्थिति: खाली</b><br>आपके फ्रिज में अभी कोई सामान नहीं"
             " है। ऊपर दिए गए बॉक्स में सामान की जानकारी टाइप करें या रिकॉर्डिंग"
             " करें ताकि लिस्ट अपने आप बन सके।"
-        ),
-        "note_msg": (
-            "<b>सूचना:</b> आपका <b>{items}</b> जल्द ही खराब होने वाला है। कृपया"
-            " भोजन की बर्बादी रोकने के लिए आज ही <b>{items}</b> का उपयोग करने"
-            " की योजना बनाएं।"
         ),
         "status_today": "आपातकालीन: आज ही खराब हो जाएगा",
         "status_tomorrow": "चेतावनी: कल खराब होने वाला है",
@@ -596,7 +575,7 @@ else:
           st.balloons()
           st.rerun()
 
-      # Brought / Added Grocery Command (Static Matrix + Gemini Fallback)
+      # Brought / Added Grocery Command (Static Matrix + Gemini AI Fallback)
       elif any(
           w in final_command
           for w in ["brought", "bought", "added", "add", "market", "came"]
@@ -616,7 +595,6 @@ else:
             added.append(target_name)
             matched_any = True
 
-        # If not in static database, delegate to gemini.py seamlessly
         if not matched_any:
           words = final_command.split()
           action_words = [
@@ -695,7 +673,6 @@ else:
       ).date()
       days_left = (expiry_dt - today).days
 
-      # Expired items are separated from active table
       if days_left < 0:
         expired_items_list.append(item_info["item"])
       else:
@@ -713,7 +690,6 @@ else:
             T["col_status"]: status_text,
         })
 
-    # Red alert banner for expired items
     if expired_items_list:
       exp_str = ", ".join(expired_items_list)
       exp_banner_msg = (
@@ -733,13 +709,10 @@ else:
           unsafe_allow_html=True,
       )
 
-    # Active table for fresh, today, and tomorrow items
     if active_rows:
       st.dataframe(
           pd.DataFrame(active_rows), use_container_width=True, hide_index=True
       )
-
-      # Render expiration helper & Gemini zero-waste recipe generator for today/tomorrow items
       render_expiry_helper(active_rows, T, current_lang)
     else:
       if not expired_items_list:
