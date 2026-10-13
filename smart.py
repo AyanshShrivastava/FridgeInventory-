@@ -256,12 +256,16 @@ LANG_PACK = {
 }
 
 # ==========================================
-# 5. SESSION STATE INITIALIZATION & GUARDS
+# 5. SESSION STATE INITIALIZATION & REFRESH PERSISTENCE
 # ==========================================
 if "authenticated" not in st.session_state:
-  st.session_state.authenticated = False
-if "fridge_id" not in st.session_state:
-  st.session_state.fridge_id = ""
+  if "fridge" in st.query_params:
+    st.session_state.authenticated = True
+    st.session_state.fridge_id = st.query_params["fridge"]
+  else:
+    st.session_state.authenticated = False
+    st.session_state.fridge_id = ""
+
 if "lang" not in st.session_state:
   st.session_state.lang = "en"
 if "last_processed_hash" not in st.session_state:
@@ -274,6 +278,10 @@ if "waste_modal_items_hi" not in st.session_state:
   st.session_state.waste_modal_items_hi = ""
 if "waste_modal_time" not in st.session_state:
   st.session_state.waste_modal_time = 0.0
+
+# Local fallback inventory dictionary for offline / non-firebase testing
+if "local_inventory" not in st.session_state:
+  st.session_state.local_inventory = {}
 
 if st.session_state.show_waste_modal:
   if time.time() - st.session_state.waste_modal_time > 10:
@@ -321,6 +329,8 @@ with st.sidebar:
       st.session_state.authenticated = False
       st.session_state.fridge_id = ""
       st.session_state.last_processed_hash = ""
+      if "fridge" in st.query_params:
+        del st.query_params["fridge"]
       st.rerun()
 
   else:
@@ -348,6 +358,7 @@ with st.sidebar:
               if doc.to_dict().get("pin_hash") == hashed:
                 st.session_state.authenticated = True
                 st.session_state.fridge_id = login_f_id
+                st.query_params["fridge"] = login_f_id
                 st.rerun()
               else:
                 st.error("Access Denied: Incorrect Fridge PIN.")
@@ -356,6 +367,7 @@ with st.sidebar:
           else:
             st.session_state.authenticated = True
             st.session_state.fridge_id = login_f_id
+            st.query_params["fridge"] = login_f_id
             st.rerun()
 
     with fridge_tab2:
@@ -383,11 +395,13 @@ with st.sidebar:
               doc_ref.set({"pin_hash": hashed, "created_at": datetime.now()})
               st.session_state.authenticated = True
               st.session_state.fridge_id = create_f_id
+              st.query_params["fridge"] = create_f_id
               st.success("New secure Fridge created successfully.")
               st.rerun()
           else:
             st.session_state.authenticated = True
             st.session_state.fridge_id = create_f_id
+            st.query_params["fridge"] = create_f_id
             st.rerun()
 
 # ==========================================
@@ -444,10 +458,11 @@ else:
         T["input_hdr"],
         placeholder=T["placeholder"],
         label_visibility="collapsed",
+        key="cmd_input",
     ).lower()
 
   with tab2:
-    recorded_audio = st.audio_input(T["tab_mic"])
+    recorded_audio = st.audio_input(T["tab_mic"], key="mic_input")
     if recorded_audio is not None:
       recognizer = sr.Recognizer()
       try:
@@ -481,20 +496,75 @@ else:
       st.session_state.last_processed_hash = current_hash
       today = datetime.now().date()
 
-      fridge_doc_ref = (
-          db.collection("fridges")
-          .document(st.session_state.fridge_id)
-          .collection("inventory")
-          if db
-          else None
-      )
+      # Helper for fetching inventory dictionary (supports Firebase or Local Fallback)
+      def fetch_inventory():
+        inv = {}
+        if db:
+          docs = (
+              db.collection("fridges")
+              .document(st.session_state.fridge_id)
+              .collection("inventory")
+              .stream()
+          )
+          for doc in docs:
+            inv[doc.id] = doc.to_dict()
+        else:
+          if st.session_state.fridge_id not in st.session_state.local_inventory:
+            st.session_state.local_inventory[st.session_state.fridge_id] = {}
+          inv = st.session_state.local_inventory[st.session_state.fridge_id]
+        return inv
 
-      inventory = {}
-      if db:
-        docs = fridge_doc_ref.stream()
-        for doc in docs:
-          inventory[doc.id] = doc.to_dict()
+      def save_item(item_key, payload):
+        if db:
+          (
+              db.collection("fridges")
+              .document(st.session_state.fridge_id)
+              .collection("inventory")
+              .document(item_key)
+              .set(payload)
+          )
+        else:
+          if st.session_state.fridge_id not in st.session_state.local_inventory:
+            st.session_state.local_inventory[st.session_state.fridge_id] = {}
+          st.session_state.local_inventory[st.session_state.fridge_id][
+              item_key
+          ] = payload
 
+      def delete_item(item_key):
+        if db:
+          (
+              db.collection("fridges")
+              .document(st.session_state.fridge_id)
+              .collection("inventory")
+              .document(item_key)
+              .delete()
+          )
+        else:
+          if (
+              st.session_state.fridge_id in st.session_state.local_inventory
+              and item_key
+              in st.session_state.local_inventory[st.session_state.fridge_id]
+          ):
+            del st.session_state.local_inventory[st.session_state.fridge_id][
+                item_key
+            ]
+
+      def clear_all_items():
+        if db:
+          docs = (
+              db.collection("fridges")
+              .document(st.session_state.fridge_id)
+              .collection("inventory")
+              .stream()
+          )
+          for doc in docs:
+            doc.reference.delete()
+        else:
+          st.session_state.local_inventory[st.session_state.fridge_id] = {}
+
+      inventory = fetch_inventory()
+
+      # Clear All Command
       if any(
           w in final_command
           for w in [
@@ -505,14 +575,13 @@ else:
               "clear storage",
           ]
       ):
-        if db:
-          docs = fridge_doc_ref.stream()
-          for doc in docs:
-            doc.reference.delete()
+        clear_all_items()
+        st.session_state["cmd_input"] = ""
         st.toast("Cleared storage matrix: Marked all items as consumed.")
         st.balloons()
         st.rerun()
 
+      # Food Waste / Discarded Command
       elif any(
           w in final_command
           for w in ["threw", "discarded", "thrown away", "dumped"]
@@ -526,8 +595,7 @@ else:
                   or doc_id == name_en
                   or doc_id == name_hi
               ):
-                if db:
-                  fridge_doc_ref.document(doc_id).delete()
+                delete_item(doc_id)
                 wasted_en.append(name_en)
                 wasted_hi.append(name_hi)
         if wasted_en:
@@ -537,6 +605,7 @@ else:
           )
           st.session_state.waste_modal_time = time.time()
           st.session_state.show_waste_modal = True
+          st.session_state["cmd_input"] = ""
           st.toast("Food waste parameter recorded.")
           st.rerun()
         else:
@@ -544,6 +613,7 @@ else:
               "No tracking matches found within active entries to discard."
           )
 
+      # Consumed / Used Command
       elif any(
           w in final_command
           for w in ["used", "ate", "cooked", "remove", "delete"]
@@ -557,14 +627,15 @@ else:
                   or doc_id == name_en
                   or doc_id == name_hi
               ):
-                if db:
-                  fridge_doc_ref.document(doc_id).delete()
+                delete_item(doc_id)
                 removed.append(name_en if current_lang == "en" else name_hi)
         if removed:
+          st.session_state["cmd_input"] = ""
           st.toast(f"Removed: {', '.join(set(removed))}")
           st.balloons()
           st.rerun()
 
+      # Brought / Added Grocery Command
       elif any(
           w in final_command
           for w in ["brought", "bought", "added", "add", "market", "came"]
@@ -579,17 +650,18 @@ else:
                 "expiry_date": expiry_date.strftime("%Y-%m-%d"),
                 "core_id": name_en,
             }
-            if db:
-              fridge_doc_ref.document(target_name).set(item_payload)
+            save_item(target_name, item_payload)
             added.append(target_name)
         if added:
+          st.session_state["cmd_input"] = ""
           st.toast(f"Logged: {', '.join(set(added))}")
           st.rerun()
 
   st.markdown("<br>", unsafe_allow_html=True)
   st.markdown(f"### {T['ledger_hdr']}")
 
-  inventory_items = []
+  # Fetch active inventory for display
+  display_inventory = {}
   if db:
     docs = (
         db.collection("fridges")
@@ -598,20 +670,28 @@ else:
         .stream()
     )
     for doc in docs:
-      d = doc.to_dict()
-      core_id = d.get("core_id", doc.id)
-      display_name = core_id
+      display_inventory[doc.id] = doc.to_dict()
+  else:
+    if st.session_state.fridge_id in st.session_state.local_inventory:
+      display_inventory = st.session_state.local_inventory[
+          st.session_state.fridge_id
+      ]
 
-      for trig, (d_val, n_en, n_hi) in EXPIRY_DATABASE.items():
-        if core_id == n_en:
-          display_name = n_en if current_lang == "en" else n_hi
-          break
+  inventory_items = []
+  for doc_id, d in display_inventory.items():
+    core_id = d.get("core_id", doc_id)
+    display_name = core_id
 
-      inventory_items.append({
-          "item": display_name,
-          "date_brought": d.get("date_brought"),
-          "expiry_date": d.get("expiry_date"),
-      })
+    for trig, (d_val, n_en, n_hi) in EXPIRY_DATABASE.items():
+      if core_id == n_en:
+        display_name = n_en if current_lang == "en" else n_hi
+        break
+
+    inventory_items.append({
+        "item": display_name,
+        "date_brought": d.get("date_brought"),
+        "expiry_date": d.get("expiry_date"),
+    })
 
   if inventory_items:
     today = datetime.now().date()
