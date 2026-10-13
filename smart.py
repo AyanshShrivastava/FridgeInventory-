@@ -1,6 +1,7 @@
-import hashlib
-import time
 from datetime import datetime, timedelta
+import hashlib
+import json
+import time
 import pandas as pd
 import streamlit as st
 import firebase_admin
@@ -130,7 +131,11 @@ def init_firebase():
   try:
     if not firebase_admin._apps:
       if "firebase" in st.secrets:
-        cred_dict = {k: v for k, v in st.secrets["firebase"].items()}
+        fb_secret = st.secrets["firebase"]
+        if isinstance(fb_secret, str):
+          cred_dict = json.loads(fb_secret)
+        else:
+          cred_dict = {k: v for k, v in fb_secret.items()}
         cred = credentials.Certificate(cred_dict)
         firebase_admin.initialize_app(cred)
       else:
