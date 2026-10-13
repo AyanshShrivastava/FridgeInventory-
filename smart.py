@@ -7,7 +7,6 @@ import pandas as pd
 import streamlit as st
 import firebase_admin
 from firebase_admin import credentials, firestore
-import speech_recognition as sr
 import google.generativeai as genai
 from database import EXPIRY_DATABASE
 
@@ -83,7 +82,6 @@ def get_ai_expiry_and_names(item_query):
     response = model.generate_content(prompt)
     text = response.text.strip()
 
-    # Robust JSON extraction
     if "```json" in text:
       text = text.split("```json")[1].split("```")[0].strip()
     elif "```" in text:
@@ -97,7 +95,6 @@ def get_ai_expiry_and_names(item_query):
     data = json.loads(text)
     return int(data.get("days", -1)), data.get("en", ""), data.get("hi", "")
   except Exception as e:
-    # Safe fallback default for recognized packaged goods if an unexpected connection hiccup occurs
     return 30, item_query.title(), item_query.title()
 
 
@@ -219,7 +216,7 @@ def render_expiry_helper(active_rows, T, current_lang):
 
 
 # ==========================================
-# 4. PROFESSIONAL CARTOON CSS & AUDIO GLOW STYLING
+# 4. PROFESSIONAL CARTOON CSS & BLUE GLOW MIC STYLING
 # ==========================================
 cartoon_css = """
     <style>
@@ -234,23 +231,6 @@ cartoon_css = """
     button:focus, input:focus, select:focus, textarea:focus, [data-baseweb="input"]:focus-within {
         border-color: #EC4899 !important;
         box-shadow: 0 0 0 2px rgba(236, 72, 153, 0.3) !important;
-    }
-
-    /* Vibrant Blue Glowing Focus State for Live Microphone Audio Recording */
-    [data-testid="stAudioInput"], 
-    [data-testid="stAudioInput"] > div, 
-    div[data-baseweb="file-uploader"] {
-        border: 3px solid #3B82F6 !important;
-        border-radius: 16px !important;
-        background: linear-gradient(135deg, rgba(30, 58, 138, 0.4) 0%, rgba(15, 23, 42, 0.8) 100%) !important;
-        box-shadow: 0px 4px 15px rgba(59, 130, 246, 0.4) !important;
-        transition: all 0.2s ease-in-out !important;
-    }
-
-    [data-testid="stAudioInput"]:hover, 
-    [data-testid="stAudioInput"]:focus-within {
-        border-color: #60A5FA !important;
-        box-shadow: 0px 0px 20px rgba(96, 165, 250, 0.7) !important;
     }
     
     [data-testid="stSidebar"] {
@@ -454,8 +434,6 @@ LANG_PACK = {
 # ==========================================
 if st.session_state.get("clear_next", False):
   st.session_state["cmd_input"] = ""
-  if "mic_input" in st.session_state:
-    del st.session_state["mic_input"]
   st.session_state["clear_next"] = False
 
 if st.session_state.show_waste_modal:
@@ -494,7 +472,6 @@ with st.sidebar:
     st.markdown("---")
     st.subheader("📱 Add to Home Screen")
 
-    # Fully session-preserving bookmark link passing active fridge ID
     bookmark_url = f"https://fridgeinventory.streamlit.app?fridge={st.session_state.fridge_id}"
     st.link_button(
         "Open Direct Fridge Link", bookmark_url, use_container_width=True
@@ -643,8 +620,20 @@ else:
     ).lower()
 
   with tab2:
-    recorded_audio = st.audio_input(T["tab_mic"], key="mic_input")
+    st.markdown("""
+            <div style="background: linear-gradient(135deg, rgba(30, 58, 138, 0.5) 0%, rgba(15, 23, 42, 0.9) 100%); border: 3px solid #3B82F6; box-shadow: 0px 0px 20px rgba(59, 130, 246, 0.6); padding: 20px; border-radius: 18px; text-align: center;">
+                <p style="color: #93C5FD; font-weight: 600; font-size: 16px; margin-bottom: 12px;">🎙️ Custom Glowing Blue Voice Recording Active</p>
+                <p style="color: #E2E8F0; font-size: 13px;">Use the simulation box or audio upload for quick testing if browser permissions restrict mic recording.</p>
+            </div>
+        """,
+        unsafe_allow_html=True,
+    )
+    recorded_audio = st.audio_input(
+        "Record kitchen command", label_visibility="collapsed"
+    )
     if recorded_audio is not None:
+      import speech_recognition as sr
+
       recognizer = sr.Recognizer()
       try:
         with sr.AudioFile(recorded_audio) as source:
@@ -659,6 +648,8 @@ else:
         T["tab_voice"], type=["wav"], label_visibility="collapsed"
     )
     if uploaded_audio is not None:
+      import speech_recognition as sr
+
       recognizer = sr.Recognizer()
       try:
         with sr.AudioFile(uploaded_audio) as source:
@@ -812,10 +803,8 @@ else:
             matched_any = True
 
         if not matched_any:
-          # Pass full command context to Gemini 1.5 Pro to handle typos like 'horlics' perfectly
           ai_days, ai_en, ai_hi = get_ai_expiry_and_names(final_command)
 
-          # Validate if Gemini identified a real food item (ai_days != -1)
           if ai_days == -1:
             st.error(
                 "❌ **Validation Error:** The item you spoke is not a food"
