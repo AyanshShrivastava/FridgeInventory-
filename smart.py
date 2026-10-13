@@ -24,16 +24,12 @@ cartoon_css = """
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Fredoka+One&family=Lexend:wght@400;500;600&display=swap');
     
-    /* KEEP THREE DOTS MENU VISIBLE FOR LIGHT/DARK MODE TOGGLE */
     #MainMenu {visibility: visible !important;}
     footer {visibility: hidden !important;}
     [data-testid="stDecoration"] {display: none !important;}
-    
-    /* HIDE GITHUB LOGO / FORK BADGES */
     .stAppToolbar {visibility: visible !important;}
     [data-testid="stHeaderActionElements"] {display: none !important;}
     
-    /* FOCUS RINGS */
     button:focus, input:focus, select:focus, textarea:focus, [data-baseweb="input"]:focus-within {
         border-color: #EC4899 !important;
         box-shadow: 0 0 0 2px rgba(236, 72, 153, 0.3) !important;
@@ -46,7 +42,6 @@ cartoon_css = """
     
     .stApp { background-color: #0B0E14; font-family: 'Lexend', sans-serif; color: #F3F4F6; }
     
-    /* Cartoon Title Styling */
     .cartoon-title { 
         font-family: 'Fredoka One', cursive; 
         font-size: 32px; 
@@ -55,7 +50,6 @@ cartoon_css = """
         margin: 0; 
     }
     
-    /* Header Bubble Container */
     .header-bubble { 
         background: linear-gradient(135deg, #1E2638 0%, #111827 100%); 
         padding: 24px; 
@@ -72,7 +66,6 @@ cartoon_css = """
         margin-top: 6px; 
     }
     
-    /* Empty State Bubble */
     .bubble-empty { 
         background-color: #0284C7; 
         color: #FFFFFF; 
@@ -84,7 +77,6 @@ cartoon_css = """
         line-height: 1.6; 
     }
     
-    /* Yellow Notification Bubble with Shadow */
     .bubble-yellow-warning {
         background-color: #FEF08A;
         color: #713F12;
@@ -99,7 +91,6 @@ cartoon_css = """
         text-align: center;
     }
     
-    /* Critical Spoilage Alert Bubble */
     .bubble-alert-note { 
         background-color: #701A75; 
         color: #FDF4FF; 
@@ -112,7 +103,6 @@ cartoon_css = """
         margin-top: 20px;
     }
 
-    /* Food Waste Modal Overlay Bubble */
     .modal-overlay {
         background: linear-gradient(135deg, #451A03 0%, #7C2D12 100%);
         border: 4px solid #F87171;
@@ -123,7 +113,6 @@ cartoon_css = """
         color: #FEF2F2;
     }
     
-    /* Playful Cartoon Buttons */
     div.stButton > button:first-child { 
         font-family: 'Fredoka One', cursive !important; 
         background-color: #EC4899 !important; 
@@ -213,7 +202,6 @@ LANG_PACK = {
             " use your <b>{items}</b> today to optimize household utility before"
             " complete spoilage."
         ),
-        "status_expired": "EXPIRED ({days} Days Ago) -> Discard!",
         "status_today": "CRITICAL: EXPIRES TODAY",
         "status_tomorrow": "WARNING: EXPIRING TOMORROW",
         "status_fresh": "Fresh ({days} Days Remaining)",
@@ -250,7 +238,6 @@ LANG_PACK = {
             " भोजन की बर्बादी रोकने के लिए आज ही <b>{items}</b> का उपयोग करने"
             " की योजना बनाएं।"
         ),
-        "status_expired": "खराब हो चुका है ({days} दिन पहले) -> फेंक दें!",
         "status_today": "आपातकालीन: आज ही खराब हो जाएगा",
         "status_tomorrow": "चेतावनी: कल खराब होने वाला है",
         "status_fresh": "बिल्कुल ताजा है ({days} दिन बचे हैं)",
@@ -258,7 +245,7 @@ LANG_PACK = {
 }
 
 # ==========================================
-# 5. SESSION STATE INITIALIZATION & REFRESH PERSISTENCE
+# 5. SESSION STATE INITIALIZATION
 # ==========================================
 if "authenticated" not in st.session_state:
   if "fridge" in st.query_params:
@@ -730,35 +717,67 @@ else:
 
   if inventory_items:
     today = datetime.now().date()
-    display_rows = []
+    active_rows = []
+    expired_items_list = []
+
     for item_info in inventory_items:
       expiry_dt = datetime.strptime(
           item_info["expiry_date"], "%Y-%m-%d"
       ).date()
       days_left = (expiry_dt - today).days
 
+      # Expired items are separated from active table
       if days_left < 0:
-        status_text = T["status_expired"].format(days=abs(days_left))
-      elif days_left == 0:
-        status_text = T["status_today"]
-      elif days_left == 1:
-        status_text = T["status_tomorrow"]
+        expired_items_list.append(item_info["item"])
       else:
-        status_text = T["status_fresh"].format(days=days_left)
+        if days_left == 0:
+          status_text = T["status_today"]
+        elif days_left == 1:
+          status_text = T["status_tomorrow"]
+        else:
+          status_text = T["status_fresh"].format(days=days_left)
 
-      display_rows.append({
-          T["col_item"]: item_info["item"],
-          T["col_logged"]: item_info["date_brought"],
-          T["col_target"]: item_info["expiry_date"],
-          T["col_status"]: status_text,
-      })
+        active_rows.append({
+            T["col_item"]: item_info["item"],
+            T["col_logged"]: item_info["date_brought"],
+            T["col_target"]: item_info["expiry_date"],
+            T["col_status"]: status_text,
+        })
 
-    st.dataframe(
-        pd.DataFrame(display_rows), use_container_width=True, hide_index=True
-    )
+    # Red alert banner for expired items
+    if expired_items_list:
+      exp_str = ", ".join(expired_items_list)
+      exp_banner_msg = (
+          f"<b>Oh no! Expired Items Detected:</b> <b>{exp_str}</b> have"
+          " expired and been removed from active storage. Please discard"
+          " them safely."
+          if current_lang == "en"
+          else f"<b>अरे नहीं! सामान खराब हो गया है:</b> <b>{exp_str}</b> की"
+          " समय सीमा समाप्त हो गई है और इसे एक्टिव स्टोरेज से हटा दिया गया है।"
+      )
+      st.markdown(
+          f'<div'
+          ' style="background-color: #7F1D1D; color: #FEE2E2; padding: 20px;'
+          ' border-radius: 18px; border: 3px solid #EF4444; box-shadow: 0px'
+          ' 6px 0px #991B1B; font-size: 16px; margin-bottom: 20px;"'
+          f'>{exp_banner_msg}</div>',
+          unsafe_allow_html=True,
+      )
 
-    # Render expiration helper via help.py module
-    render_expiry_helper(display_rows, T)
+    # Active table for fresh, today, and tomorrow items
+    if active_rows:
+      st.dataframe(
+          pd.DataFrame(active_rows), use_container_width=True, hide_index=True
+      )
+
+      # Render expiration helper & Gemini zero-waste recipe generator for today/tomorrow items
+      render_expiry_helper(active_rows, T, current_lang)
+    else:
+      if not expired_items_list:
+        st.markdown(
+            f'<div class="bubble-empty">{T["empty_msg"]}</div>',
+            unsafe_allow_html=True,
+        )
   else:
     st.markdown(
         f'<div class="bubble-empty">{T["empty_msg"]}</div>',

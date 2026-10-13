@@ -1,9 +1,12 @@
 import google.generativeai as genai
 import streamlit as st
 
-# Configure Gemini securely via Streamlit secrets
-if "GEMINI_API_KEY" in st.secrets:
-  genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
+# Safely configure Gemini only if the secret exists
+try:
+  if "GEMINI_API_KEY" in st.secrets:
+    genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
+except Exception:
+  pass
 
 
 def get_ai_expiry_and_names(raw_item: str):
@@ -12,6 +15,9 @@ def get_ai_expiry_and_names(raw_item: str):
   in days, clean English name, and Hindi translation.
   """
   try:
+    if "GEMINI_API_KEY" not in st.secrets:
+      return 7, raw_item.lower(), raw_item
+
     model = genai.GenerativeModel("gemini-2.5-flash")
     prompt = (
         f"A user added an unlisted grocery item '{raw_item}' to their kitchen"
@@ -32,5 +38,5 @@ def get_ai_expiry_and_names(raw_item: str):
   except Exception:
     pass
 
-  # Safe fallback if API quota or connection fails
+  # Safe default fallback if API key is missing or call fails
   return 7, raw_item.lower(), raw_item
