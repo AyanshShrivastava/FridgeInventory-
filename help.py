@@ -1,12 +1,17 @@
-import google.generativeai as genai
 import streamlit as st
+
+try:
+  import google.generativeai as genai
+
+  GEMINI_AVAILABLE = True
+except ImportError:
+  GEMINI_AVAILABLE = False
 
 
 def render_expiry_helper(display_rows, T, current_lang):
-  """Checks active dashboard items for critical or tomorrow-expiring items,
+  """Checks active dashboard items and renders the zero-waste recipe generator
 
-  displays the warning banner, and lets the user generate an immediate
-  Gemini zero-waste recipe.
+  safely.
   """
   urgent_items = [
       r[T["col_item"]]
@@ -19,7 +24,6 @@ def render_expiry_helper(display_rows, T, current_lang):
   if urgent_items:
     items_str = ", ".join(urgent_items)
 
-    # Render the warning/alert bubble
     st.markdown(
         f'<div class="bubble-alert-note">{T["note_msg"].format(items=items_str)}</div>',
         unsafe_allow_html=True,
@@ -35,10 +39,18 @@ def render_expiry_helper(display_rows, T, current_lang):
     recipe_btn_key = f"recipe_btn_{hash(items_str)}"
 
     if st.button(btn_label, key=recipe_btn_key, use_container_width=True):
+      if not GEMINI_AVAILABLE:
+        err_msg = (
+            "Gemini library is not installed in this environment."
+            if current_lang == "en"
+            else "जेमिनी लाइब्रेरी इस वातावरण में इंस्टॉल नहीं है।"
+        )
+        st.error(err_msg)
+        return
+
       if "GEMINI_API_KEY" not in st.secrets:
         err_msg = (
-            "Gemini API key missing in Streamlit secrets. Add it to enable"
-            " recipes."
+            "Gemini API key missing in Streamlit secrets."
             if current_lang == "en"
             else "स्ट्रीमलाइट सीक्रेट्स में जेमिनी एपीआई कुंजी गायब है।"
         )

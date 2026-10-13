@@ -1,21 +1,27 @@
-import google.generativeai as genai
-import streamlit as st
+  import streamlit as st
 
-# Safely configure Gemini only if the secret exists
+# Safe import so Streamlit Cloud never crashes with ModuleNotFoundError
 try:
+  import google.generativeai as genai
+
+  GEMINI_AVAILABLE = True
   if "GEMINI_API_KEY" in st.secrets:
     genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
-except Exception:
-  pass
+except ImportError:
+  GEMINI_AVAILABLE = False
 
 
 def get_ai_expiry_and_names(raw_item: str):
-  """Quietly queries Gemini for unlisted grocery items to return shelf-life
+  """Quietly queries Gemini for unlisted items, with a bulletproof fallback if
 
-  in days, clean English name, and Hindi translation.
+  the module or API key is missing.
   """
   try:
-    if "GEMINI_API_KEY" not in st.secrets:
+    if (
+        not GEMINI_AVAILABLE
+        or "GEMINI_API_KEY" not in st.secrets
+        or not st.secrets["GEMINI_API_KEY"].strip()
+    ):
       return 7, raw_item.lower(), raw_item
 
     model = genai.GenerativeModel("gemini-2.5-flash")
@@ -38,5 +44,4 @@ def get_ai_expiry_and_names(raw_item: str):
   except Exception:
     pass
 
-  # Safe default fallback if API key is missing or call fails
   return 7, raw_item.lower(), raw_item
