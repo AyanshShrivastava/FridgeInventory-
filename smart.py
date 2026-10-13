@@ -233,7 +233,7 @@ LANG_PACK = {
 }
 
 # ==========================================
-# 5. SESSION STATE INITIALIZATION
+# 5. SESSION STATE INITIALIZATION & RESET
 # ==========================================
 if "authenticated" not in st.session_state:
   if "fridge" in st.query_params:
@@ -255,6 +255,13 @@ if "waste_modal_items_hi" not in st.session_state:
   st.session_state.waste_modal_items_hi = ""
 if "waste_modal_time" not in st.session_state:
   st.session_state.waste_modal_time = 0.0
+
+# Deferred input clearing mechanism to prevent StreamlitWidgetAlreadyInstantiatedError
+if st.session_state.get("clear_next", False):
+  st.session_state["cmd_input"] = ""
+  if "mic_input" in st.session_state:
+    del st.session_state["mic_input"]
+  st.session_state["clear_next"] = False
 
 if st.session_state.show_waste_modal:
   if time.time() - st.session_state.waste_modal_time > 10:
@@ -325,7 +332,7 @@ with st.sidebar:
         else:
           hashed = hash_pin(login_f_pass)
           if db:
-            doc_ref = db.collection("fridges").document(login_f_id)
+            doc_ref = db.collection("vault").document(login_f_id)
             doc = doc_ref.get()
             if doc.exists:
               if doc.to_dict().get("pin_hash") == hashed:
@@ -358,7 +365,7 @@ with st.sidebar:
         else:
           hashed = hash_pin(create_f_pass)
           if db:
-            doc_ref = db.collection("fridges").document(create_f_id)
+            doc_ref = db.collection("vault").document(create_f_id)
             if doc_ref.get().exists:
               st.error("Fridge ID already exists. Choose another name or Login.")
             else:
@@ -467,7 +474,7 @@ else:
         inv = {}
         if db:
           docs = (
-              db.collection("fridges")
+              db.collection("vault")
               .document(st.session_state.fridge_id)
               .collection("inventory")
               .stream()
@@ -479,7 +486,7 @@ else:
       def save_item(item_key, payload):
         if db:
           (
-              db.collection("fridges")
+              db.collection("vault")
               .document(st.session_state.fridge_id)
               .collection("inventory")
               .document(item_key)
@@ -489,7 +496,7 @@ else:
       def delete_item(item_key):
         if db:
           (
-              db.collection("fridges")
+              db.collection("vault")
               .document(st.session_state.fridge_id)
               .collection("inventory")
               .document(item_key)
@@ -499,7 +506,7 @@ else:
       def clear_all_items():
         if db:
           docs = (
-              db.collection("fridges")
+              db.collection("vault")
               .document(st.session_state.fridge_id)
               .collection("inventory")
               .stream()
@@ -521,7 +528,7 @@ else:
           ]
       ):
         clear_all_items()
-        st.session_state["cmd_input"] = ""
+        st.session_state.clear_next = True
         st.toast("Cleared storage matrix: Marked all items as consumed.")
         st.balloons()
         st.rerun()
@@ -550,7 +557,7 @@ else:
           )
           st.session_state.waste_modal_time = time.time()
           st.session_state.show_waste_modal = True
-          st.session_state["cmd_input"] = ""
+          st.session_state.clear_next = True
           st.toast("Food waste parameter recorded.")
           st.rerun()
         else:
@@ -575,7 +582,7 @@ else:
                 delete_item(doc_id)
                 removed.append(name_en if current_lang == "en" else name_hi)
         if removed:
-          st.session_state["cmd_input"] = ""
+          st.session_state.clear_next = True
           st.toast(f"Removed: {', '.join(set(removed))}")
           st.balloons()
           st.rerun()
@@ -633,7 +640,7 @@ else:
             added.append(target_name)
 
         if added:
-          st.session_state["cmd_input"] = ""
+          st.session_state.clear_next = True
           st.toast(f"Logged: {', '.join(set(added))}")
           st.rerun()
 
@@ -643,7 +650,7 @@ else:
   display_inventory = {}
   if db:
     docs = (
-        db.collection("fridges")
+        db.collection("vault")
         .document(st.session_state.fridge_id)
         .collection("inventory")
         .stream()
