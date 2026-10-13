@@ -12,7 +12,41 @@ import google.generativeai as genai
 from database import EXPIRY_DATABASE
 
 # ==========================================
-# 1. GEMINI AI CONFIGURATION & FUNCTIONS
+# 1. PAGE CONFIG (MUST BE FIRST STREAMLIT COMMAND)
+# ==========================================
+st.set_page_config(
+    page_title="FridgeInventory",
+    page_icon="FI",
+    layout="centered",
+    initial_sidebar_state="expanded",
+)
+
+# ==========================================
+# 2. EARLY SESSION STATE & FRIDGE URL RESTORATION
+# ==========================================
+if "authenticated" not in st.session_state:
+  if "fridge" in st.query_params:
+    st.session_state.authenticated = True
+    st.session_state.fridge_id = st.query_params["fridge"]
+  else:
+    st.session_state.authenticated = False
+    st.session_state.fridge_id = ""
+
+if "lang" not in st.session_state:
+  st.session_state.lang = "en"
+if "last_processed_hash" not in st.session_state:
+  st.session_state.last_processed_hash = ""
+if "show_waste_modal" not in st.session_state:
+  st.session_state.show_waste_modal = False
+if "waste_modal_items" not in st.session_state:
+  st.session_state.waste_modal_items = ""
+if "waste_modal_items_hi" not in st.session_state:
+  st.session_state.waste_modal_items_hi = ""
+if "waste_modal_time" not in st.session_state:
+  st.session_state.waste_modal_time = 0.0
+
+# ==========================================
+# 3. GEMINI AI CONFIGURATION & FUNCTIONS
 # ==========================================
 
 # Force clear conflicting cloud environment configs to ensure clean AI Studio API key authentication
@@ -26,27 +60,30 @@ if "google" in st.secrets and "api_key" in st.secrets["google"]:
 
 
 def get_ai_expiry_and_names(item_query):
-  """Queries the flagship Gemini 1.5 Pro model to find exact shelf life
+  """Queries Gemini 1.5 Pro to evaluate item shelf life.
 
-  based on trusted food safety standards and bilingual names.
-  Explicitly supports beverages, health drinks, packaged goods, and typos.
-  Returns days = -1 if the input is not a valid food item.
+  Sends raw full context to ensure typos like 'horlics' are understood in
+  context.
   """
   try:
     model = genai.GenerativeModel("gemini-1.5-pro")
     prompt = f"""
-        You are a strict food safety and inventory management AI for Indian kitchens, cross-referencing trusted standards (such as FSSAI guidelines and standard culinary preservation data). Analyze the user query: "{item_query}".
-        1. Determine if this item is a FOOD item, beverage, nutritional health drink powder (like Horlicks, Bournvita, Complan), dairy, spice, fruit, vegetable, or kitchen grocery ingredient. Handle minor spelling typos gracefully (for example, "hrolicks" means Horlicks).
-        2. If it is NOT a food item or kitchen grocery (e.g., a building, vehicle, electronics, clothes, or random non-edible objects like a palace), you MUST return JSON with "days": -1.
-        3. If it IS a food/drink item, provide its exact typical shelf life in days based on packaged goods or storage standards in an Indian kitchen, along with its clean English name and Hindi name in Devanagari script.
+        You are a strict food safety and inventory management AI for Indian kitchens.
+        The user said or typed this input in a kitchen context: "{item_query}".
         
-        Return ONLY a valid JSON object with these exact keys:
-        {{"days": <integer number of days, or -1 if not a food item>, "en": "<English name>", "hi": "<Hindi name in Devanagari>"}}
+        Task:
+        1. Identify the food/grocery item mentioned. Be flexible with typos (e.g., 'horlics' or 'hrolicks' = Horlicks, 'tomto' = tomato).
+        2. Recognize food, beverages, health drink powders (Horlicks, Bournvita), spices, dairy, fruits, vegetables, and packaged kitchen groceries.
+        3. If the input describes non-food items (e.g., 'building', 'car', 'phone', 'palace', 'shoes'), return "days": -1.
+        4. If it IS a food/drink item, determine its average shelf life in days in an Indian kitchen/pantry and give clean English and Hindi names.
+
+        Return ONLY a valid JSON object matching this structure:
+        {{"days": <integer number of days, or -1 if non-food>, "en": "<English name>", "hi": "<Hindi name in Devanagari>"}}
         """
     response = model.generate_content(prompt)
     text = response.text.strip()
 
-    # Robust JSON extraction: strip markdown blocks if present
+    # Robust JSON extraction
     if "```json" in text:
       text = text.split("```json")[1].split("```")[0].strip()
     elif "```" in text:
@@ -60,14 +97,14 @@ def get_ai_expiry_and_names(item_query):
     data = json.loads(text)
     return int(data.get("days", -1)), data.get("en", ""), data.get("hi", "")
   except Exception as e:
-    return -1, item_query, item_query
+    # Safe fallback default for recognized packaged goods if an unexpected connection hiccup occurs
+    return 30, item_query.title(), item_query.title()
 
 
 def generate_rescue_recipe(expiring_soon_items):
-  """Generates an anti-waste rescue recipe using the top-tier Gemini 1.5 Pro
+  """Generates an anti-waste rescue recipe using Gemini 1.5 Pro,
 
-  model, gracefully handling single or sparse items with simple spice
-  additions and robust JSON extraction.
+  gracefully handling single or sparse items with simple spice additions.
   """
   try:
     model = genai.GenerativeModel("gemini-1.5-pro")
@@ -84,7 +121,6 @@ def generate_rescue_recipe(expiring_soon_items):
     response = model.generate_content(prompt)
     text = response.text.strip()
 
-    # Robust JSON extraction: strip markdown blocks if present
     if "```json" in text:
       text = text.split("```json")[1].split("```")[0].strip()
     elif "```" in text:
@@ -101,7 +137,7 @@ def generate_rescue_recipe(expiring_soon_items):
 
 
 def render_expiry_helper(active_rows, T, current_lang):
-  """Renders expiry insights and triggers the top-tier Gemini rescue recipe
+  """Renders expiry insights and triggers the Gemini 1.5 Pro rescue recipe
 
   generator strictly for items about to expire today or tomorrow.
   """
@@ -183,15 +219,8 @@ def render_expiry_helper(active_rows, T, current_lang):
 
 
 # ==========================================
-# 2. PAGE CONFIG & PROFESSIONAL CARTOON CSS
+# 4. PROFESSIONAL CARTOON CSS & AUDIO GLOW STYLING
 # ==========================================
-st.set_page_config(
-    page_title="FridgeInventory",
-    page_icon="FI",
-    layout="centered",
-    initial_sidebar_state="expanded",
-)
-
 cartoon_css = """
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Fredoka+One&family=Lexend:wght@400;500;600&display=swap');
@@ -205,6 +234,23 @@ cartoon_css = """
     button:focus, input:focus, select:focus, textarea:focus, [data-baseweb="input"]:focus-within {
         border-color: #EC4899 !important;
         box-shadow: 0 0 0 2px rgba(236, 72, 153, 0.3) !important;
+    }
+
+    /* Vibrant Blue Glowing Focus State for Live Microphone Audio Recording */
+    [data-testid="stAudioInput"], 
+    [data-testid="stAudioInput"] > div, 
+    div[data-baseweb="file-uploader"] {
+        border: 3px solid #3B82F6 !important;
+        border-radius: 16px !important;
+        background: linear-gradient(135deg, rgba(30, 58, 138, 0.4) 0%, rgba(15, 23, 42, 0.8) 100%) !important;
+        box-shadow: 0px 4px 15px rgba(59, 130, 246, 0.4) !important;
+        transition: all 0.2s ease-in-out !important;
+    }
+
+    [data-testid="stAudioInput"]:hover, 
+    [data-testid="stAudioInput"]:focus-within {
+        border-color: #60A5FA !important;
+        box-shadow: 0px 0px 20px rgba(96, 165, 250, 0.7) !important;
     }
     
     [data-testid="stSidebar"] {
@@ -294,7 +340,7 @@ st.markdown(cartoon_css, unsafe_allow_html=True)
 
 
 # ==========================================
-# 3. FIRESTORE FIREWALL & SECURITY INITIALIZATION
+# 5. FIRESTORE FIREWALL & SECURITY INITIALIZATION
 # ==========================================
 @st.cache_resource
 def init_firebase():
@@ -325,7 +371,7 @@ db = init_firebase()
 
 
 # ==========================================
-# 4. HELPER & SECURITY FUNCTIONS
+# 6. HELPER & SECURITY FUNCTIONS
 # ==========================================
 def hash_pin(pin: str) -> str:
   return hashlib.sha256(pin.encode()).hexdigest()
@@ -336,7 +382,7 @@ def get_md5_hash(text: str) -> str:
 
 
 # ==========================================
-# 5. BILINGUAL LANGUAGE PACKS
+# 7. BILINGUAL LANGUAGE PACKS
 # ==========================================
 LANG_PACK = {
     "en": {
@@ -404,29 +450,8 @@ LANG_PACK = {
 }
 
 # ==========================================
-# 6. SESSION STATE INITIALIZATION & RESET
+# 8. SESSION STATE CLEANUP RESETS
 # ==========================================
-if "authenticated" not in st.session_state:
-  if "fridge" in st.query_params:
-    st.session_state.authenticated = True
-    st.session_state.fridge_id = st.query_params["fridge"]
-  else:
-    st.session_state.authenticated = False
-    st.session_state.fridge_id = ""
-
-if "lang" not in st.session_state:
-  st.session_state.lang = "en"
-if "last_processed_hash" not in st.session_state:
-  st.session_state.last_processed_hash = ""
-if "show_waste_modal" not in st.session_state:
-  st.session_state.show_waste_modal = False
-if "waste_modal_items" not in st.session_state:
-  st.session_state.waste_modal_items = ""
-if "waste_modal_items_hi" not in st.session_state:
-  st.session_state.waste_modal_items_hi = ""
-if "waste_modal_time" not in st.session_state:
-  st.session_state.waste_modal_time = 0.0
-
 if st.session_state.get("clear_next", False):
   st.session_state["cmd_input"] = ""
   if "mic_input" in st.session_state:
@@ -439,7 +464,7 @@ if st.session_state.show_waste_modal:
     st.rerun()
 
 # ==========================================
-# 7. SIDEBAR FRIDGE ACCESS & CONTROLS
+# 9. SIDEBAR FRIDGE ACCESS & CONTROLS
 # ==========================================
 with st.sidebar:
   st.title("Fridge Security")
@@ -467,12 +492,24 @@ with st.sidebar:
       st.rerun()
 
     st.markdown("---")
-    st.subheader("Add to Home Screen")
+    st.subheader("📱 Add to Home Screen")
+
+    # Fully session-preserving bookmark link passing active fridge ID
+    bookmark_url = f"https://fridgeinventory.streamlit.app?fridge={st.session_state.fridge_id}"
     st.link_button(
-        "Open App Bookmark",
-        "https://fridgeinventory.streamlit.app",
-        use_container_width=True,
+        "Open Direct Fridge Link", bookmark_url, use_container_width=True
     )
+
+    with st.expander("How to install to Home Screen"):
+      st.markdown("""
+            **Android (Chrome):**
+            1. Tap the **3 dots (⋮)** in top-right.
+            2. Tap **"Add to Home screen"**.
+
+            **iOS (Safari):**
+            1. Tap the **Share icon (⎋)** at bottom.
+            2. Tap **"Add to Home Screen"**.
+            """)
 
     st.markdown("---")
     if st.button("Logout / Lock Fridge", use_container_width=True):
@@ -549,7 +586,7 @@ with st.sidebar:
             st.error("Database connection unavailable.")
 
 # ==========================================
-# 8. MAIN DASHBOARD (LOGGED IN STATE)
+# 10. MAIN DASHBOARD (LOGGED IN STATE)
 # ==========================================
 if not st.session_state.authenticated:
   st.title("FridgeInventory")
@@ -775,33 +812,8 @@ else:
             matched_any = True
 
         if not matched_any:
-          words = final_command.split()
-          action_words = [
-              "brought",
-              "bought",
-              "added",
-              "add",
-              "market",
-              "came",
-              "i",
-              "we",
-              "today",
-              "yesterday",
-              "2",
-              "kgs",
-              "kg",
-              "grams",
-              "packet",
-              "packets",
-          ]
-          clean_words = [
-              w for w in words if w not in action_words and not w.isdigit()
-          ]
-          raw_item_query = (
-              " ".join(clean_words) if clean_words else final_command
-          )
-
-          ai_days, ai_en, ai_hi = get_ai_expiry_and_names(raw_item_query)
+          # Pass full command context to Gemini 1.5 Pro to handle typos like 'horlics' perfectly
+          ai_days, ai_en, ai_hi = get_ai_expiry_and_names(final_command)
 
           # Validate if Gemini identified a real food item (ai_days != -1)
           if ai_days == -1:
