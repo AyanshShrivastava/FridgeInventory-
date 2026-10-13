@@ -1,14 +1,15 @@
+from datetime import datetime, timedelta
 import hashlib
 import time
-from datetime import datetime, timedelta
-import pandas as pd
-import streamlit as st
-import firebase_admin
-from firebase_admin import credentials, firestore
-import speech_recognition as sr
 from database import EXPIRY_DATABASE
 from gemini import get_ai_expiry_and_names
 from help import render_expiry_helper
+import firebase_admin
+from firebase_admin import credentials, firestore
+import pandas as pd
+import speech_recognition as sr
+import streamlit as st
+
 # ==========================================
 # 1. PAGE CONFIG & PROFESSIONAL CARTOON CSS
 # ==========================================
@@ -133,10 +134,11 @@ st.markdown(cartoon_css, unsafe_allow_html=True)
 
 
 # ==========================================
-# 2. FIRESTORE DATABASE INITIALIZATION
+# 2. FIRESTORE FIREWALL & SECURITY INITIALIZATION
 # ==========================================
 @st.cache_resource
 def init_firebase():
+  """Enforces secure cloud connection for multi-tenant household isolation."""
   try:
     if not firebase_admin._apps:
       if "firebase" in st.secrets:
@@ -147,7 +149,11 @@ def init_firebase():
         cred = credentials.Certificate("firebase_credentials.json")
         firebase_admin.initialize_app(cred)
     return firestore.client()
-  except Exception:
+  except Exception as e:
+    st.error(
+        f"🔴 **Cloud Firewall Security Error:** Could not establish secure"
+        f" connection to Firestore. Details: {e}"
+    )
     return None
 
 
@@ -267,9 +273,6 @@ if "waste_modal_items_hi" not in st.session_state:
 if "waste_modal_time" not in st.session_state:
   st.session_state.waste_modal_time = 0.0
 
-if "local_inventory" not in st.session_state:
-  st.session_state.local_inventory = {}
-
 if st.session_state.show_waste_modal:
   if time.time() - st.session_state.waste_modal_time > 10:
     st.session_state.show_waste_modal = False
@@ -352,10 +355,7 @@ with st.sidebar:
             else:
               st.error("Fridge not found. Create it in the next tab.")
           else:
-            st.session_state.authenticated = True
-            st.session_state.fridge_id = login_f_id
-            st.query_params["fridge"] = login_f_id
-            st.rerun()
+            st.error("Database connection unavailable.")
 
     with fridge_tab2:
       st.subheader("Setup New Fridge")
@@ -386,10 +386,7 @@ with st.sidebar:
               st.success("New secure Fridge created successfully.")
               st.rerun()
           else:
-            st.session_state.authenticated = True
-            st.session_state.fridge_id = create_f_id
-            st.query_params["fridge"] = create_f_id
-            st.rerun()
+            st.error("Database connection unavailable.")
 
 # ==========================================
 # 7. MAIN DASHBOARD (LOGGED IN STATE)
@@ -494,10 +491,6 @@ else:
           )
           for doc in docs:
             inv[doc.id] = doc.to_dict()
-        else:
-          if st.session_state.fridge_id not in st.session_state.local_inventory:
-            st.session_state.local_inventory[st.session_state.fridge_id] = {}
-          inv = st.session_state.local_inventory[st.session_state.fridge_id]
         return inv
 
       def save_item(item_key, payload):
@@ -509,12 +502,6 @@ else:
               .document(item_key)
               .set(payload)
           )
-        else:
-          if st.session_state.fridge_id not in st.session_state.local_inventory:
-            st.session_state.local_inventory[st.session_state.fridge_id] = {}
-          st.session_state.local_inventory[st.session_state.fridge_id][
-              item_key
-          ] = payload
 
       def delete_item(item_key):
         if db:
@@ -525,15 +512,6 @@ else:
               .document(item_key)
               .delete()
           )
-        else:
-          if (
-              st.session_state.fridge_id in st.session_state.local_inventory
-              and item_key
-              in st.session_state.local_inventory[st.session_state.fridge_id]
-          ):
-            del st.session_state.local_inventory[st.session_state.fridge_id][
-                item_key
-            ]
 
       def clear_all_items():
         if db:
@@ -545,8 +523,6 @@ else:
           )
           for doc in docs:
             doc.reference.delete()
-        else:
-          st.session_state.local_inventory[st.session_state.fridge_id] = {}
 
       inventory = fetch_inventory()
 
@@ -692,11 +668,6 @@ else:
     )
     for doc in docs:
       display_inventory[doc.id] = doc.to_dict()
-  else:
-    if st.session_state.fridge_id in st.session_state.local_inventory:
-      display_inventory = st.session_state.local_inventory[
-          st.session_state.fridge_id
-      ]
 
   inventory_items = []
   for doc_id, d in display_inventory.items():
