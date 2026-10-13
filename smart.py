@@ -182,13 +182,13 @@ LANG_PACK = {
         ),
         "input_hdr": "Smart Control Panel",
         "tab_sim": "Simulation Box",
+        "tab_mic": "Live Voice Record 🎙️",
         "tab_voice": "Upload Audio (.wav)",
         "placeholder": (
             "e.g., 'brought 2 kgs palak, milk and tomatoes' or 'used milk'"
         ),
         "audio_err": (
-            "Audio format validation issue. Ensure it is a valid PCM .wav"
-            " recording."
+            "Audio format validation issue. Ensure it is a valid PCM recording."
         ),
         "ledger_hdr": "Active Kitchen Storage Dashboard",
         "col_item": "Grocery Item",
@@ -196,10 +196,10 @@ LANG_PACK = {
         "col_target": "Expiry Target",
         "col_status": "Freshness Status",
         "empty_msg": (
-            "<b>System Status: Empty</b><br>Your vault contains no active food"
-            " records. Type or drop an audio update command inside the control"
-            " panel above to automatically populate your household tracking"
-            " matrix."
+            "<b>System Status: Empty</b><br>Your fridge contains no active food"
+            " records. Type or record an audio update command inside the"
+            " control panel above to automatically populate your household"
+            " tracking matrix."
         ),
         "note_msg": (
             "<b>NOTE:</b> Your <b>{items}</b> will spoil soon. Please plan to"
@@ -219,13 +219,14 @@ LANG_PACK = {
         ),
         "input_hdr": "स्मार्ट कंट्रोल पैनल",
         "tab_sim": "सिमुलेशन बॉक्स",
+        "tab_mic": "लाइव वॉइस रिकॉर्ड 🎙️",
         "tab_voice": "ऑडियो अपलोड (.wav)",
         "placeholder": (
             "जैसे, 'brought palak, milk and tomatoes' या 'used milk'"
         ),
         "audio_err": (
             "ऑडियो फॉर्मेट में दिक्कत है। कृपया सुनिश्चित करें कि यह एक साफ"
-            " .wav फाइल है।"
+            " रिकॉर्डिंग है।"
         ),
         "ledger_hdr": "सक्रिय रसोई सामान डैशबोर्ड",
         "col_item": "रसोई का सामान",
@@ -233,9 +234,9 @@ LANG_PACK = {
         "col_target": "खराब होने की तारीख",
         "col_status": "ताजगी की स्थिति",
         "empty_msg": (
-            "<b>सिस्टम स्थिति: खाली</b><br>आपके वॉल्ट में अभी कोई सामान नहीं"
-            " है। ऊपर दिए गए बॉक्स में सामान की जानकारी टाइप करें या ऑडियो फाइल"
-            " डालें ताकि लिस्ट अपने आप बन सके।"
+            "<b>सिस्टम स्थिति: खाली</b><br>आपके फ्रिज में अभी कोई सामान नहीं"
+            " है। ऊपर दिए गए बॉक्स में सामान की जानकारी टाइप करें या रिकॉर्डिंग"
+            " करें ताकि लिस्ट अपने आप बन सके।"
         ),
         "note_msg": (
             "<b>सूचना:</b> आपका <b>{items}</b> जल्द ही खराब होने वाला है। कृपया"
@@ -254,8 +255,8 @@ LANG_PACK = {
 # ==========================================
 if "authenticated" not in st.session_state:
   st.session_state.authenticated = False
-if "vault_id" not in st.session_state:
-  st.session_state.vault_id = ""
+if "fridge_id" not in st.session_state:
+  st.session_state.fridge_id = ""
 if "lang" not in st.session_state:
   st.session_state.lang = "en"
 if "last_processed_hash" not in st.session_state:
@@ -275,13 +276,21 @@ if st.session_state.show_waste_modal:
     st.rerun()
 
 # ==========================================
-# 6. SIDEBAR VAULT FIREWALL & CONTROLS
+# 6. SIDEBAR FRIDGE FIREWALL & CONTROLS
 # ==========================================
 with st.sidebar:
   st.title("🔐 Fridge Firewall")
+  st.markdown(
+      "<p style='color: #9CA3AF; font-size: 13px; line-height: 1.4;'>A"
+      " <b>Fridge</b> is a secure, isolated cloud namespace for your household"
+      " inventory. Protected by a private PIN so different families keep"
+      " their grocery data completely separate.</p>",
+      unsafe_allow_html=True,
+  )
+  st.markdown("---")
 
   if st.session_state.authenticated:
-    st.success(f"🔓 Logged into Vault:\n**{st.session_state.vault_id.upper()}**")
+    st.success(f"🔓 Logged into Fridge:\n**{st.session_state.fridge_id.upper()}**")
     st.markdown("---")
 
     st.subheader("🌐 Language Switch")
@@ -303,90 +312,88 @@ with st.sidebar:
     )
 
     st.markdown("---")
-    if st.button("🔒 Logout / Lock Vault", use_container_width=True):
+    if st.button("🔒 Logout / Lock Fridge", use_container_width=True):
       st.session_state.authenticated = False
-      st.session_state.vault_id = ""
+      st.session_state.fridge_id = ""
       st.session_state.last_processed_hash = ""
       st.rerun()
 
   else:
-    vault_tab1, vault_tab2 = st.tabs(["🔑 Login Vault", "✨ Create Vault"])
+    fridge_tab1, fridge_tab2 = st.tabs(["🔑 Login Fridge", "✨ Create Fridge"])
 
-    with vault_tab1:
-      st.subheader("Access Active Vault")
-      login_v_id = (
-          st.text_input("Vault Name / ID", placeholder="e.g., sharma_kitchen")
+    with fridge_tab1:
+      st.subheader("Access Active Fridge")
+      login_f_id = (
+          st.text_input("Fridge ID", placeholder="e.g., sharma_kitchen")
           .strip()
           .lower()
       )
-      login_v_pass = st.text_input(
-          "Vault Password", type="password", key="login_pass"
+      login_f_pass = st.text_input(
+          "Fridge PIN", type="password", key="login_pass"
       )
-      if st.button("Unlock Vault 🔓", use_container_width=True):
-        if not login_v_id or not login_v_pass:
-          st.error("Please enter both Vault Name and Password.")
+      if st.button("Unlock Fridge 🔓", use_container_width=True):
+        if not login_f_id or not login_f_pass:
+          st.error("Please enter both Fridge ID and PIN.")
         else:
-          hashed = hash_pin(login_v_pass)
+          hashed = hash_pin(login_f_pass)
           if db:
-            doc_ref = db.collection("vaults").document(login_v_id)
+            doc_ref = db.collection("fridges").document(login_f_id)
             doc = doc_ref.get()
             if doc.exists:
               if doc.to_dict().get("pin_hash") == hashed:
                 st.session_state.authenticated = True
-                st.session_state.vault_id = login_v_id
+                st.session_state.fridge_id = login_f_id
                 st.rerun()
               else:
-                st.error("Firewall Rejected: Incorrect Vault Password!")
+                st.error("Firewall Rejected: Incorrect Fridge PIN!")
             else:
-              st.error("Vault not found! Create it in the next tab.")
+              st.error("Fridge not found! Create it in the next tab.")
           else:
             st.session_state.authenticated = True
-            st.session_state.vault_id = login_v_id
+            st.session_state.fridge_id = login_f_id
             st.rerun()
 
-    with vault_tab2:
-      st.subheader("Setup New Vault")
-      create_v_id = (
+    with fridge_tab2:
+      st.subheader("Setup New Fridge")
+      create_f_id = (
           st.text_input(
-              "New Vault Name",
-              placeholder="e.g., gupta_kitchen",
-              key="create_id",
+              "New Fridge ID", placeholder="e.g., gupta_kitchen", key="create_id"
           )
           .strip()
           .lower()
       )
-      create_v_pass = st.text_input(
-          "Set Master Password", type="password", key="create_pass"
+      create_f_pass = st.text_input(
+          "Set Master PIN", type="password", key="create_pass"
       )
-      if st.button("Create New Vault ✨", use_container_width=True):
-        if not create_v_id or not create_v_pass:
-          st.error("Please provide a name and password for the new Vault.")
+      if st.button("Create New Fridge ✨", use_container_width=True):
+        if not create_f_id or not create_f_pass:
+          st.error("Please provide a Fridge ID and PIN.")
         else:
-          hashed = hash_pin(create_v_pass)
+          hashed = hash_pin(create_f_pass)
           if db:
-            doc_ref = db.collection("vaults").document(create_v_id)
+            doc_ref = db.collection("fridges").document(create_f_id)
             if doc_ref.get().exists:
               st.error(
-                  "Vault Name already exists! Choose another name or Login."
+                  "Fridge ID already exists! Choose another name or Login."
               )
             else:
               doc_ref.set({"pin_hash": hashed, "created_at": datetime.now()})
               st.session_state.authenticated = True
-              st.session_state.vault_id = create_v_id
-              st.success("New secure Vault created successfully!")
+              st.session_state.fridge_id = create_f_id
+              st.success("New secure Fridge created successfully!")
               st.rerun()
           else:
             st.session_state.authenticated = True
-            st.session_state.vault_id = create_v_id
+            st.session_state.fridge_id = create_f_id
             st.rerun()
 
 # ==========================================
 # 7. MAIN DASHBOARD (LOGGED IN STATE)
 # ==========================================
 if not st.session_state.authenticated:
-  st.title("🍳 FridgeInventory Vault Firewall")
+  st.title("🍳 FridgeInventory Firewall")
   st.markdown(
-      '<div class="bubble-yellow-warning">⚠️ Please log in or create a vault'
+      '<div class="bubble-yellow-warning">⚠️ Please log in or create a fridge'
       " using the sidebar tabs on the left to unlock your active kitchen"
       " inventory panel!</div>",
       unsafe_allow_html=True,
@@ -428,7 +435,7 @@ else:
   )
 
   st.markdown(f"### {T['input_hdr']}")
-  tab1, tab2 = st.tabs([T["tab_sim"], T["tab_voice"]])
+  tab1, tab2, tab3 = st.tabs([T["tab_sim"], T["tab_mic"], T["tab_voice"]])
   voice_text = ""
 
   with tab1:
@@ -439,6 +446,18 @@ else:
     ).lower()
 
   with tab2:
+    recorded_audio = st.audio_input(T["tab_mic"])
+    if recorded_audio is not None:
+      recognizer = sr.Recognizer()
+      try:
+        with sr.AudioFile(recorded_audio) as source:
+          audio_data = recognizer.record(source)
+          voice_text = recognizer.recognize_google(audio_data).lower()
+          st.success(f'Transcribed Audio Command: "{voice_text}"')
+      except Exception:
+        st.error(T["audio_err"])
+
+  with tab3:
     uploaded_audio = st.file_uploader(
         T["tab_voice"], type=["wav"], label_visibility="collapsed"
     )
@@ -461,9 +480,9 @@ else:
       st.session_state.last_processed_hash = current_hash
       today = datetime.now().date()
 
-      vault_doc_ref = (
-          db.collection("vaults")
-          .document(st.session_state.vault_id)
+      fridge_doc_ref = (
+          db.collection("fridges")
+          .document(st.session_state.fridge_id)
           .collection("inventory")
           if db
           else None
@@ -471,7 +490,7 @@ else:
 
       inventory = {}
       if db:
-        docs = vault_doc_ref.stream()
+        docs = fridge_doc_ref.stream()
         for doc in docs:
           inventory[doc.id] = doc.to_dict()
 
@@ -482,11 +501,11 @@ else:
               "cooked everything",
               "ate everything",
               "clear fridge",
-              "clear vault",
+              "clear storage",
           ]
       ):
         if db:
-          docs = vault_doc_ref.stream()
+          docs = fridge_doc_ref.stream()
           for doc in docs:
             doc.reference.delete()
         st.toast("Cleared storage matrix: Marked all items as consumed!")
@@ -507,7 +526,7 @@ else:
                   or doc_id == name_hi
               ):
                 if db:
-                  vault_doc_ref.document(doc_id).delete()
+                  fridge_doc_ref.document(doc_id).delete()
                 wasted_en.append(name_en)
                 wasted_hi.append(name_hi)
         if wasted_en:
@@ -538,7 +557,7 @@ else:
                   or doc_id == name_hi
               ):
                 if db:
-                  vault_doc_ref.document(doc_id).delete()
+                  fridge_doc_ref.document(doc_id).delete()
                 removed.append(name_en if current_lang == "en" else name_hi)
         if removed:
           st.toast(f"Removed: {', '.join(set(removed))}")
@@ -560,7 +579,7 @@ else:
                 "core_id": name_en,
             }
             if db:
-              vault_doc_ref.document(target_name).set(item_payload)
+              fridge_doc_ref.document(target_name).set(item_payload)
             added.append(target_name)
         if added:
           st.toast(f"Logged: {', '.join(set(added))}")
@@ -572,8 +591,8 @@ else:
   inventory_items = []
   if db:
     docs = (
-        db.collection("vaults")
-        .document(st.session_state.vault_id)
+        db.collection("fridges")
+        .document(st.session_state.fridge_id)
         .collection("inventory")
         .stream()
     )
