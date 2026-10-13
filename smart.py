@@ -1,18 +1,172 @@
 from datetime import datetime, timedelta
 import hashlib
 import json
+import os
 import time
 import pandas as pd
 import streamlit as st
 import firebase_admin
 from firebase_admin import credentials, firestore
 import speech_recognition as sr
+import google.generativeai as genai
 from database import EXPIRY_DATABASE
-from gemini import get_ai_expiry_and_names
-from help import render_expiry_helper
 
 # ==========================================
-# 1. PAGE CONFIG & PROFESSIONAL CARTOON CSS
+# 1. GEMINI AI CONFIGURATION & FUNCTIONS
+# ==========================================
+
+# Force clear conflicting cloud environment configs to ensure clean AI Studio API key authentication
+os.environ.pop("GOOGLE_GENAI_USE_VERTEXAI", None)
+os.environ.pop("GOOGLE_APPLICATION_CREDENTIALS", None)
+
+# Configure Gemini API key safely from st.secrets
+if "google" in st.secrets and "api_key" in st.secrets["google"]:
+  api_key = st.secrets["google"]["api_key"]
+  genai.configure(api_key=api_key)
+
+
+def get_ai_expiry_and_names(item_query):
+  """Queries the top-tier Gemini flagship model to find exact shelf life
+
+  based on trusted food safety standards and bilingual names.
+  Returns days = -1 if the input is not a valid food item.
+  """
+  try:
+    model = genai.GenerativeModel("gemini-3.8-flash")
+    prompt = f"""
+        You are a strict food safety and inventory management AI for Indian kitchens, cross-referencing trusted standards (such as FSSAI guidelines and standard culinary preservation data). Analyze the user query: "{item_query}".
+        1. Determine if this item is a FOOD item, vegetable, fruit, dairy, spice, beverage, or kitchen grocery ingredient.
+        2. If it is NOT a food item (e.g., a building, vehicle, electronics, clothes, or random non-edible objects like a palace), you MUST return JSON with "days": -1.
+        3. If it IS a food item, provide its exact typical shelf life in days based on trusted storage standards in an Indian kitchen, along with its clean English name and Hindi name in Devanagari script.
+        
+        Return ONLY a valid JSON object with these exact keys:
+        {{"days": <integer number of days, or -1 if not a food item>, "en": "<English name>", "hi": "<Hindi name in Devanagari>"}}
+        """
+    response = model.generate_content(prompt)
+    text = response.text.strip()
+
+    if text.startswith("```json"):
+      text = text[7:-3].strip()
+    elif text.startswith("```"):
+      text = text[3:-3].strip()
+
+    data = json.loads(text)
+    return int(data.get("days", -1)), data.get("en", ""), data.get("hi", "")
+  except Exception as e:
+    return 7, item_query, item_query
+
+
+def generate_rescue_recipe(expiring_soon_items):
+  """Generates an anti-waste rescue recipe using the top-tier Gemini flagship
+
+  model.
+  """
+  try:
+    model = genai.GenerativeModel("gemini-3.8-flash")
+    prompt = f"""
+        You are an expert Indian chef and food-waste reduction specialist. 
+        The user has these specific kitchen ingredients that are ABOUT TO EXPIRE TODAY OR TOMORROW and must be used immediately to prevent waste: {expiring_soon_items}.
+        Create a delicious, practical Indian rescue recipe utilizing these expiring items, based on trusted culinary practices.
+        
+        Return ONLY a valid JSON object with these exact keys:
+        {{"recipe_name": "<English name>", "recipe_name_hi": "<Hindi name in Devanagari>", "ingredients": ["<item1>", "<item2>"], "steps": ["<step1>", "<step2>"]}}
+        """
+    response = model.generate_content(prompt)
+    text = response.text.strip()
+    if text.startswith("```json"):
+      text = text[7:-3].strip()
+    elif text.startswith("```"):
+      text = text[3:-3].strip()
+
+    return json.loads(text)
+  except Exception as e:
+    return None
+
+
+def render_expiry_helper(active_rows, T, current_lang):
+  """Renders expiry insights and triggers the top-tier Gemini rescue recipe
+
+  generator strictly for items about to expire today or tomorrow.
+  """
+  st.markdown("---")
+  st.subheader(
+      "🍲 Anti-Waste Rescue Recipe Assistant"
+      if current_lang == "en"
+      else "🍲 एंटी-वेस्ट रेस्क्यू रेसिपी सहायक"
+  )
+
+  today = datetime.now().date()
+  expiring_soon_items = []
+
+  for row in active_rows:
+    target_date_str = row[T["col_target"]]
+    try:
+      expiry_dt = datetime.strptime(target_date_str, "%Y-%m-%d").date()
+      days_left = (expiry_dt - today).days
+
+      if days_left <= 1:
+        expiring_soon_items.append(row[T["col_item"]])
+    except Exception:
+      continue
+
+  if not expiring_soon_items:
+    safe_msg = (
+        "🎉 **All clear!** No items are about to expire right now. Your active"
+        " storage is fresh and safe."
+        if current_lang == "en"
+        else "🎉 **सब कुछ सुरक्षित है!** अभी कोई भी सामान खराब नहीं होने वाला है।"
+        " आपका सारा सामान ताजा है।"
+    )
+    st.info(safe_msg)
+    return
+
+  st.markdown(
+      f"<p style='color: #F87171; font-weight: 500;'>⚠️ Items needing"
+      f" immediate rescue: <b>{', '.join(expiring_soon_items)}</b></p>",
+      unsafe_allow_html=True,
+  )
+
+  if st.button(
+      "✨ Cook Rescue Recipe with Expiring Items",
+      use_container_width=True,
+      key="gen_rescue_recipe_btn",
+  ):
+    with st.spinner(
+        "Consulting top-tier flagship model for precise rescue recipe..."
+        if current_lang == "en"
+        else "शीर्ष मॉडल द्वारा सुरक्षित रेसिपी तैयार की जा रही है..."
+    ):
+      try:
+        recipe = generate_rescue_recipe(expiring_soon_items)
+
+        if recipe:
+          r_name = (
+              recipe.get("recipe_name", "Recipe")
+              if current_lang == "en"
+              else recipe.get("recipe_name_hi", "रेसिपी")
+          )
+          st.success(f"### 🍽️ Rescue Dish: {r_name}")
+
+          st.markdown(
+              "**Ingredients Used:** "
+              + ", ".join(recipe.get("ingredients", []))
+          )
+          st.markdown("**Cooking Steps:**")
+          for idx, step in enumerate(recipe.get("steps", []), 1):
+            st.markdown(f"{idx}. {step}")
+        else:
+          st.error(
+              "Could not formulate a rescue recipe. Please try again later."
+          )
+
+      except Exception as e:
+        st.error(
+            f"Could not generate rescue recipe at the moment. Details: {e}"
+        )
+
+
+# ==========================================
+# 2. PAGE CONFIG & PROFESSIONAL CARTOON CSS
 # ==========================================
 st.set_page_config(
     page_title="FridgeInventory",
@@ -123,7 +277,7 @@ st.markdown(cartoon_css, unsafe_allow_html=True)
 
 
 # ==========================================
-# 2. FIRESTORE FIREWALL & SECURITY INITIALIZATION
+# 3. FIRESTORE FIREWALL & SECURITY INITIALIZATION
 # ==========================================
 @st.cache_resource
 def init_firebase():
@@ -154,7 +308,7 @@ db = init_firebase()
 
 
 # ==========================================
-# 3. HELPER & SECURITY FUNCTIONS
+# 4. HELPER & SECURITY FUNCTIONS
 # ==========================================
 def hash_pin(pin: str) -> str:
   return hashlib.sha256(pin.encode()).hexdigest()
@@ -165,7 +319,7 @@ def get_md5_hash(text: str) -> str:
 
 
 # ==========================================
-# 4. BILINGUAL LANGUAGE PACKS
+# 5. BILINGUAL LANGUAGE PACKS
 # ==========================================
 LANG_PACK = {
     "en": {
@@ -233,7 +387,7 @@ LANG_PACK = {
 }
 
 # ==========================================
-# 5. SESSION STATE INITIALIZATION & RESET
+# 6. SESSION STATE INITIALIZATION & RESET
 # ==========================================
 if "authenticated" not in st.session_state:
   if "fridge" in st.query_params:
@@ -268,7 +422,7 @@ if st.session_state.show_waste_modal:
     st.rerun()
 
 # ==========================================
-# 6. SIDEBAR FRIDGE ACCESS & CONTROLS
+# 7. SIDEBAR FRIDGE ACCESS & CONTROLS
 # ==========================================
 with st.sidebar:
   st.title("Fridge Security")
@@ -378,7 +532,7 @@ with st.sidebar:
             st.error("Database connection unavailable.")
 
 # ==========================================
-# 7. MAIN DASHBOARD (LOGGED IN STATE)
+# 8. MAIN DASHBOARD (LOGGED IN STATE)
 # ==========================================
 if not st.session_state.authenticated:
   st.title("FridgeInventory")
