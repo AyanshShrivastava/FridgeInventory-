@@ -1,0 +1,6 @@
+streamlit>=1.42
+firebase-admin>=6.5
+google-genai>=1.0
+pydantic>=2
+SpeechRecognition>=3.10
+audioop-lts; python_version>="3.13"
