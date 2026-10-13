@@ -130,7 +130,7 @@ def init_firebase():
   try:
     if not firebase_admin._apps:
       if "firebase" in st.secrets:
-        cred_dict = dict(st.secrets["firebase"])
+        cred_dict = {k: v for k, v in st.secrets["firebase"].items()}
         cred = credentials.Certificate(cred_dict)
         firebase_admin.initialize_app(cred)
       else:
