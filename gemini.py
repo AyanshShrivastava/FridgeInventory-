@@ -1,47 +1,33 @@
-  import streamlit as st
+import os
+import google.generativeai as genai
+import streamlit as st
 
-# Safe import so Streamlit Cloud never crashes with ModuleNotFoundError
-try:
-  import google.generativeai as genai
-
-  GEMINI_AVAILABLE = True
-  if "GEMINI_API_KEY" in st.secrets:
-    genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
-except ImportError:
-  GEMINI_AVAILABLE = False
+# Configure Gemini API key securely from Streamlit secrets or environment
+if "google" in st.secrets and "api_key" in st.secrets["google"]:
+  genai.configure(api_key=st.secrets["google"]["api_key"])
+elif "GEMINI_API_KEY" in os.environ:
+  genai.configure(api_key=os.environ["GEMINI_API_KEY"])
 
 
-def get_ai_expiry_and_names(raw_item: str):
-  """Quietly queries Gemini for unlisted items, with a bulletproof fallback if
-
-  the module or API key is missing.
-  """
+def get_ai_expiry_and_names(item_query):
+  """Uses Gemini 3.8-flash to determine shelf life and bilingual names for unlisted items."""
   try:
-    if (
-        not GEMINI_AVAILABLE
-        or "GEMINI_API_KEY" not in st.secrets
-        or not st.secrets["GEMINI_API_KEY"].strip()
-    ):
-      return 7, raw_item.lower(), raw_item
-
     model = genai.GenerativeModel("gemini-3.8-flash")
     prompt = (
-        f"A user added an unlisted grocery item '{raw_item}' to their kitchen"
-        " inventory in India. Provide three things separated by a comma: 1."
-        " Standard English name, 2. Standard Hindi name in Devanagari script,"
-        " 3. Scientific shelf-life in days when stored in an Indian"
-        " refrigerator or pantry. Format strictly as: EnglishName, HindiName,"
-        " Days (e.g., Dragonfruit, ड्रैगनफ्रूट, 5). Do not include any extra"
-        " text or explanation."
+        f"You are a food science and inventory expert for an Indian kitchen"
+        f" app.\nAnalyze the food item: '{item_query}'.\nProvide 3 values"
+        f" separated by a vertical bar (|):\n1. Estimated shelf life in days"
+        f" (integer only, e.g., 5).\n2. Clean English name (e.g.,"
+        f" Dragonfruit).\n3. Clean Hindi name in Devanagari script (e.g.,"
+        f" ड्रैगनफ्रूट).\nExample format: 5|Dragonfruit|ड्रैगनफ्रूट"
     )
     response = model.generate_content(prompt)
-    parts = [p.strip() for p in response.text.split(",")]
+    parts = response.text.strip().split("|")
     if len(parts) >= 3:
-      name_en = parts[0].lower()
-      name_hi = parts[1]
-      days = int(parts[2])
+      days = int(parts[0].strip())
+      name_en = parts[1].strip().title()
+      name_hi = parts[2].strip()
       return days, name_en, name_hi
   except Exception:
     pass
-
-  return 7, raw_item.lower(), raw_item
+  return 7, item_query.title(), item_query
