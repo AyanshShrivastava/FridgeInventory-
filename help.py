@@ -1,102 +1,98 @@
+from datetime import datetime
+import json
+import google.generativeai as genai
 import streamlit as st
 
-try:
-  import google.generativeai as genai
 
-  GEMINI_AVAILABLE = True
-except ImportError:
-  GEMINI_AVAILABLE = False
+def render_expiry_helper(active_rows, T, current_lang):
+  """Renders expiry insights and Gemini-powered smart rescue recipes
 
-
-def render_expiry_helper(display_rows, T, current_lang):
-  """Checks active dashboard items and renders the zero-waste recipe generator
-
-  safely.
+  strictly for items about to expire today or tomorrow.
   """
-  urgent_items = [
-      r[T["col_item"]]
-      for r in display_rows
-      if any(
-          k in r[T["col_status"]] for k in ["CRITICAL", "WARNING", "आपातकालीन", "चेतावनी"]
-      )
-  ]
+  st.markdown("---")
+  st.subheader(
+      "🍲 Anti-Waste Rescue Recipe Assistant"
+      if current_lang == "en"
+      else "🍲 एंटी-वेस्ट रेस्क्यू रेसिपी सहायक"
+  )
 
-  if urgent_items:
-    items_str = ", ".join(urgent_items)
+  # Filter active rows to find ONLY items expiring today (0 days) or tomorrow (1 day)
+  today = datetime.now().date()
+  expiring_soon_items = []
 
-    st.markdown(
-        f'<div class="bubble-alert-note">{T["note_msg"].format(items=items_str)}</div>',
-        unsafe_allow_html=True,
-    )
+  for row in active_rows:
+    target_date_str = row[T["col_target"]]
+    try:
+      expiry_dt = datetime.strptime(target_date_str, "%Y-%m-%d").date()
+      days_left = (expiry_dt - today).days
 
-    st.markdown("<br>", unsafe_allow_html=True)
+      # Strictly target items expiring today or tomorrow
+      if days_left <= 1:
+        expiring_soon_items.append(row[T["col_item"]])
+    except Exception:
+      continue
 
-    btn_label = (
-        "Generate Zero-Waste Recipe"
+  if not expiring_soon_items:
+    safe_msg = (
+        "🎉 **All clear!** No items are about to expire right now. Your active"
+        " storage is fresh and safe."
         if current_lang == "en"
-        else "जीरो-वेस्ट रेसिपी बनाएं"
+        else "🎉 **सब कुछ सुरक्षित है!** अभी कोई भी सामान खराब नहीं होने वाला है।"
+        " आपका सारा सामान ताजा है।"
     )
-    recipe_btn_key = f"recipe_btn_{hash(items_str)}"
+    st.info(safe_msg)
+    return
 
-    if st.button(btn_label, key=recipe_btn_key, use_container_width=True):
-      if not GEMINI_AVAILABLE:
-        err_msg = (
-            "Gemini library is not installed in this environment."
+  st.markdown(
+      f"<p style='color: #F87171; font-weight: 500;'>⚠️ Items needing"
+      f" immediate rescue: <b>{', '.join(expiring_soon_items)}</b></p>",
+      unsafe_allow_html=True,
+  )
+
+  if st.button(
+      "✨ Cook Rescue Recipe with Expiring Items",
+      use_container_width=True,
+      key="gen_rescue_recipe_btn",
+  ):
+    with st.spinner(
+        "Formulating rescue recipe from trusted culinary standards..."
+        if current_lang == "en"
+        else "खराब होने वाले सामान से सुरक्षित रेसिपी तैयार की जा रही है..."
+    ):
+      try:
+        model = genai.GenerativeModel("gemini-1.5-flash")
+        prompt = f"""
+                You are an expert Indian chef and food-waste reduction specialist. 
+                The user has these specific kitchen ingredients that are ABOUT TO EXPIRE TODAY OR TOMORROW and must be used immediately to prevent waste: {expiring_soon_items}.
+                Create a delicious, practical Indian rescue recipe utilizing these expiring items.
+                
+                Return ONLY a valid JSON object with these exact keys:
+                {{"recipe_name": "<English name>", "recipe_name_hi": "<Hindi name in Devanagari>", "ingredients": ["<item1>", "<item2>"], "steps": ["<step1>", "<step2>"]}}
+                """
+        response = model.generate_content(prompt)
+        text = response.text.strip()
+        if text.startswith("```json"):
+          text = text[7:-3].strip()
+        elif text.startswith("```"):
+          text = text[3:-3].strip()
+
+        recipe = json.loads(text)
+
+        r_name = (
+            recipe["recipe_name"]
             if current_lang == "en"
-            else "जेमिनी लाइब्रेरी इस वातावरण में इंस्टॉल नहीं है।"
+            else recipe["recipe_name_hi"]
         )
-        st.error(err_msg)
-        return
+        st.success(f"### 🍽️ Rescue Dish: {r_name}")
 
-      if "GEMINI_API_KEY" not in st.secrets:
-        err_msg = (
-            "Gemini API key missing in Streamlit secrets."
-            if current_lang == "en"
-            else "स्ट्रीमलाइट सीक्रेट्स में जेमिनी एपीआई कुंजी गायब है।"
+        st.markdown(
+            "**Ingredients Used:** " + ", ".join(recipe["ingredients"])
         )
-        st.error(err_msg)
-        return
+        st.markdown("**Cooking Steps:**")
+        for idx, step in enumerate(recipe["steps"], 1):
+          st.markdown(f"{idx}. {step}")
 
-      spinner_text = (
-          "Generating quick kitchen recipe..."
-          if current_lang == "en"
-          else "रसोई की झटपट रेसिपी तैयार की जा रही है..."
-      )
-      with st.spinner(spinner_text):
-        try:
-          genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
-          model = genai.GenerativeModel("gemini-3.8-flash")
-          lang_instruction = "in English" if current_lang == "en" else "in Hindi"
-          prompt = (
-              f"You are an expert Indian home chef. The following items are"
-              f" expiring soon or tomorrow in the household kitchen:"
-              f" {items_str}. Provide a quick, simple, and delicious recipe"
-              f" using these items (and basic pantry staples like oil, salt,"
-              f" and common spices) {lang_instruction} to prevent food waste."
-              " Keep it concise, practical, and formatted professionally."
-          )
-          response = model.generate_content(prompt)
-          recipe_text = response.text
-
-          box_title = (
-              "Zero-Waste Kitchen Recipe"
-              if current_lang == "en"
-              else "जीरो-वेस्ट किचन रेसिपी"
-          )
-          st.markdown(
-              f"""
-                        <div style="background-color: #1E293B; border: 3px solid #38BDF8; padding: 22px; border-radius: 18px; margin-top: 15px; color: #F3F4F6; box-shadow: 0px 6px 0px #0369A1;">
-                            <h4 style="color: #38BDF8; margin-top: 0; font-family: 'Fredoka One', cursive;">{box_title}</h4>
-                            <p style="white-space: pre-wrap; font-size: 15px; line-height: 1.6;">{recipe_text}</p>
-                        </div>
-                    """,
-              unsafe_allow_html=True,
-          )
-        except Exception:
-          err_msg = (
-              "Could not generate recipe at the moment. Please verify API"
-              " configuration."
-              if current_lang == "en"
-              else "इस समय रेसिपी नहीं बन सकी। कृपया एपीआई जांचें।"
-          )
-          st.error(err_msg)
+      except Exception as e:
+        st.error(
+            f"Could not generate rescue recipe at the moment. Details: {e}"
+        )

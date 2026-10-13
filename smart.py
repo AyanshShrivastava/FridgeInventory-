@@ -256,7 +256,6 @@ if "waste_modal_items_hi" not in st.session_state:
 if "waste_modal_time" not in st.session_state:
   st.session_state.waste_modal_time = 0.0
 
-# Deferred input clearing mechanism to prevent StreamlitWidgetAlreadyInstantiatedError
 if st.session_state.get("clear_next", False):
   st.session_state["cmd_input"] = ""
   if "mic_input" in st.session_state:
@@ -332,7 +331,7 @@ with st.sidebar:
         else:
           hashed = hash_pin(login_f_pass)
           if db:
-            doc_ref = db.collection("vault").document(login_f_id)
+            doc_ref = db.collection("fridges").document(login_f_id)
             doc = doc_ref.get()
             if doc.exists:
               if doc.to_dict().get("pin_hash") == hashed:
@@ -365,7 +364,7 @@ with st.sidebar:
         else:
           hashed = hash_pin(create_f_pass)
           if db:
-            doc_ref = db.collection("vault").document(create_f_id)
+            doc_ref = db.collection("fridges").document(create_f_id)
             if doc_ref.get().exists:
               st.error("Fridge ID already exists. Choose another name or Login.")
             else:
@@ -474,7 +473,7 @@ else:
         inv = {}
         if db:
           docs = (
-              db.collection("vault")
+              db.collection("fridges")
               .document(st.session_state.fridge_id)
               .collection("inventory")
               .stream()
@@ -486,7 +485,7 @@ else:
       def save_item(item_key, payload):
         if db:
           (
-              db.collection("vault")
+              db.collection("fridges")
               .document(st.session_state.fridge_id)
               .collection("inventory")
               .document(item_key)
@@ -496,7 +495,7 @@ else:
       def delete_item(item_key):
         if db:
           (
-              db.collection("vault")
+              db.collection("fridges")
               .document(st.session_state.fridge_id)
               .collection("inventory")
               .document(item_key)
@@ -506,7 +505,7 @@ else:
       def clear_all_items():
         if db:
           docs = (
-              db.collection("vault")
+              db.collection("fridges")
               .document(st.session_state.fridge_id)
               .collection("inventory")
               .stream()
@@ -516,7 +515,7 @@ else:
 
       inventory = fetch_inventory()
 
-      # Clear All Command
+      # 1. Clear All Command
       if any(
           w in final_command
           for w in [
@@ -533,7 +532,7 @@ else:
         st.balloons()
         st.rerun()
 
-      # Food Waste / Discarded Command
+      # 2. Food Waste / Discarded Command
       elif any(
           w in final_command
           for w in ["threw", "discarded", "thrown away", "dumped"]
@@ -565,7 +564,7 @@ else:
               "No tracking matches found within active entries to discard."
           )
 
-      # Consumed / Used Command
+      # 3. Consumed / Used Command
       elif any(
           w in final_command
           for w in ["used", "ate", "cooked", "remove", "delete"]
@@ -587,11 +586,8 @@ else:
           st.balloons()
           st.rerun()
 
-      # Brought / Added Grocery Command (Static Matrix + Gemini AI Fallback)
-      elif any(
-          w in final_command
-          for w in ["brought", "bought", "added", "add", "market", "came"]
-      ):
+      # 4. DEFAULT ACTION: ADD / BRING (Static Matrix + Gemini AI Fallback with Validation)
+      else:
         added = []
         matched_any = False
         for trigger_word, (days, name_en, name_hi) in EXPIRY_DATABASE.items():
@@ -616,6 +612,10 @@ else:
               "add",
               "market",
               "came",
+              "i",
+              "we",
+              "today",
+              "yesterday",
               "2",
               "kgs",
               "kg",
@@ -626,9 +626,19 @@ else:
           clean_words = [
               w for w in words if w not in action_words and not w.isdigit()
           ]
-          if clean_words:
-            raw_item_query = " ".join(clean_words)
-            ai_days, ai_en, ai_hi = get_ai_expiry_and_names(raw_item_query)
+          raw_item_query = (
+              " ".join(clean_words) if clean_words else final_command
+          )
+
+          ai_days, ai_en, ai_hi = get_ai_expiry_and_names(raw_item_query)
+
+          # Validate if Gemini identified a real food item (ai_days != -1)
+          if ai_days == -1:
+            st.error(
+                "❌ **Validation Error:** The item you spoke is not a food"
+                " item. Speak with more accuracy."
+            )
+          else:
             target_name = ai_en if current_lang == "en" else ai_hi
             expiry_date = today + timedelta(days=ai_days)
             item_payload = {
@@ -650,7 +660,7 @@ else:
   display_inventory = {}
   if db:
     docs = (
-        db.collection("vault")
+        db.collection("fridges")
         .document(st.session_state.fridge_id)
         .collection("inventory")
         .stream()
