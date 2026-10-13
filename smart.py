@@ -9,25 +9,37 @@ import speech_recognition as sr
 import streamlit as st
 
 # ==========================================
-# 1. PAGE CONFIG & CUSTOM CSS (BRANDING HIDE)
+# 1. PAGE CONFIG & POLISHED CARTOON CSS
 # ==========================================
 st.set_page_config(
-    page_title="SmartRasoi: Voice Kitchen Panel", page_icon="🍳", layout="centered"
+    page_title="FridgeInventory: Voice Kitchen Panel",
+    page_icon="🛒",
+    layout="centered",
+    initial_sidebar_state="expanded",
 )
 
-hide_streamlit_style = """
+cartoon_css = """
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Fredoka+One&family=Lexend:wght@400;500;600&display=swap');
     
     #MainMenu {visibility: hidden;}
-    header {visibility: hidden;}
     footer {visibility: hidden;}
-    [data-testid="stToolbar"] {visibility: hidden !important;}
     [data-testid="stDecoration"] {display: none;}
-    .block-container {padding-top: 2rem; padding-bottom: 2rem;}
     
-    .stApp { background-color: #0B0E14; font-family: 'Lexend', sans-serif; }
+    /* FIX BLUE TINT & FOCUS RINGS */
+    button:focus, input:focus, select:focus, textarea:focus, [data-baseweb="input"]:focus-within {
+        border-color: #EC4899 !important;
+        box-shadow: 0 0 0 2px rgba(236, 72, 153, 0.3) !important;
+    }
     
+    [data-testid="stSidebar"] {
+        background-color: #111827 !important;
+        border-right: 3px solid #1F2937;
+    }
+    
+    .stApp { background-color: #0B0E14; font-family: 'Lexend', sans-serif; color: #F3F4F6; }
+    
+    /* Cartoon Title Styling */
     .cartoon-title { 
         font-family: 'Fredoka One', cursive; 
         font-size: 32px; 
@@ -36,6 +48,7 @@ hide_streamlit_style = """
         margin: 0; 
     }
     
+    /* Header Bubble Container */
     .header-bubble { 
         background: linear-gradient(135deg, #1E2638 0%, #111827 100%); 
         padding: 24px; 
@@ -52,6 +65,7 @@ hide_streamlit_style = """
         margin-top: 6px; 
     }
     
+    /* Empty State Bubble */
     .bubble-empty { 
         background-color: #0284C7; 
         color: #FFFFFF; 
@@ -63,6 +77,22 @@ hide_streamlit_style = """
         line-height: 1.6; 
     }
     
+    /* Yellow Notification Bubble with Shadow */
+    .bubble-yellow-warning {
+        background-color: #FEF08A;
+        color: #713F12;
+        padding: 24px;
+        border-radius: 20px;
+        border: 3px solid #FACC15;
+        box-shadow: 0px 8px 0px #CA8A04;
+        font-size: 18px;
+        font-weight: 600;
+        line-height: 1.5;
+        margin-top: 20px;
+        text-align: center;
+    }
+    
+    /* Critical Spoilage Alert Bubble */
     .bubble-alert-note { 
         background-color: #701A75; 
         color: #FDF4FF; 
@@ -72,8 +102,10 @@ hide_streamlit_style = """
         box-shadow: 0px 6px 0px #4A044E; 
         font-size: 16px; 
         line-height: 1.6; 
+        margin-top: 20px;
     }
 
+    /* Food Waste Modal Overlay Bubble */
     .modal-overlay {
         background: linear-gradient(135deg, #451A03 0%, #7C2D12 100%);
         border: 4px solid #F87171;
@@ -84,6 +116,7 @@ hide_streamlit_style = """
         color: #FEF2F2;
     }
     
+    /* Playful Cartoon Buttons */
     div.stButton > button:first-child { 
         font-family: 'Fredoka One', cursive !important; 
         background-color: #EC4899 !important; 
@@ -101,11 +134,11 @@ hide_streamlit_style = """
     }
     </style>
 """
-st.markdown(hide_streamlit_style, unsafe_allow_html=True)
+st.markdown(cartoon_css, unsafe_allow_html=True)
 
 
 # ==========================================
-# 2. FIREBASE & FIRESTORE INITIALIZATION
+# 2. FIRESTORE DATABASE INITIALIZATION
 # ==========================================
 @st.cache_resource
 def init_firebase():
@@ -138,11 +171,11 @@ def get_md5_hash(text: str) -> str:
 
 
 # ==========================================
-# 4. LANGUAGE PACKS
+# 4. BILINGUAL LANGUAGE PACKS
 # ==========================================
 LANG_PACK = {
     "en": {
-        "title": "SmartRasoi: Voice Kitchen Panel",
+        "title": "FridgeInventory: Voice Kitchen Panel",
         "subtitle": (
             "Zero-effort automated tracking infrastructure designed for Indian"
             " households."
@@ -163,10 +196,10 @@ LANG_PACK = {
         "col_target": "Expiry Target",
         "col_status": "Freshness Status",
         "empty_msg": (
-            "<b>System Status: Empty</b><br>The virtual ledger contains no"
-            " active food records. Type or drop an audio update command inside"
-            " the control inputs panel above to automatically populate your"
-            " household tracking matrix."
+            "<b>System Status: Empty</b><br>Your vault contains no active food"
+            " records. Type or drop an audio update command inside the control"
+            " panel above to automatically populate your household tracking"
+            " matrix."
         ),
         "note_msg": (
             "<b>NOTE:</b> Your <b>{items}</b> will spoil soon. Please plan to"
@@ -179,7 +212,7 @@ LANG_PACK = {
         "status_fresh": "Fresh ({days} Days Remaining)",
     },
     "hi": {
-        "title": "स्मार्ट रसोई: वॉइस किचन पैनल",
+        "title": "फ्रिज इन्वेंटरी: वॉइस किचन पैनल",
         "subtitle": (
             "भारतीय घरों के लिए बनाया गया बिना किसी झंझट के ऑटोमैटिक सामान"
             " ट्रैकिंग सिस्टम।"
@@ -200,7 +233,7 @@ LANG_PACK = {
         "col_target": "खराब होने की तारीख",
         "col_status": "ताजगी की स्थिति",
         "empty_msg": (
-            "<b>सिस्टम स्थिति: खाली</b><br>आपके डैशबोर्ड में अभी कोई सामान नहीं"
+            "<b>सिस्टम स्थिति: खाली</b><br>आपके वॉल्ट में अभी कोई सामान नहीं"
             " है। ऊपर दिए गए बॉक्स में सामान की जानकारी टाइप करें या ऑडियो फाइल"
             " डालें ताकि लिस्ट अपने आप बन सके।"
         ),
@@ -221,8 +254,8 @@ LANG_PACK = {
 # ==========================================
 if "authenticated" not in st.session_state:
   st.session_state.authenticated = False
-if "fridge_id" not in st.session_state:
-  st.session_state.fridge_id = ""
+if "vault_id" not in st.session_state:
+  st.session_state.vault_id = ""
 if "lang" not in st.session_state:
   st.session_state.lang = "en"
 if "last_processed_hash" not in st.session_state:
@@ -242,63 +275,13 @@ if st.session_state.show_waste_modal:
     st.rerun()
 
 # ==========================================
-# 6. AUTHENTICATION / NAMESPACE SCREEN
+# 6. SIDEBAR VAULT FIREWALL & CONTROLS
 # ==========================================
-if not st.session_state.authenticated:
-  st.title("🍳 SmartRasoi Cloud")
-  st.markdown(
-      "### Secure, Zero-Cost, Multi-Device Family Inventory Management"
-  )
-  st.markdown("---")
+with st.sidebar:
+  st.title("🔐 Fridge Firewall")
 
-  with st.form("auth_form", clear_on_submit=False):
-    st.subheader("Access Your Family Fridge Namespace")
-    fridge_input = (
-        st.text_input("Fridge ID / Family Name", placeholder="e.g., sharma_kitchen")
-        .strip()
-        .lower()
-    )
-    pin_input = st.text_input("Secure PIN", type="password", placeholder="****")
-    submit_auth = st.form_submit_button("Access Fridge 🚀")
-
-    if submit_auth:
-      if not fridge_input or not pin_input:
-        st.error("Please provide both a Fridge ID and a PIN.")
-      else:
-        hashed = hash_pin(pin_input)
-        if db:
-          doc_ref = db.collection("fridges").document(fridge_input)
-          doc = doc_ref.get()
-          if doc.exists:
-            data = doc.to_dict()
-            if data.get("pin_hash") == hashed:
-              st.session_state.authenticated = True
-              st.session_state.fridge_id = fridge_input
-              st.rerun()
-            else:
-              st.error("Incorrect PIN for this Fridge ID.")
-          else:
-            doc_ref.set({"pin_hash": hashed, "created_at": datetime.now()})
-            st.session_state.authenticated = True
-            st.session_state.fridge_id = fridge_input
-            st.success("New family fridge namespace created successfully!")
-            st.rerun()
-        else:
-          st.session_state.authenticated = True
-          st.session_state.fridge_id = fridge_input
-          st.rerun()
-
-# ==========================================
-# 7. MAIN DASHBOARD (AUTHENTICATED)
-# ==========================================
-else:
-  current_lang = st.session_state.lang
-  T = LANG_PACK[current_lang]
-
-  # --- SIDEBAR: CONTROLS, LANGUAGE TOGGLE & SHORTCUT ---
-  with st.sidebar:
-    st.subheader("📌 Fridge Info")
-    st.markdown(f"**Active ID:** `{st.session_state.fridge_id.upper()}`")
+  if st.session_state.authenticated:
+    st.success(f"🔓 Logged into Vault:\n**{st.session_state.vault_id.upper()}**")
     st.markdown("---")
 
     st.subheader("🌐 Language Switch")
@@ -313,22 +296,106 @@ else:
 
     st.markdown("---")
     st.subheader("📱 Add to Home Screen")
-    st.markdown("Pin the live web app directly to your home screen:")
-
     st.link_button(
-        "📲 Open Live Web App",
+        "📲 Open App Bookmark",
         "https://fridgeinventory.streamlit.app",
         use_container_width=True,
     )
 
     st.markdown("---")
-    if st.button("Logout / Switch Fridge", use_container_width=True):
+    if st.button("🔒 Logout / Lock Vault", use_container_width=True):
       st.session_state.authenticated = False
-      st.session_state.fridge_id = ""
+      st.session_state.vault_id = ""
       st.session_state.last_processed_hash = ""
       st.rerun()
 
-  # --- INTERACTIVE WASTE ALERT POPUP MODAL ---
+  else:
+    vault_tab1, vault_tab2 = st.tabs(["🔑 Login Vault", "✨ Create Vault"])
+
+    with vault_tab1:
+      st.subheader("Access Active Vault")
+      login_v_id = (
+          st.text_input("Vault Name / ID", placeholder="e.g., sharma_kitchen")
+          .strip()
+          .lower()
+      )
+      login_v_pass = st.text_input(
+          "Vault Password", type="password", key="login_pass"
+      )
+      if st.button("Unlock Vault 🔓", use_container_width=True):
+        if not login_v_id or not login_v_pass:
+          st.error("Please enter both Vault Name and Password.")
+        else:
+          hashed = hash_pin(login_v_pass)
+          if db:
+            doc_ref = db.collection("vaults").document(login_v_id)
+            doc = doc_ref.get()
+            if doc.exists:
+              if doc.to_dict().get("pin_hash") == hashed:
+                st.session_state.authenticated = True
+                st.session_state.vault_id = login_v_id
+                st.rerun()
+              else:
+                st.error("Firewall Rejected: Incorrect Vault Password!")
+            else:
+              st.error("Vault not found! Create it in the next tab.")
+          else:
+            st.session_state.authenticated = True
+            st.session_state.vault_id = login_v_id
+            st.rerun()
+
+    with vault_tab2:
+      st.subheader("Setup New Vault")
+      create_v_id = (
+          st.text_input(
+              "New Vault Name",
+              placeholder="e.g., gupta_kitchen",
+              key="create_id",
+          )
+          .strip()
+          .lower()
+      )
+      create_v_pass = st.text_input(
+          "Set Master Password", type="password", key="create_pass"
+      )
+      if st.button("Create New Vault ✨", use_container_width=True):
+        if not create_v_id or not create_v_pass:
+          st.error("Please provide a name and password for the new Vault.")
+        else:
+          hashed = hash_pin(create_v_pass)
+          if db:
+            doc_ref = db.collection("vaults").document(create_v_id)
+            if doc_ref.get().exists:
+              st.error(
+                  "Vault Name already exists! Choose another name or Login."
+              )
+            else:
+              doc_ref.set({"pin_hash": hashed, "created_at": datetime.now()})
+              st.session_state.authenticated = True
+              st.session_state.vault_id = create_v_id
+              st.success("New secure Vault created successfully!")
+              st.rerun()
+          else:
+            st.session_state.authenticated = True
+            st.session_state.vault_id = create_v_id
+            st.rerun()
+
+# ==========================================
+# 7. MAIN DASHBOARD (LOGGED IN STATE)
+# ==========================================
+if not st.session_state.authenticated:
+  st.title("🍳 FridgeInventory Vault Firewall")
+  st.markdown(
+      '<div class="bubble-yellow-warning">⚠️ Please log in or create a vault'
+      " using the sidebar tabs on the left to unlock your active kitchen"
+      " inventory panel!</div>",
+      unsafe_allow_html=True,
+  )
+
+else:
+  current_lang = st.session_state.lang
+  T = LANG_PACK[current_lang]
+
   if st.session_state.show_waste_modal:
     c_left, c_close = st.columns([3.2, 0.8])
     with c_close:
@@ -353,7 +420,6 @@ else:
         unsafe_allow_html=True,
     )
 
-  # --- HEADER & TITLE ---
   st.markdown(
       f'<div class="header-bubble"><div'
       f' class="cartoon-title">{T["title"]}</div><div'
@@ -361,7 +427,6 @@ else:
       unsafe_allow_html=True,
   )
 
-  # --- COMMAND INPUT TABS ---
   st.markdown(f"### {T['input_hdr']}")
   tab1, tab2 = st.tabs([T["tab_sim"], T["tab_voice"]])
   voice_text = ""
@@ -389,7 +454,6 @@ else:
 
   final_command = text_input if text_input else voice_text
 
-  # --- COMMAND PROCESSING & CLOUD AUTO-SAVE LOGIC ---
   if final_command and final_command.strip():
     current_hash = get_md5_hash(final_command.strip())
 
@@ -397,9 +461,9 @@ else:
       st.session_state.last_processed_hash = current_hash
       today = datetime.now().date()
 
-      fridge_doc_ref = (
-          db.collection("fridges")
-          .document(st.session_state.fridge_id)
+      vault_doc_ref = (
+          db.collection("vaults")
+          .document(st.session_state.vault_id)
           .collection("inventory")
           if db
           else None
@@ -407,7 +471,7 @@ else:
 
       inventory = {}
       if db:
-        docs = fridge_doc_ref.stream()
+        docs = vault_doc_ref.stream()
         for doc in docs:
           inventory[doc.id] = doc.to_dict()
 
@@ -418,10 +482,11 @@ else:
               "cooked everything",
               "ate everything",
               "clear fridge",
+              "clear vault",
           ]
       ):
         if db:
-          docs = fridge_doc_ref.stream()
+          docs = vault_doc_ref.stream()
           for doc in docs:
             doc.reference.delete()
         st.toast("Cleared storage matrix: Marked all items as consumed!")
@@ -442,7 +507,7 @@ else:
                   or doc_id == name_hi
               ):
                 if db:
-                  fridge_doc_ref.document(doc_id).delete()
+                  vault_doc_ref.document(doc_id).delete()
                 wasted_en.append(name_en)
                 wasted_hi.append(name_hi)
         if wasted_en:
@@ -473,7 +538,7 @@ else:
                   or doc_id == name_hi
               ):
                 if db:
-                  fridge_doc_ref.document(doc_id).delete()
+                  vault_doc_ref.document(doc_id).delete()
                 removed.append(name_en if current_lang == "en" else name_hi)
         if removed:
           st.toast(f"Removed: {', '.join(set(removed))}")
@@ -495,21 +560,20 @@ else:
                 "core_id": name_en,
             }
             if db:
-              fridge_doc_ref.document(target_name).set(item_payload)
+              vault_doc_ref.document(target_name).set(item_payload)
             added.append(target_name)
         if added:
           st.toast(f"Logged: {', '.join(set(added))}")
           st.rerun()
 
-  # --- DASHBOARD & EXPIRY MATRIX DISPLAY ---
   st.markdown("<br>", unsafe_allow_html=True)
   st.markdown(f"### {T['ledger_hdr']}")
 
   inventory_items = []
   if db:
     docs = (
-        db.collection("fridges")
-        .document(st.session_state.fridge_id)
+        db.collection("vaults")
+        .document(st.session_state.vault_id)
         .collection("inventory")
         .stream()
     )
