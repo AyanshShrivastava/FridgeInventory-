@@ -2,6 +2,8 @@ from datetime import datetime, timedelta
 import hashlib
 import time
 from database import EXPIRY_DATABASE
+from gemini import get_ai_expiry_and_names
+from help import render_expiry_helper
 import firebase_admin
 from firebase_admin import credentials, firestore
 import pandas as pd
@@ -279,7 +281,6 @@ if "waste_modal_items_hi" not in st.session_state:
 if "waste_modal_time" not in st.session_state:
   st.session_state.waste_modal_time = 0.0
 
-# Local fallback inventory dictionary for offline / non-firebase testing
 if "local_inventory" not in st.session_state:
   st.session_state.local_inventory = {}
 
@@ -496,7 +497,6 @@ else:
       st.session_state.last_processed_hash = current_hash
       today = datetime.now().date()
 
-      # Helper for fetching inventory dictionary (supports Firebase or Local Fallback)
       def fetch_inventory():
         inv = {}
         if db:
@@ -635,12 +635,13 @@ else:
           st.balloons()
           st.rerun()
 
-      # Brought / Added Grocery Command
+      # Brought / Added Grocery Command (Static Matrix + Gemini Fallback)
       elif any(
           w in final_command
           for w in ["brought", "bought", "added", "add", "market", "came"]
       ):
         added = []
+        matched_any = False
         for trigger_word, (days, name_en, name_hi) in EXPIRY_DATABASE.items():
           if trigger_word in final_command:
             target_name = name_en if current_lang == "en" else name_hi
@@ -652,6 +653,41 @@ else:
             }
             save_item(target_name, item_payload)
             added.append(target_name)
+            matched_any = True
+
+        # If not in static database, delegate to gemini.py seamlessly
+        if not matched_any:
+          words = final_command.split()
+          action_words = [
+              "brought",
+              "bought",
+              "added",
+              "add",
+              "market",
+              "came",
+              "2",
+              "kgs",
+              "kg",
+              "grams",
+              "packet",
+              "packets",
+          ]
+          clean_words = [
+              w for w in words if w not in action_words and not w.isdigit()
+          ]
+          if clean_words:
+            raw_item_query = " ".join(clean_words)
+            ai_days, ai_en, ai_hi = get_ai_expiry_and_names(raw_item_query)
+            target_name = ai_en if current_lang == "en" else ai_hi
+            expiry_date = today + timedelta(days=ai_days)
+            item_payload = {
+                "date_brought": today.strftime("%Y-%m-%d"),
+                "expiry_date": expiry_date.strftime("%Y-%m-%d"),
+                "core_id": ai_en,
+            }
+            save_item(target_name, item_payload)
+            added.append(target_name)
+
         if added:
           st.session_state["cmd_input"] = ""
           st.toast(f"Logged: {', '.join(set(added))}")
@@ -660,7 +696,6 @@ else:
   st.markdown("<br>", unsafe_allow_html=True)
   st.markdown(f"### {T['ledger_hdr']}")
 
-  # Fetch active inventory for display
   display_inventory = {}
   if db:
     docs = (
@@ -722,26 +757,8 @@ else:
         pd.DataFrame(display_rows), use_container_width=True, hide_index=True
     )
 
-    urgent_items = [
-        r[T["col_item"]]
-        for r in display_rows
-        if any(
-            k in r[T["col_status"]]
-            for k in [
-                "EXPIRED",
-                "CRITICAL",
-                "WARNING",
-                "खराब",
-                "आपातकालीन",
-                "चेतावनी",
-            ]
-        )
-    ]
-    if urgent_items:
-      st.markdown(
-          f'<div class="bubble-alert-note">{T["note_msg"].format(items=", ".join(urgent_items))}</div>',
-          unsafe_allow_html=True,
-      )
+    # Render expiration helper via help.py module
+    render_expiry_helper(display_rows, T)
   else:
     st.markdown(
         f'<div class="bubble-empty">{T["empty_msg"]}</div>',
