@@ -65,7 +65,7 @@ def render_expiry_helper(display_rows, T, current_lang):
       with st.spinner(spinner_text):
         try:
           genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
-          model = genai.GenerativeModel("gemini-2.5-flash")
+          model = genai.GenerativeModel("gemini-3.8-flash")
           lang_instruction = "in English" if current_lang == "en" else "in Hindi"
           prompt = (
               f"You are an expert Indian home chef. The following items are"

@@ -24,7 +24,7 @@ def get_ai_expiry_and_names(raw_item: str):
     ):
       return 7, raw_item.lower(), raw_item
 
-    model = genai.GenerativeModel("gemini-2.5-flash")
+    model = genai.GenerativeModel("gemini-3.8-flash")
     prompt = (
         f"A user added an unlisted grocery item '{raw_item}' to their kitchen"
         " inventory in India. Provide three things separated by a comma: 1."
