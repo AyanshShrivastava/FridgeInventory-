@@ -1,13 +1,12 @@
 from datetime import datetime
-import json
-import google.generativeai as genai
 import streamlit as st
+from gemini import generate_rescue_recipe
 
 
 def render_expiry_helper(active_rows, T, current_lang):
-  """Renders expiry insights and Gemini-powered smart rescue recipes
+  """Renders expiry insights and triggers the top-tier Gemini rescue recipe
 
-  strictly for items about to expire today or tomorrow.
+  generator strictly for items about to expire today or tomorrow.
   """
   st.markdown("---")
   st.subheader(
@@ -55,42 +54,32 @@ def render_expiry_helper(active_rows, T, current_lang):
       key="gen_rescue_recipe_btn",
   ):
     with st.spinner(
-        "Formulating rescue recipe from trusted culinary standards..."
+        "Consulting top-tier model for precise rescue recipe..."
         if current_lang == "en"
-        else "खराब होने वाले सामान से सुरक्षित रेसिपी तैयार की जा रही है..."
+        else "शीर्ष मॉडल द्वारा सुरक्षित रेसिपी तैयार की जा रही है..."
     ):
       try:
-        model = genai.GenerativeModel("gemini-1.5-flash")
-        prompt = f"""
-                You are an expert Indian chef and food-waste reduction specialist. 
-                The user has these specific kitchen ingredients that are ABOUT TO EXPIRE TODAY OR TOMORROW and must be used immediately to prevent waste: {expiring_soon_items}.
-                Create a delicious, practical Indian rescue recipe utilizing these expiring items.
-                
-                Return ONLY a valid JSON object with these exact keys:
-                {{"recipe_name": "<English name>", "recipe_name_hi": "<Hindi name in Devanagari>", "ingredients": ["<item1>", "<item2>"], "steps": ["<step1>", "<step2>"]}}
-                """
-        response = model.generate_content(prompt)
-        text = response.text.strip()
-        if text.startswith("```json"):
-          text = text[7:-3].strip()
-        elif text.startswith("```"):
-          text = text[3:-3].strip()
+        recipe = generate_rescue_recipe(expiring_soon_items)
 
-        recipe = json.loads(text)
+        if recipe:
+          r_name = (
+              recipe.get("recipe_name", "Recipe")
+              if current_lang == "en"
+              else recipe.get("recipe_name_hi", "रेसिपी")
+          )
+          st.success(f"### 🍽️ Rescue Dish: {r_name}")
 
-        r_name = (
-            recipe["recipe_name"]
-            if current_lang == "en"
-            else recipe["recipe_name_hi"]
-        )
-        st.success(f"### 🍽️ Rescue Dish: {r_name}")
-
-        st.markdown(
-            "**Ingredients Used:** " + ", ".join(recipe["ingredients"])
-        )
-        st.markdown("**Cooking Steps:**")
-        for idx, step in enumerate(recipe["steps"], 1):
-          st.markdown(f"{idx}. {step}")
+          st.markdown(
+              "**Ingredients Used:** "
+              + ", ".join(recipe.get("ingredients", []))
+          )
+          st.markdown("**Cooking Steps:**")
+          for idx, step in enumerate(recipe.get("steps", []), 1):
+            st.markdown(f"{idx}. {step}")
+        else:
+          st.error(
+              "Could not formulate a rescue recipe. Please try again later."
+          )
 
       except Exception as e:
         st.error(
