@@ -1,15 +1,14 @@
-from datetime import datetime, timedelta
 import hashlib
 import time
+from datetime import datetime, timedelta
+import pandas as pd
+import streamlit as st
+import firebase_admin
+from firebase_admin import credentials, firestore
+import speech_recognition as sr
 from database import EXPIRY_DATABASE
 from gemini import get_ai_expiry_and_names
 from help import render_expiry_helper
-import firebase_admin
-from firebase_admin import credentials, firestore
-import pandas as pd
-import speech_recognition as sr
-import streamlit as st
-
 # ==========================================
 # 1. PAGE CONFIG & PROFESSIONAL CARTOON CSS
 # ==========================================
