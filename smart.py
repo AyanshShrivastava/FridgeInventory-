@@ -26,18 +26,19 @@ if "google" in st.secrets and "api_key" in st.secrets["google"]:
 
 
 def get_ai_expiry_and_names(item_query):
-  """Queries the top-tier Gemini flagship model to find exact shelf life
+  """Queries the flagship Gemini 1.5 Pro model to find exact shelf life
 
   based on trusted food safety standards and bilingual names.
+  Explicitly supports beverages, health drinks, packaged goods, and typos.
   Returns days = -1 if the input is not a valid food item.
   """
   try:
-    model = genai.GenerativeModel("gemini-3.8-flash")
+    model = genai.GenerativeModel("gemini-1.5-pro")
     prompt = f"""
         You are a strict food safety and inventory management AI for Indian kitchens, cross-referencing trusted standards (such as FSSAI guidelines and standard culinary preservation data). Analyze the user query: "{item_query}".
-        1. Determine if this item is a FOOD item, vegetable, fruit, dairy, spice, beverage, or kitchen grocery ingredient.
-        2. If it is NOT a food item (e.g., a building, vehicle, electronics, clothes, or random non-edible objects like a palace or a building), you MUST return JSON with "days": -1.
-        3. If it IS a food item, provide its exact typical shelf life in days based on trusted storage standards in an Indian kitchen, along with its clean English name and Hindi name in Devanagari script.
+        1. Determine if this item is a FOOD item, beverage, nutritional health drink powder (like Horlicks, Bournvita, Complan), dairy, spice, fruit, vegetable, or kitchen grocery ingredient. Handle minor spelling typos gracefully (for example, "hrolicks" means Horlicks).
+        2. If it is NOT a food item or kitchen grocery (e.g., a building, vehicle, electronics, clothes, or random non-edible objects like a palace), you MUST return JSON with "days": -1.
+        3. If it IS a food/drink item, provide its exact typical shelf life in days based on packaged goods or storage standards in an Indian kitchen, along with its clean English name and Hindi name in Devanagari script.
         
         Return ONLY a valid JSON object with these exact keys:
         {{"days": <integer number of days, or -1 if not a food item>, "en": "<English name>", "hi": "<Hindi name in Devanagari>"}}
@@ -59,18 +60,17 @@ def get_ai_expiry_and_names(item_query):
     data = json.loads(text)
     return int(data.get("days", -1)), data.get("en", ""), data.get("hi", "")
   except Exception as e:
-    # Default to -1 (reject non-food items) on any parsing or network error
     return -1, item_query, item_query
 
 
 def generate_rescue_recipe(expiring_soon_items):
-  """Generates an anti-waste rescue recipe using the top-tier Gemini flagship
+  """Generates an anti-waste rescue recipe using the top-tier Gemini 1.5 Pro
 
   model, gracefully handling single or sparse items with simple spice
   additions and robust JSON extraction.
   """
   try:
-    model = genai.GenerativeModel("gemini-3.8-flash")
+    model = genai.GenerativeModel("gemini-1.5-pro")
     prompt = f"""
         You are an expert Indian chef and food-waste reduction specialist. 
         The user has these specific kitchen ingredients that are ABOUT TO EXPIRE TODAY OR TOMORROW and must be used immediately to prevent waste: {expiring_soon_items}.
@@ -149,7 +149,7 @@ def render_expiry_helper(active_rows, T, current_lang):
       key="gen_rescue_recipe_btn",
   ):
     with st.spinner(
-        "Consulting top-tier flagship model for precise rescue recipe..."
+        "Consulting Gemini 1.5 Pro for precise rescue recipe..."
         if current_lang == "en"
         else "शीर्ष मॉडल द्वारा सुरक्षित रेसिपी तैयार की जा रही है..."
     ):
