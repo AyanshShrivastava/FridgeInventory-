@@ -36,7 +36,7 @@ def get_ai_expiry_and_names(item_query):
     prompt = f"""
         You are a strict food safety and inventory management AI for Indian kitchens, cross-referencing trusted standards (such as FSSAI guidelines and standard culinary preservation data). Analyze the user query: "{item_query}".
         1. Determine if this item is a FOOD item, vegetable, fruit, dairy, spice, beverage, or kitchen grocery ingredient.
-        2. If it is NOT a food item (e.g., a building, vehicle, electronics, clothes, or random non-edible objects like a palace), you MUST return JSON with "days": -1.
+        2. If it is NOT a food item (e.g., a building, vehicle, electronics, clothes, or random non-edible objects like a palace or a building), you MUST return JSON with "days": -1.
         3. If it IS a food item, provide its exact typical shelf life in days based on trusted storage standards in an Indian kitchen, along with its clean English name and Hindi name in Devanagari script.
         
         Return ONLY a valid JSON object with these exact keys:
@@ -45,38 +45,55 @@ def get_ai_expiry_and_names(item_query):
     response = model.generate_content(prompt)
     text = response.text.strip()
 
-    if text.startswith("```json"):
-      text = text[7:-3].strip()
-    elif text.startswith("```"):
-      text = text[3:-3].strip()
+    # Robust JSON extraction: strip markdown blocks if present
+    if "```json" in text:
+      text = text.split("```json")[1].split("```")[0].strip()
+    elif "```" in text:
+      text = text.split("```")[1].split("```")[0].strip()
+
+    start_idx = text.find("{")
+    end_idx = text.rfind("}")
+    if start_idx != -1 and end_idx != -1:
+      text = text[start_idx : end_idx + 1]
 
     data = json.loads(text)
     return int(data.get("days", -1)), data.get("en", ""), data.get("hi", "")
   except Exception as e:
-    return 7, item_query, item_query
+    # Default to -1 (reject non-food items) on any parsing or network error
+    return -1, item_query, item_query
 
 
 def generate_rescue_recipe(expiring_soon_items):
   """Generates an anti-waste rescue recipe using the top-tier Gemini flagship
 
-  model.
+  model, gracefully handling single or sparse items with simple spice
+  additions and robust JSON extraction.
   """
   try:
     model = genai.GenerativeModel("gemini-3.8-flash")
     prompt = f"""
         You are an expert Indian chef and food-waste reduction specialist. 
         The user has these specific kitchen ingredients that are ABOUT TO EXPIRE TODAY OR TOMORROW and must be used immediately to prevent waste: {expiring_soon_items}.
-        Create a delicious, practical Indian rescue recipe utilizing these expiring items, based on trusted culinary practices.
+        
+        Create a delicious, practical Indian rescue recipe utilizing these items. 
+        If there are very few items (or just a single item like prawns, paneer, or a single vegetable), keep it simple and straightforward—instruct the user to add basic kitchen spices (like salt, turmeric, red chilli powder, oil, and garlic) and quickly sauté or fry it.
         
         Return ONLY a valid JSON object with these exact keys:
         {{"recipe_name": "<English name>", "recipe_name_hi": "<Hindi name in Devanagari>", "ingredients": ["<item1>", "<item2>"], "steps": ["<step1>", "<step2>"]}}
         """
     response = model.generate_content(prompt)
     text = response.text.strip()
-    if text.startswith("```json"):
-      text = text[7:-3].strip()
-    elif text.startswith("```"):
-      text = text[3:-3].strip()
+
+    # Robust JSON extraction: strip markdown blocks if present
+    if "```json" in text:
+      text = text.split("```json")[1].split("```")[0].strip()
+    elif "```" in text:
+      text = text.split("```")[1].split("```")[0].strip()
+
+    start_idx = text.find("{")
+    end_idx = text.rfind("}")
+    if start_idx != -1 and end_idx != -1:
+      text = text[start_idx : end_idx + 1]
 
     return json.loads(text)
   except Exception as e:
