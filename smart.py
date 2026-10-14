@@ -64,6 +64,33 @@ for _key, _val in {
     st.session_state.setdefault(_key, _val)
 
 
+# Initialize Firebase FIRST so session verification can use it immediately
+@st.cache_resource(show_spinner=False)
+def init_firestore():
+    """Return (client_or_None, error_text). Connects once per server."""
+    try:
+        if not firebase_admin._apps:
+            if "firebase" in st.secrets:
+                fb = st.secrets["firebase"]
+                if isinstance(fb, str):
+                    info = json.loads(fb)
+                elif "value" in fb:
+                    info = json.loads(fb["value"])
+                else:
+                    info = dict(fb)
+                cred = credentials.Certificate(info)
+            else:
+                cred = credentials.Certificate("firebase_credentials.json")
+            firebase_admin.initialize_app(cred)
+        return firestore.client(), ""
+    except Exception as exc:
+        log.exception("Firebase initialisation failed")
+        return None, str(exc)
+
+
+db, db_error = init_firestore()
+
+
 # Secure URL Token Restoration (Instant & Bulletproof on Streamlit Cloud)
 def enforce_secure_session():
     if st.session_state.get("authenticated"):
@@ -493,35 +520,6 @@ def transcribe(raw):
     return "", "audio_unclear"
 
 
-# ==========================================
-# 5. FIREBASE
-# ==========================================
-@st.cache_resource(show_spinner=False)
-def init_firestore():
-    """Return (client_or_None, error_text). Connects once per server."""
-    try:
-        if not firebase_admin._apps:
-            if "firebase" in st.secrets:
-                fb = st.secrets["firebase"]
-                if isinstance(fb, str):
-                    info = json.loads(fb)
-                elif "value" in fb:
-                    info = json.loads(fb["value"])
-                else:
-                    info = dict(fb)
-                cred = credentials.Certificate(info)
-            else:
-                cred = credentials.Certificate("firebase_credentials.json")
-            firebase_admin.initialize_app(cred)
-        return firestore.client(), ""
-    except Exception as exc:
-        log.exception("Firebase initialisation failed")
-        return None, str(exc)
-
-
-db, db_error = init_firestore()
-
-
 def hash_pin(pin, salt):
     return hashlib.pbkdf2_hmac("sha256", pin.encode(), bytes.fromhex(salt), PIN_ITERATIONS).hex()
 
@@ -799,7 +797,6 @@ def render_sidebar(t, items):
         st.divider()
         st.subheader(t["home_hdr"])
         st.caption(t["home_note"])
-        # Home screen link includes the secure token for seamless web app shortcut loading
         link = f"{APP_URL}?fridge={st.session_state.fridge_id}&token={st.query_params.get('token', '')}"
         st.link_button(t["open_link"], link, use_container_width=True)
         st.caption(t["copy_link"])
