@@ -64,12 +64,8 @@ for _key, _val in {
 }.items():
     st.session_state.setdefault(_key, _val)
 
-# Initialize Cookie Manager for clean, hidden session persistence
-@st.cache_resource(show_spinner=False)
-def get_cookie_manager():
-    return stx.CookieManager(key="smartrasoi_cookie_mgr")
-
-cookie_manager = get_cookie_manager()
+# Initialize Cookie Manager directly (Custom components cannot be cached)
+cookie_manager = stx.CookieManager(key="smartrasoi_cookie_mgr")
 
 # Secure Cookie Session Restoration:
 def verify_and_restore_session():
@@ -218,7 +214,7 @@ T = {
         "bad_id": "3 से 30 अक्षर, नंबर, _ या - का उपयोग करें।",
         "need_both": "फ्रिज ID और PIN दोनों डालें।",
         "pin_short": "PIN कम से कम 4 अक्षर का हो।",
-        "no_fridge": "इस ID का कोई फ्रिज नहीं है।", "wrong_pin": "गलत PIN।",
+        "no_fridge": "इस ID का कोई फ्रिज नहीं है।", "wrong_pin": "गलत PIN。",
         "exists": "यह ID पहले से है। कोई और चुनें।",
         "locked": "बहुत अधिक गलत प्रयास। {s} सेकंड रुकें।",
         "lock_info": "साइडबार में लॉगिन करें या नया फ्रिज बनाएँ।",
