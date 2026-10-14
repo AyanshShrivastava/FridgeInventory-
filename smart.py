@@ -13,12 +13,11 @@ import logging
 import re
 import secrets
 import time
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, timedelta
 from enum import Enum
 from html import escape as esc
 from zoneinfo import ZoneInfo
 
-import extra_streamlit_components as stx
 import firebase_admin
 import speech_recognition as sr
 import streamlit as st
@@ -64,38 +63,34 @@ for _key, _val in {
 }.items():
     st.session_state.setdefault(_key, _val)
 
-# Initialize Cookie Manager directly (Custom components cannot be cached)
-cookie_manager = stx.CookieManager(key="smartrasoi_cookie_mgr")
 
-# Secure Cookie Session Restoration:
-def verify_and_restore_session():
+# Secure URL Token Restoration (Instant & Bulletproof on Streamlit Cloud)
+def enforce_secure_session():
     if st.session_state.get("authenticated"):
         return
 
-    cookies = cookie_manager.cookies
-    if cookies is None:
-        return  # Still loading cookies from browser client
+    query_fridge = st.query_params.get("fridge", "")
+    query_token = st.query_params.get("token", "")
 
-    c_fridge = cookies.get("smartrasoi_fridge")
-    c_token = cookies.get("smartrasoi_token")
-
-    if c_fridge and c_token:
-        fid = str(c_fridge).strip().lower()
+    if query_fridge and query_token:
+        clean_fid = str(query_fridge).strip().lower()
+        clean_token = str(query_token).strip()
         try:
             if db is not None:
-                doc_ref = db.collection("fridges").document(fid)
+                doc_ref = db.collection("fridges").document(clean_fid)
                 snap = doc_ref.get()
                 if snap.exists:
                     data = snap.to_dict() or {}
-                    if hmac.compare_digest(data.get("active_session_token", ""), c_token):
+                    if hmac.compare_digest(data.get("active_session_token", ""), clean_token):
                         st.session_state.authenticated = True
-                        st.session_state.fridge_id = fid
+                        st.session_state.fridge_id = clean_fid
                         return
         except Exception:
             pass
-        st.session_state.unauthorized_cookie_attempt = fid
+        st.session_state.unauthorized_url_attempt = clean_fid
 
-verify_and_restore_session()
+
+enforce_secure_session()
 
 ADD_WORDS = {"brought", "bring", "bought", "buy", "got", "get", "added", "add",
              "purchased", "लाया", "लाई", "लाए", "लिया", "खरीदा", "खरीदी", "खरीदे"}
@@ -172,8 +167,8 @@ T = {
         "open_link": "Open fridge link", "copy_link": "Copy the link below (tap the copy icon)",
         "android": "**Android (Chrome):** tap ⋮ → **Add to Home screen** (or **Install app**).",
         "iphone": "**iPhone (Safari):** tap the Share icon ⎋ → **Add to Home Screen**.",
-        "secure": "PINs are stored as salted hashes. Each fridge is secured by secure browser cookies.",
-        "auth_err": "Session invalid or expired. Please log in again.",
+        "secure": "PINs are stored as salted hashes. Each fridge is secured by cryptographic session tokens.",
+        "auth_err": "You are not logged in. You must be logged in first for that fridge to work.",
     },
     "hi": {
         "subtitle": "बताइए क्या लाए या इस्तेमाल किया। यह आपकी रसोई को ताज़ा और बर्बादी-मुक्त रखेगा।",
@@ -225,8 +220,8 @@ T = {
         "open_link": "फ्रिज लिंक खोलें", "copy_link": "नीचे का लिंक कॉपी करें (कॉपी आइकन दबाएँ)",
         "android": "**Android (Chrome):** ⋮ दबाएँ → **Add to Home screen** (या **Install app**)।",
         "iphone": "**iPhone (Safari):** Share ⎋ दबाएँ → **Add to Home Screen**。",
-        "secure": "PIN सुरक्षित हैश में सेव होता है। ब्राउज़र कुकीज़ द्वारा सुरक्षित।",
-        "auth_err": "सत्र अमान्य या समाप्त हो गया है। कृपया फिर से लॉग इन करें।",
+        "secure": "PIN सुरक्षित हैश में सेव होता है। क्रिप्टो टोकन द्वारा सुरक्षित।",
+        "auth_err": "आप लॉग इन नहीं हैं। उस फ्रिज को काम करने के लिए पहले आपको लॉग इन करना होगा।",
     },
 }
 
@@ -729,7 +724,7 @@ def render_sidebar(t, items):
             st.rerun()
 
         if not st.session_state.authenticated:
-            if st.session_state.get("unauthorized_cookie_attempt"):
+            if st.session_state.get("unauthorized_url_attempt"):
                 st.error(t["auth_err"])
 
             st.subheader(t["login_tab"])
@@ -753,12 +748,11 @@ def render_sidebar(t, items):
                         st.session_state.authenticated = True
                         st.session_state.fridge_id = fid
                         st.session_state.login_fails = 0
-                        if "unauthorized_cookie_attempt" in st.session_state:
-                            del st.session_state["unauthorized_cookie_attempt"]
+                        if "unauthorized_url_attempt" in st.session_state:
+                            del st.session_state["unauthorized_url_attempt"]
 
-                        # Secure Cookie storage (expires in 30 days)
-                        cookie_manager.set("smartrasoi_fridge", fid, expires_at=datetime.now(timezone.utc) + timedelta(days=30))
-                        cookie_manager.set("smartrasoi_token", session_token, expires_at=datetime.now(timezone.utc) + timedelta(days=30))
+                        st.query_params["fridge"] = fid
+                        st.query_params["token"] = session_token
                         st.rerun()
 
                     st.session_state.login_fails += 1
@@ -787,11 +781,11 @@ def render_sidebar(t, items):
 
                             st.session_state.authenticated = True
                             st.session_state.fridge_id = new_fid
-                            if "unauthorized_cookie_attempt" in st.session_state:
-                                del st.session_state["unauthorized_cookie_attempt"]
+                            if "unauthorized_url_attempt" in st.session_state:
+                                del st.session_state["unauthorized_url_attempt"]
 
-                            cookie_manager.set("smartrasoi_fridge", new_fid, expires_at=datetime.now(timezone.utc) + timedelta(days=30))
-                            cookie_manager.set("smartrasoi_token", session_token, expires_at=datetime.now(timezone.utc) + timedelta(days=30))
+                            st.query_params["fridge"] = new_fid
+                            st.query_params["token"] = session_token
                             st.rerun()
                         st.error(t[err])
             return
@@ -805,7 +799,8 @@ def render_sidebar(t, items):
         st.divider()
         st.subheader(t["home_hdr"])
         st.caption(t["home_note"])
-        link = f"{APP_URL}?fridge={st.session_state.fridge_id}"
+        # Home screen link includes the secure token for seamless web app shortcut loading
+        link = f"{APP_URL}?fridge={st.session_state.fridge_id}&token={st.query_params.get('token', '')}"
         st.link_button(t["open_link"], link, use_container_width=True)
         st.caption(t["copy_link"])
         st.code(link, language=None)
@@ -815,11 +810,13 @@ def render_sidebar(t, items):
 
         st.divider()
         if st.button(t["lock_btn"], use_container_width=True, key="logout_go"):
-            cookie_manager.delete("smartrasoi_fridge")
-            cookie_manager.delete("smartrasoi_token")
             st.session_state.authenticated = False
             st.session_state.fridge_id = ""
             st.session_state.recipe = None
+            if "fridge" in st.query_params:
+                del st.query_params["fridge"]
+            if "token" in st.query_params:
+                del st.query_params["token"]
             st.rerun()
 
 
