@@ -278,7 +278,39 @@ header[data-testid="stHeader"] > div:first-child {
 }
 
 .stApp {background: #0B0E14; font-family: 'Lexend', sans-serif; color: #F3F4F6;}
-[data-testid="stSidebar"] {background: #111827; border-right: 1px solid #1F2937;}
+
+/* Make the sidebar bigger, more spacious, and prominent */
+[data-testid="stSidebar"] {
+    background: #111827;
+    border-right: 1px solid #1F2937;
+    min-width: 320px !important;
+}
+
+/* Make the sidebar collapse/expand toggle button large, glowing, and unmissable */
+[data-testid="collapsedControl"] {
+    background: #1E2638 !important;
+    border: 3px solid #3B82F6 !important;
+    border-radius: 14px !important;
+    box-shadow: 0 4px 14px rgba(59, 130, 246, 0.6) !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    width: 52px !important;
+    height: 52px !important;
+    margin: 10px !important;
+    transition: transform 0.2s ease, background 0.2s ease;
+}
+[data-testid="collapsedControl"]:hover {
+    transform: scale(1.08);
+    background: #1D4ED8 !important;
+}
+[data-testid="collapsedControl"] svg {
+    width: 28px !important;
+    height: 28px !important;
+    color: #00F2FE !important;
+    fill: #00F2FE !important;
+}
+
 .hdr {background: linear-gradient(135deg, #1E2638 0%, #111827 100%); padding: 22px 24px;
       border-radius: 20px; border: 3px solid #3B82F6; box-shadow: 0 8px 0 #1D4ED8; margin-bottom: 22px;}
 .hdr h1 {font-family: 'Fredoka One', cursive; font-size: 30px; color: #00F2FE; margin: 0;
