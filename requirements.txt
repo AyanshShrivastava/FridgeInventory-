@@ -1,5 +1,0 @@
-streamlit
-firebase-admin
-SpeechRecognition
-google-genai
-pydantic
