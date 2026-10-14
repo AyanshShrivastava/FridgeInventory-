@@ -32,11 +32,14 @@ from database import EXPIRY_DATABASE
 # ==========================================
 # 1. CONFIG, STATE, VOCABULARY & PERSISTENCE
 # ==========================================
+if "sidebar_state" not in st.session_state:
+    st.session_state.sidebar_state = "expanded"
+
 st.set_page_config(
     page_title="FridgeInventory",
     page_icon="🧊",
     layout="centered",
-    initial_sidebar_state="expanded",
+    initial_sidebar_state=st.session_state.sidebar_state,
 )
 
 log = logging.getLogger("fridgeinventory")
@@ -146,6 +149,7 @@ STOP_WORDS = ADD_WORDS | TAKE_WORDS | WASTE_WORDS | ALL_WORDS | {
 T = {
     "en": {
         "subtitle": "Tell it what you bought or used. It keeps your kitchen fresh and waste-free.",
+        "open_menu_btn": "☰ Open Login / Sidebar Menu",
         "tab_text": "Type", "tab_voice": "Record", "tab_upload": "Upload WAV",
         "cmd_label": "Command",
         "cmd_ph": "e.g. brought 2 kg palak, milk and tomatoes  |  used milk  |  threw bread",
@@ -186,7 +190,7 @@ T = {
         "no_fridge": "No fridge with that ID.", "wrong_pin": "Wrong PIN.",
         "exists": "That Fridge ID is taken. Choose another.",
         "locked": "Too many wrong attempts. Wait {s} seconds.",
-        "lock_info": "Log in or create a fridge in the sidebar to start.",
+        "lock_info": "Log in or create a fridge in the sidebar menu to start.",
         "lock_btn": "Lock fridge", "lang_btn": "हिंदी में देखें",
         "stats_items": "Items", "stats_soon": "Expiring soon",
         "home_hdr": "Add to home screen",
@@ -199,6 +203,7 @@ T = {
     },
     "hi": {
         "subtitle": "बताइए क्या लाए या इस्तेमाल किया। यह आपकी रसोई को ताज़ा और बर्बादी-मुक्त रखेगा।",
+        "open_menu_btn": "☰ लॉगिन / साइडबार मेनू खोलें",
         "tab_text": "टाइप करें", "tab_voice": "रिकॉर्ड करें", "tab_upload": "WAV अपलोड करें",
         "cmd_label": "कमांड",
         "cmd_ph": "जैसे: 2 किलो पालक, दूध और टमाटर लाया  |  दूध इस्तेमाल किया",
@@ -239,7 +244,7 @@ T = {
         "no_fridge": "इस ID का कोई फ्रिज नहीं है।", "wrong_pin": "गलत PIN。",
         "exists": "यह ID पहले से है। कोई और चुनें।",
         "locked": "बहुत अधिक गलत प्रयास। {s} सेकंड रुकें।",
-        "lock_info": "साइडबार में लॉगिन करें या नया फ्रिज बनाएँ।",
+        "lock_info": "साइडबार मेनू में लॉगिन करें या नया फ्रिज बनाएँ।",
         "lock_btn": "फ्रिज लॉक करें", "lang_btn": "View in English",
         "stats_items": "सामान", "stats_soon": "जल्द खराब",
         "home_hdr": "होम स्क्रीन पर जोड़ें",
@@ -283,23 +288,7 @@ header[data-testid="stHeader"] > div:first-child {
 [data-testid="stSidebar"] {
     background: #111827;
     border-right: 1px solid #1F2937;
-    min-width: 320px !important;
-}
-
-/* Make header action buttons (including sidebar toggle) large and glowing */
-header[data-testid="stHeader"] button {
-    background: #EC4899 !important;
-    border: 3px solid #F472B6 !important;
-    border-radius: 12px !important;
-    box-shadow: 0 4px 12px rgba(236, 72, 153, 0.6) !important;
-    width: 44px !important;
-    height: 44px !important;
-}
-header[data-testid="stHeader"] button svg {
-    width: 24px !important;
-    height: 24px !important;
-    color: #ffffff !important;
-    fill: #ffffff !important;
+    min-width: 330px !important;
 }
 
 .hdr {background: linear-gradient(135deg, #1E2638 0%, #111827 100%); padding: 22px 24px;
@@ -974,6 +963,12 @@ def _voice_block(src, key, t):
 
 def main():
     t = tr()
+    
+    # Large prominent button displayed at the very top of the page
+    if st.button(t["open_menu_btn"], use_container_width=True, key="toggle_sidebar_top"):
+        st.session_state.sidebar_state = "expanded" if st.session_state.sidebar_state == "collapsed" else "expanded"
+        st.rerun()
+
     st.markdown(
         f'<div class="hdr"><h1>FridgeInventory</h1><p>{esc(t["subtitle"])}</p></div>',
         unsafe_allow_html=True,
