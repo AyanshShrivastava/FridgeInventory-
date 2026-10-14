@@ -21,7 +21,6 @@ from zoneinfo import ZoneInfo
 import firebase_admin
 import speech_recognition as sr
 import streamlit as st
-import streamlit.components.v1 as components
 from firebase_admin import credentials, firestore
 from google import genai
 from google.api_core.exceptions import AlreadyExists
@@ -43,7 +42,7 @@ st.set_page_config(
 log = logging.getLogger("fridgeinventory")
 IST = ZoneInfo("Asia/Kolkata")
 APP_URL = "https://fridgeinventory.streamlit.app"
-FALLBACK_MODEL = "gemini-2.5-flash"
+DEFAULT_MODEL = "gemini-2.5-flash"
 PIN_ITERATIONS = 200_000
 MAX_CMD_CHARS = 200
 MAX_AI_LOOKUPS = 4          # unknown items per command (cost guard)
@@ -97,12 +96,15 @@ T = {
         "cmd_ph": "e.g. brought 2 kg palak, milk and tomatoes  |  used milk  |  threw bread",
         "submit": "Run command",
         "rec_label": "Record your command", "upl_label": "Upload a .wav file",
-        "voice_use": "Run this command", "heard": "Heard:",
+        "heard": "Heard:", "light_lbl": "Light notice",
+        "ai_wait": "Checking with AI...",
+        "rescue_wait": "Making your rescue recipe...",
         "audio_fmt": "Could not read this audio. Use a clear WAV recording.",
         "audio_net": "Speech service is unreachable. Check your internet connection.",
         "audio_unclear": "Could not understand the audio. Please speak clearly.",
         "no_db": "Database is unavailable. Check your Firebase secrets.",
         "ai_busy": "AI service is busy or not configured. Nothing was saved for: {names}.",
+        "too_many": "Too many unknown items at once. Nothing was saved for: {names}. Send fewer items.",
         "added": "Added: {names}", "used": "Used up: {names}", "wasted": "Discarded: {names}",
         "missing": "Not found in your fridge: {names}",
         "rejected": "Not a food item: {names}. Check the spelling and try again.",
@@ -134,7 +136,7 @@ T = {
         "stats_items": "Items", "stats_soon": "Expiring soon",
         "home_hdr": "Add to home screen",
         "home_note": "A website can't install itself. Open the link in Chrome (Android) or Safari (iPhone), then follow the steps below.",
-        "open_link": "Open fridge link", "copy_link": "Copy fridge link", "copied": "Copied!",
+        "open_link": "Open fridge link", "copy_link": "Copy the link below (tap the copy icon)",
         "android": "**Android (Chrome):** tap ⋮ → **Add to Home screen** (or **Install app**).",
         "iphone": "**iPhone (Safari):** tap the Share icon ⎋ → **Add to Home Screen**.",
         "secure": "PINs are stored as salted hashes. Each fridge is isolated by its ID.",
@@ -146,12 +148,15 @@ T = {
         "cmd_ph": "जैसे: 2 किलो पालक, दूध और टमाटर लाया  |  दूध इस्तेमाल किया",
         "submit": "कमांड चलाएँ",
         "rec_label": "अपना कमांड रिकॉर्ड करें", "upl_label": ".wav फ़ाइल अपलोड करें",
-        "voice_use": "यह कमांड चलाएँ", "heard": "सुना गया:",
+        "heard": "सुना गया:", "light_lbl": "हल्का नोटिस",
+        "ai_wait": "AI से जाँच हो रही है...",
+        "rescue_wait": "रेस्क्यू रेसिपी बन रही है...",
         "audio_fmt": "यह ऑडियो पढ़ा नहीं जा सका। साफ WAV रिकॉर्डिंग दें।",
         "audio_net": "स्पीच सेवा उपलब्ध नहीं है। इंटरनेट जाँचें।",
         "audio_unclear": "ऑडियो समझ नहीं आया। कृपया साफ बोलें।",
         "no_db": "डेटाबेस उपलब्ध नहीं है। Firebase सेटिंग जाँचें।",
         "ai_busy": "AI सेवा व्यस्त है या सेट नहीं है। इनके लिए कुछ सेव नहीं हुआ: {names}।",
+        "too_many": "एक बार में बहुत सारे अज्ञात सामान। इनके लिए कुछ सेव नहीं हुआ: {names}। कम सामान लिखें।",
         "added": "जोड़ा गया: {names}", "used": "इस्तेमाल हुआ: {names}",
         "wasted": "फेंका गया: {names}", "missing": "फ्रिज में नहीं मिला: {names}",
         "rejected": "यह खाने का सामान नहीं है: {names}। स्पेलिंग जाँचें।",
@@ -183,7 +188,7 @@ T = {
         "stats_items": "सामान", "stats_soon": "जल्द खराब",
         "home_hdr": "होम स्क्रीन पर जोड़ें",
         "home_note": "वेबसाइट खुद को इंस्टॉल नहीं कर सकती। लिंक Chrome (Android) या Safari (iPhone) में खोलें, फिर नीचे दिए स्टेप्स देखें।",
-        "open_link": "फ्रिज लिंक खोलें", "copy_link": "फ्रिज लिंक कॉपी करें", "copied": "कॉपी हो गया!",
+        "open_link": "फ्रिज लिंक खोलें", "copy_link": "नीचे का लिंक कॉपी करें (कॉपी आइकन दबाएँ)",
         "android": "**Android (Chrome):** ⋮ दबाएँ → **Add to Home screen** (या **Install app**)।",
         "iphone": "**iPhone (Safari):** Share ⎋ दबाएँ → **Add to Home Screen**।",
         "secure": "PIN सुरक्षित हैश में सेव होता है। हर फ्रिज अलग रहता है।",
@@ -204,10 +209,13 @@ CSS = """
 .bubble {border-radius: 18px; padding: 18px 20px; margin: 14px 0; line-height: 1.55;}
 .bubble-info {background: #0284C7; border: 3px solid #38BDF8; box-shadow: 0 6px 0 #0369A1; color: #fff;}
 .bubble-warn {background: #FEF08A; border: 3px solid #FACC15; box-shadow: 0 6px 0 #CA8A04;
-              color: #713F12; font-weight: 600; text-align: center;}
+              color: #713F12; font-weight: 600;}
 .bubble-danger {background: #7F1D1D; border: 3px solid #EF4444; box-shadow: 0 6px 0 #991B1B; color: #FEE2E2;}
 .bubble-rec {background: linear-gradient(135deg, #1E3A8A 0%, #0F172A 100%); border: 3px solid #3B82F6;
              box-shadow: 0 6px 0 #1D4ED8;}
+.heard-box {background: #0F2A44; color: #E0F2FE; border: 2px solid #38BDF8; border-radius: 14px;
+            padding: 12px 16px; font-size: 15px; line-height: 1.5; margin: 6px 0 10px; word-break: break-word;}
+.heard-box.light {background: #F0F9FF; color: #0C4A6E; border-color: #0284C7; box-shadow: 0 4px 0 #BAE6FD;}
 table.inv {width: 100%; border-collapse: separate; border-spacing: 0 8px;}
 table.inv td {background: #161B26; padding: 10px 12px; font-size: 14px;}
 table.inv td:first-child {border-radius: 12px 0 0 12px;}
@@ -233,8 +241,29 @@ def pick(en, hi):
     return (hi or en) if st.session_state.lang == "hi" else en
 
 
+def closable(inner_html, key, css):
+    """A notice with a ✕ button. Once closed it stays hidden until its key changes."""
+    flag = f"dismissed_{key}"
+    if st.session_state.get(flag):
+        return
+    c_text, c_close = st.columns([12, 1])
+    c_text.markdown(f'<div class="{css}">{inner_html}</div>', unsafe_allow_html=True)
+    if c_close.button("✕", key=f"x_{key}"):
+        st.session_state[flag] = True
+        st.rerun()
+
+
+def short_hash(text):
+    return hashlib.md5(text.encode("utf-8")).hexdigest()[:10]
+
+
+def query_param(name):
+    value = st.query_params.get(name, "")
+    return value[0] if isinstance(value, list) else value
+
+
 # ==========================================
-# 3. GEMINI: MODEL SELECTION & STRICT FOOD CLASSIFICATION
+# 3. GEMINI: MODEL & STRICT FOOD CLASSIFICATION
 # ==========================================
 class FoodCategory(str, Enum):
     FRUIT = "fruit"
@@ -313,59 +342,20 @@ def get_client():
         return None
 
 
-def version_of(name):
-    m = re.search(r"gemini-(\d+(?:\.\d+)?)", name)
-    return float(m.group(1)) if m else 0.0
-
-
-@st.cache_data(ttl=60 * 60 * 6, show_spinner=False)
-def latest_flash_model():
-    """Return the newest stable Gemini Flash model this key can use.
-
-    Falls back to FALLBACK_MODEL if the lookup fails.
-    """
-    client = get_client()
-    if client is None:
-        return FALLBACK_MODEL
-    try:
-        names = []
-        for m in client.models.list():
-            name = (m.name or "").replace("models/", "")
-            actions = m.supported_actions or []
-            if (
-                name.startswith("gemini-")
-                and "flash" in name
-                and "lite" not in name
-                and not any(x in name for x in ("preview", "exp", "tts", "image", "live", "embed"))
-                and "generateContent" in actions
-            ):
-                names.append(name)
-        if not names:
-            log.warning("No stable Flash model found; using fallback")
-            return FALLBACK_MODEL
-        return max(names, key=lambda n: (version_of(n), n))
-    except Exception:
-        log.exception("Could not list Gemini models")
-        return FALLBACK_MODEL
-
-
 def gemini_model():
-    """A model set in [google] secrets wins; otherwise use the newest Flash model."""
+    """Model from [google] secrets, or DEFAULT_MODEL if none is set."""
     try:
-        override = st.secrets["google"].get("model", "")
-        if override:
-            return str(override)
+        return str(st.secrets["google"].get("model", DEFAULT_MODEL))
     except Exception:
-        pass
-    return latest_flash_model()
+        return DEFAULT_MODEL
 
 
 @st.cache_data(ttl=60 * 60 * 24, show_spinner=False)
 def classify_food(phrase, model_name):
     """Return (days, name_en, name_hi) for real food, or None for non-food.
 
-    Raises on API or parse errors. st.cache_data does not cache exceptions, and
-    a raised error is never turned into a saved item.
+    Raises on API or parse errors. st.cache_data does not cache exceptions, so a
+    failed call is never remembered and never turned into a saved item.
     """
     client = get_client()
     if client is None:
@@ -495,21 +485,29 @@ def clear_all():
 # 6. COMMAND PARSING & PROCESSING
 # ==========================================
 def detect_action(tokens):
+    """Return 'waste', 'take', 'add', or None if the words name no action."""
     tokset = set(tokens)
     if tokset & WASTE_WORDS:
         return "waste"
     if tokset & TAKE_WORDS:
         return "take"
-    return "add"
+    if tokset & ADD_WORDS:
+        return "add"
+    return None
 
 
 def matches_item(item, keys):
+    """Whole-word matching, so 'tea' does not match 'steak'."""
     names = {
         str(item.get("name_en", "")).lower(),
         str(item.get("name_hi", "")).lower(),
         str(item.get("core_id", "")).lower(),
     } - {""}
-    return any(k in n or n in k for k in keys for n in names)
+    for n in names:
+        for k in keys:
+            if k == n or k in n.split() or n in k.split() or (len(n) >= 4 and n in k):
+                return True
+    return False
 
 
 def process_command(raw, t):
@@ -526,14 +524,18 @@ def process_command(raw, t):
     inv = load_items()
     today = datetime.now(IST).date()
     model_name = gemini_model()
-    added, used, wasted, missing, rejected, ai_failed = [], [], [], [], [], []
+    added, used, wasted, missing, rejected, ai_failed, too_many = [], [], [], [], [], [], []
     lookups = 0
+    last_action = "add"
 
     for seg in SPLIT_RE.split(cmd):
         tokens = WORD_RE.findall(seg)
         if not tokens:
             continue
-        action = detect_action(tokens)
+        # A part with no action word takes the previous part's action,
+        # so "used milk and bread" uses both items.
+        action = detect_action(tokens) or last_action
+        last_action = action
         phrase = " ".join(w for w in tokens if w not in STOP_WORDS)
         if not phrase:
             continue
@@ -545,11 +547,12 @@ def process_command(raw, t):
                     matches.setdefault(name_en, (days, name_en, name_hi))
             if not matches:
                 if lookups >= MAX_AI_LOOKUPS:
-                    rejected.append(phrase)
+                    too_many.append(phrase)
                     continue
                 lookups += 1
                 try:
-                    result = classify_food(phrase, model_name)
+                    with st.spinner(t["ai_wait"]):
+                        result = classify_food(phrase, model_name)
                 except Exception:
                     log.exception("Gemini classification failed")
                     ai_failed.append(phrase)
@@ -601,9 +604,11 @@ def process_command(raw, t):
         msgs.append(("warn", t["missing"].format(names=", ".join(missing))))
     if rejected:
         msgs.append(("err", t["rejected"].format(names=", ".join(rejected))))
+    if too_many:
+        msgs.append(("err", t["too_many"].format(names=", ".join(too_many))))
     if ai_failed:
         msgs.append(("err", t["ai_busy"].format(names=", ".join(ai_failed))))
-    if not (added or used or wasted or missing or rejected or ai_failed):
+    if not (added or used or wasted or missing or rejected or too_many or ai_failed):
         msgs.append(("warn", t["nothing"]))
     return msgs
 
@@ -645,7 +650,7 @@ def login_fridge(fid, pin):
 def _days_left(item):
     try:
         exp = date.fromisoformat(item.get("expiry") or item.get("expiry_date", ""))
-    except ValueError:
+    except (ValueError, TypeError):
         return None
     return (exp - datetime.now(IST).date()).days
 
@@ -662,8 +667,8 @@ def render_sidebar(t, items):
 
         if not st.session_state.authenticated:
             st.subheader(t["login_tab"])
-            prefill = st.query_params.get("fridge", "")
-            fid_in = st.text_input(t["fid"], value=prefill, placeholder=t["fid_ph"], key="login_fid")
+            fid_in = st.text_input(t["fid"], value=query_param("fridge"),
+                                   placeholder=t["fid_ph"], key="login_fid")
             pin_in = st.text_input(t["pin"], type="password", key="login_pin")
             fid = fid_in.strip().lower()
             if st.button(t["login_btn"], use_container_width=True, key="login_go"):
@@ -722,14 +727,8 @@ def render_sidebar(t, items):
         st.caption(t["home_note"])
         link = f"{APP_URL}?fridge={st.session_state.fridge_id}"
         st.link_button(t["open_link"], link, use_container_width=True)
-        components.html(
-            f"""<button onclick="navigator.clipboard.writeText('{link}')
-                  .then(()=>this.innerText='{t['copied']}')"
-                style="width:100%;padding:10px;border-radius:12px;border:2px solid #3B82F6;
-                       background:#1E293B;color:#E2E8F0;font-size:15px;cursor:pointer;">
-                {t['copy_link']}</button>""",
-            height=60,
-        )
+        st.caption(t["copy_link"])
+        st.code(link, language=None)
         with st.expander(t["home_hdr"]):
             st.markdown(t["android"])
             st.markdown(t["iphone"])
@@ -753,7 +752,7 @@ def render_dashboard(t, items):
     for it in items:
         try:
             exp = date.fromisoformat(it.get("expiry") or it.get("expiry_date", ""))
-        except ValueError:
+        except (ValueError, TypeError):
             continue
         name = pick(it.get("name_en") or it.get("core_id") or it["id"], it.get("name_hi", ""))
         row = {
@@ -767,9 +766,10 @@ def render_dashboard(t, items):
 
     if expired:
         names = ", ".join(r["name"] for r in expired)
-        st.markdown(
-            f'<div class="bubble bubble-danger"><b>⚠️</b> {esc(t["expired_msg"].format(names=names))}</div>',
-            unsafe_allow_html=True,
+        closable(
+            f"<b>⚠️</b> {esc(t['expired_msg'].format(names=names))}",
+            f"expired_{short_hash(names)}",
+            "bubble bubble-danger",
         )
         if st.button(t["expired_btn"], use_container_width=True, key="rm_expired"):
             for r in expired:
@@ -808,22 +808,25 @@ def render_dashboard(t, items):
         st.caption(t["rescue_none"])
         return
 
-    st.markdown(
-        f'<div class="bubble bubble-warn">{esc(t["rescue_msg"].format(names=", ".join(urgent)))}</div>',
-        unsafe_allow_html=True,
+    urgent_key = "|".join(sorted(urgent))
+    closable(
+        esc(t["rescue_msg"].format(names=", ".join(urgent))),
+        f"urgent_{short_hash(urgent_key)}",
+        "bubble bubble-warn",
     )
-    key = "|".join(sorted(urgent))
     if st.button(t["rescue_btn"], use_container_width=True, key="rescue_go"):
-        with st.spinner("..."):
+        # A new recipe should always show, even if the old card was closed.
+        st.session_state.pop(f"dismissed_recipe_{short_hash(urgent_key)}", None)
+        with st.spinner(t["rescue_wait"]):
             try:
                 recipe = generate_rescue(urgent)
-                st.session_state.recipe = {"key": key, "data": recipe.model_dump()}
+                st.session_state.recipe = {"key": urgent_key, "data": recipe.model_dump()}
             except Exception:
                 log.exception("Rescue recipe failed")
-                st.session_state.recipe = {"key": key, "data": None}
+                st.session_state.recipe = {"key": urgent_key, "data": None}
 
     rec = st.session_state.recipe
-    if rec and rec["key"] == key:
+    if rec and rec["key"] == urgent_key:
         if rec["data"] is None:
             st.error(t["rescue_fail"])
         else:
@@ -831,10 +834,12 @@ def render_dashboard(t, items):
             title = pick(d["recipe_name"], d["recipe_name_hi"])
             ing = "".join(f"<li>{esc(i)}</li>" for i in d["ingredients"])
             steps = "".join(f"<li>{esc(s)}</li>" for s in d["steps"])
-            st.markdown(
-                f"""<div class="bubble bubble-rec"><h4 style="margin:0 0 8px;">🍽️ {esc(title)}</h4>
-                <b>{esc(t['ing'])}:</b><ul>{ing}</ul><b>{esc(t['steps'])}:</b><ol>{steps}</ol></div>""",
-                unsafe_allow_html=True,
+            closable(
+                f'<h4 style="margin:0 0 8px;">🍽️ {esc(title)}</h4>'
+                f"<b>{esc(t['ing'])}:</b><ul>{ing}</ul>"
+                f"<b>{esc(t['steps'])}:</b><ol>{steps}</ol>",
+                f"recipe_{short_hash(urgent_key)}",
+                "bubble bubble-rec",
             )
 
 
@@ -842,9 +847,35 @@ def render_dashboard(t, items):
 # 9. MAIN PAGE
 # ==========================================
 def show_messages(msgs):
-    fn = {"ok": st.success, "warn": st.warning, "err": st.error}
+    """Results fade on their own as toasts. Errors stay on screen."""
     for kind, text in msgs:
-        fn.get(kind, st.info)(text)
+        if kind == "err":
+            st.error(text)
+        else:
+            st.toast(text, icon="✅" if kind == "ok" else "⚠️")
+
+
+def _voice_block(src, key, t):
+    """Transcribe audio, run it once automatically, and show a closable notice."""
+    if src is None:
+        return []
+    raw = src.getvalue()
+    audio_id = hashlib.md5(raw).hexdigest()[:12]
+    text, problem = transcribe(raw)
+    if problem:
+        st.warning(t.get(problem, t["audio_unclear"]))
+        return []
+
+    msgs = []
+    done_key = f"done_{key}"
+    if st.session_state.get(done_key) != audio_id:
+        st.session_state[done_key] = audio_id   # run each recording only once
+        msgs = process_command(text, t)
+
+    light = st.toggle(t["light_lbl"], key=f"light_{key}")
+    css = "heard-box light" if light else "heard-box"
+    closable(f'{esc(t["heard"])} "{esc(text)}"', f"heard_{key}_{audio_id}", css)
+    return msgs
 
 
 def main():
@@ -865,7 +896,7 @@ def main():
             with st.form("cmd_form", clear_on_submit=True):
                 cmd = st.text_input(t["cmd_label"], placeholder=t["cmd_ph"], label_visibility="collapsed")
                 if st.form_submit_button(t["submit"], use_container_width=True) and cmd.strip():
-                    msgs = process_command(cmd, t)
+                    msgs += process_command(cmd, t)
 
         with tab_rec:
             src = st.audio_input(t["rec_label"], key="rec")
@@ -884,20 +915,6 @@ def main():
         render_dashboard(t, items)
 
     render_sidebar(t, items)
-
-
-def _voice_block(src, key, t):
-    """Transcribe an audio source and, on button press, run it as a command."""
-    if src is None:
-        return []
-    text, problem = transcribe(src.getvalue())
-    if problem:
-        st.warning(t.get(problem, t["audio_unclear"]))
-        return []
-    st.info(f"{t['heard']} \"{text}\"")
-    if st.button(t["voice_use"], key=f"go_{key}", use_container_width=True):
-        return process_command(text, t)
-    return []
 
 
 main()
