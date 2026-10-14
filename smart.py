@@ -42,7 +42,6 @@ st.set_page_config(
 log = logging.getLogger("fridgeinventory")
 IST = ZoneInfo("Asia/Kolkata")
 APP_URL = "https://fridgeinventory.streamlit.app"
-DEFAULT_MODEL = "gemini-2.5-flash"
 PIN_ITERATIONS = 200_000
 MAX_CMD_CHARS = 200
 MAX_AI_LOOKUPS = 4          # unknown items per command (cost guard)
@@ -190,7 +189,7 @@ T = {
         "home_note": "वेबसाइट खुद को इंस्टॉल नहीं कर सकती। लिंक Chrome (Android) या Safari (iPhone) में खोलें, फिर नीचे दिए स्टेप्स देखें।",
         "open_link": "फ्रिज लिंक खोलें", "copy_link": "नीचे का लिंक कॉपी करें (कॉपी आइकन दबाएँ)",
         "android": "**Android (Chrome):** ⋮ दबाएँ → **Add to Home screen** (या **Install app**)।",
-        "iphone": "**iPhone (Safari):** Share ⎋ दबाएँ → **Add to Home Screen**।",
+        "iphone": "**iPhone (Safari):** Share ⎋ दबाएँ → **Add to Home Screen**。",
         "secure": "PIN सुरक्षित हैश में सेव होता है। हर फ्रिज अलग रहता है।",
     },
 }
@@ -198,7 +197,18 @@ T = {
 CSS = """
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Fredoka+One&family=Lexend:wght@400;500;600&display=swap');
-[data-testid="stDecoration"], footer {display: none !important;}
+
+/* Completely hide Streamlit footers, toolbars, watermarks, and hosting badges */
+[data-testid="stDecoration"] {display: none !important;}
+[data-testid="stFooter"] {display: none !important;}
+[data-testid="stToolbar"] {visibility: hidden !important; display: none !important;}
+[data-testid="stStatusWidget"] {visibility: hidden !important; display: none !important;}
+footer {display: none !important;}
+.viewerBadge_container__1QSob {display: none !important;}
+.stDeployButton {display: none !important;}
+div[data-testid="stToolbar"] {display: none !important;}
+#MainMenu {visibility: visible !important;} /* Explicitly preserves the three-dot menu for light/dark mode */
+
 .stApp {background: #0B0E14; font-family: 'Lexend', sans-serif; color: #F3F4F6;}
 [data-testid="stSidebar"] {background: #111827; border-right: 1px solid #1F2937;}
 .hdr {background: linear-gradient(135deg, #1E2638 0%, #111827 100%); padding: 22px 24px;
@@ -263,7 +273,7 @@ def query_param(name):
 
 
 # ==========================================
-# 3. GEMINI: MODEL & STRICT FOOD CLASSIFICATION
+# 3. GEMINI: MODELS, FALLBACK & SCHEMAS
 # ==========================================
 class FoodCategory(str, Enum):
     FRUIT = "fruit"
@@ -336,33 +346,56 @@ Give a Hindi name in Devanagari. Keep each step short.
 @st.cache_resource(show_spinner=False)
 def get_client():
     try:
-        return genai.Client(api_key=st.secrets["google"]["api_key"])
+        raw_key = st.secrets["google"].get("api_key", "")
+        api_key = str(raw_key).strip(" '\"\n\r")
+        if not api_key:
+            log.error("Gemini API key is missing or empty")
+            return None
+        import os
+        os.environ["GEMINI_API_KEY"] = api_key
+        return genai.Client()
     except Exception:
-        log.error("Gemini API key missing from secrets")
+        log.exception("Gemini API initialization failed")
         return None
 
 
-def gemini_model():
-    """Model from [google] secrets, or DEFAULT_MODEL if none is set."""
-    try:
-        return str(st.secrets["google"].get("model", DEFAULT_MODEL))
-    except Exception:
-        return DEFAULT_MODEL
-
-
-@st.cache_data(ttl=60 * 60 * 24, show_spinner=False)
-def classify_food(phrase, model_name):
-    """Return (days, name_en, name_hi) for real food, or None for non-food.
-
-    Raises on API or parse errors. st.cache_data does not cache exceptions, so a
-    failed call is never remembered and never turned into a saved item.
+def _call_gemini_with_fallback(contents, config):
+    """Strict ordered multi-tier fallback sequence:
+    1. gemini-3.8-flash
+    2. gemini-3.7-flash
+    3. gemini-3.6-flash
+    4. gemini-3.5-flash-lite
     """
     client = get_client()
     if client is None:
         raise RuntimeError("Gemini API key is missing")
+    
+    models_to_try = [
+        "gemini-3.8-flash",
+        "gemini-3.7-flash",
+        "gemini-3.6-flash",
+        "gemini-3.5-flash-lite",
+    ]
+    
+    last_exc = None
+    for mdl in models_to_try:
+        try:
+            return client.models.generate_content(
+                model=mdl,
+                contents=contents,
+                config=config,
+            )
+        except Exception as exc:
+            last_exc = exc
+            log.warning(f"Model {mdl} unavailable, trying next tier... Error: {exc}")
+            continue
+    raise last_exc
 
-    first = client.models.generate_content(
-        model=model_name,
+
+@st.cache_data(ttl=60 * 60 * 24, show_spinner=False)
+def classify_food(phrase):
+    """Return (days, name_en, name_hi) for real food, or None for non-food."""
+    first = _call_gemini_with_fallback(
         contents=CLASSIFY_PROMPT.format(item=phrase),
         config=types.GenerateContentConfig(
             temperature=0,
@@ -377,9 +410,7 @@ def classify_food(phrase, model_name):
     if not 1 <= verdict.shelf_life_days <= 730:
         return None
 
-    # Second, independent check: the model must also say the word is edible.
-    second = client.models.generate_content(
-        model=model_name,
+    second = _call_gemini_with_fallback(
         contents=VERIFY_PROMPT.format(item=verdict.corrected_item.strip() or phrase),
         config=types.GenerateContentConfig(
             temperature=0,
@@ -393,11 +424,7 @@ def classify_food(phrase, model_name):
 
 
 def generate_rescue(names):
-    client = get_client()
-    if client is None:
-        raise RuntimeError("Gemini API key is missing")
-    resp = client.models.generate_content(
-        model=gemini_model(),
+    resp = _call_gemini_with_fallback(
         contents=RECIPE_PROMPT.format(items=", ".join(names)),
         config=types.GenerateContentConfig(
             temperature=0.6,
@@ -523,7 +550,6 @@ def process_command(raw, t):
 
     inv = load_items()
     today = datetime.now(IST).date()
-    model_name = gemini_model()
     added, used, wasted, missing, rejected, ai_failed, too_many = [], [], [], [], [], [], []
     lookups = 0
     last_action = "add"
@@ -532,8 +558,6 @@ def process_command(raw, t):
         tokens = WORD_RE.findall(seg)
         if not tokens:
             continue
-        # A part with no action word takes the previous part's action,
-        # so "used milk and bread" uses both items.
         action = detect_action(tokens) or last_action
         last_action = action
         phrase = " ".join(w for w in tokens if w not in STOP_WORDS)
@@ -552,7 +576,7 @@ def process_command(raw, t):
                 lookups += 1
                 try:
                     with st.spinner(t["ai_wait"]):
-                        result = classify_food(phrase, model_name)
+                        result = classify_food(phrase)
                 except Exception:
                     log.exception("Gemini classification failed")
                     ai_failed.append(phrase)
@@ -585,7 +609,6 @@ def process_command(raw, t):
             if not candidates:
                 missing.append(phrase)
                 continue
-            # "used all milk" removes every match; otherwise only the oldest one.
             targets = candidates if set(tokens) & ALL_WORDS else candidates[:1]
             for it in targets:
                 inventory().document(it["id"]).delete()
@@ -638,7 +661,6 @@ def login_fridge(fid, pin):
     if data.get("pin_salt"):
         ok = hmac.compare_digest(data.get("pin_hash", ""), hash_pin(pin, data["pin_salt"]))
     else:
-        # Legacy unsalted SHA-256 PIN from the old app: verify, then upgrade to salted hash.
         legacy = hashlib.sha256(pin.encode()).hexdigest()
         ok = hmac.compare_digest(data.get("pin_hash", ""), legacy)
         if ok:
@@ -715,7 +737,6 @@ def render_sidebar(t, items):
                         st.error(t[err])
             return
 
-        # ---- Logged in ----
         st.success(f"**{st.session_state.fridge_id.upper()}**")
         c1, c2 = st.columns(2)
         c1.metric(t["stats_items"], len(items))
@@ -815,8 +836,6 @@ def render_dashboard(t, items):
         "bubble bubble-warn",
     )
     if st.button(t["rescue_btn"], use_container_width=True, key="rescue_go"):
-        # A new recipe should always show, even if the old card was closed.
-        st.session_state.pop(f"dismissed_recipe_{short_hash(urgent_key)}", None)
         with st.spinner(t["rescue_wait"]):
             try:
                 recipe = generate_rescue(urgent)
@@ -834,12 +853,13 @@ def render_dashboard(t, items):
             title = pick(d["recipe_name"], d["recipe_name_hi"])
             ing = "".join(f"<li>{esc(i)}</li>" for i in d["ingredients"])
             steps = "".join(f"<li>{esc(s)}</li>" for s in d["steps"])
-            closable(
+            st.markdown(
+                f'<div class="bubble bubble-rec">'
                 f'<h4 style="margin:0 0 8px;">🍽️ {esc(title)}</h4>'
                 f"<b>{esc(t['ing'])}:</b><ul>{ing}</ul>"
-                f"<b>{esc(t['steps'])}:</b><ol>{steps}</ol>",
-                f"recipe_{short_hash(urgent_key)}",
-                "bubble bubble-rec",
+                f"<b>{esc(t['steps'])}:</b><ol>{steps}</ol>"
+                f'</div>',
+                unsafe_allow_html=True,
             )
 
 
@@ -847,7 +867,6 @@ def render_dashboard(t, items):
 # 9. MAIN PAGE
 # ==========================================
 def show_messages(msgs):
-    """Results fade on their own as toasts. Errors stay on screen."""
     for kind, text in msgs:
         if kind == "err":
             st.error(text)
@@ -856,7 +875,6 @@ def show_messages(msgs):
 
 
 def _voice_block(src, key, t):
-    """Transcribe audio, run it once automatically, and show a closable notice."""
     if src is None:
         return []
     raw = src.getvalue()
@@ -869,7 +887,7 @@ def _voice_block(src, key, t):
     msgs = []
     done_key = f"done_{key}"
     if st.session_state.get(done_key) != audio_id:
-        st.session_state[done_key] = audio_id   # run each recording only once
+        st.session_state[done_key] = audio_id
         msgs = process_command(text, t)
 
     light = st.toggle(t["light_lbl"], key=f"light_{key}")
