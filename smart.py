@@ -286,29 +286,20 @@ header[data-testid="stHeader"] > div:first-child {
     min-width: 320px !important;
 }
 
-/* Make the sidebar collapse/expand toggle button large, glowing, and unmissable */
-[data-testid="collapsedControl"] {
-    background: #1E2638 !important;
-    border: 3px solid #3B82F6 !important;
-    border-radius: 14px !important;
-    box-shadow: 0 4px 14px rgba(59, 130, 246, 0.6) !important;
-    display: flex !important;
-    align-items: center !important;
-    justify-content: center !important;
-    width: 52px !important;
-    height: 52px !important;
-    margin: 10px !important;
-    transition: transform 0.2s ease, background 0.2s ease;
+/* Make header action buttons (including sidebar toggle) large and glowing */
+header[data-testid="stHeader"] button {
+    background: #EC4899 !important;
+    border: 3px solid #F472B6 !important;
+    border-radius: 12px !important;
+    box-shadow: 0 4px 12px rgba(236, 72, 153, 0.6) !important;
+    width: 44px !important;
+    height: 44px !important;
 }
-[data-testid="collapsedControl"]:hover {
-    transform: scale(1.08);
-    background: #1D4ED8 !important;
-}
-[data-testid="collapsedControl"] svg {
-    width: 28px !important;
-    height: 28px !important;
-    color: #00F2FE !important;
-    fill: #00F2FE !important;
+header[data-testid="stHeader"] button svg {
+    width: 24px !important;
+    height: 24px !important;
+    color: #ffffff !important;
+    fill: #ffffff !important;
 }
 
 .hdr {background: linear-gradient(135deg, #1E2638 0%, #111827 100%); padding: 22px 24px;
