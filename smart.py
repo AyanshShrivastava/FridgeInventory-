@@ -30,7 +30,7 @@ from pydantic import BaseModel, Field
 from database import EXPIRY_DATABASE
 
 # ==========================================
-# 1. CONFIG, STATE, VOCABULARY
+# 1. CONFIG, STATE, VOCABULARY & PERSISTENCE
 # ==========================================
 st.set_page_config(
     page_title="FridgeInventory",
@@ -62,6 +62,21 @@ for _key, _val in {
     "lock_until": 0.0,
 }.items():
     st.session_state.setdefault(_key, _val)
+
+# Secure URL Parameter Check:
+# If a URL parameter exists but session is unauthenticated, validate against spoofing attempts.
+def enforce_secure_session():
+    query_fridge = st.query_params.get("fridge", "")
+    if query_fridge:
+        clean_fid = str(query_fridge).strip().lower()
+        if not st.session_state.authenticated:
+            # If they are not logged in, do NOT auto-grant access. Force them through login.
+            st.session_state.unauthorized_url_attempt = clean_fid
+        elif st.session_state.fridge_id != clean_fid:
+            # Mismatch between active session and URL parameter
+            pass
+
+enforce_secure_session()
 
 ADD_WORDS = {"brought", "bring", "bought", "buy", "got", "get", "added", "add",
              "purchased", "लाया", "लाई", "लाए", "लिया", "खरीदा", "खरीदी", "खरीदे"}
@@ -139,6 +154,7 @@ T = {
         "android": "**Android (Chrome):** tap ⋮ → **Add to Home screen** (or **Install app**).",
         "iphone": "**iPhone (Safari):** tap the Share icon ⎋ → **Add to Home Screen**.",
         "secure": "PINs are stored as salted hashes. Each fridge is isolated by its ID.",
+        "auth_err": "You are not logged in. You must be logged in first for that fridge to work.",
     },
     "hi": {
         "subtitle": "बताइए क्या लाए या इस्तेमाल किया। यह आपकी रसोई को ताज़ा और बर्बादी-मुक्त रखेगा।",
@@ -191,6 +207,7 @@ T = {
         "android": "**Android (Chrome):** ⋮ दबाएँ → **Add to Home screen** (या **Install app**)।",
         "iphone": "**iPhone (Safari):** Share ⎋ दबाएँ → **Add to Home Screen**。",
         "secure": "PIN सुरक्षित हैश में सेव होता है। हर फ्रिज अलग रहता है।",
+        "auth_err": "आप लॉग इन नहीं हैं। उस फ्रिज को काम करने के लिए पहले आपको लॉग इन करना होगा।",
     },
 }
 
@@ -198,16 +215,26 @@ CSS = """
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Fredoka+One&family=Lexend:wght@400;500;600&display=swap');
 
-/* Completely hide Streamlit footers, toolbars, watermarks, and hosting badges */
+/* Hide Streamlit footers, deployment badges, and watermarks */
 [data-testid="stDecoration"] {display: none !important;}
 [data-testid="stFooter"] {display: none !important;}
-[data-testid="stToolbar"] {visibility: hidden !important; display: none !important;}
-[data-testid="stStatusWidget"] {visibility: hidden !important; display: none !important;}
 footer {display: none !important;}
 .viewerBadge_container__1QSob {display: none !important;}
 .stDeployButton {display: none !important;}
-div[data-testid="stToolbar"] {display: none !important;}
-#MainMenu {visibility: visible !important;} /* Explicitly preserves the three-dot menu for light/dark mode */
+
+/* Hide the status widget/toolbar badge but explicitly KEEP the 3-dot menu button functional */
+[data-testid="stStatusWidget"] {display: none !important;}
+#MainMenu {visibility: visible !important; display: block !important;}
+header[data-testid="stHeader"] {
+    background: transparent !important;
+}
+header[data-testid="stHeader"] > div:first-child {
+    display: none !important; /* Hides deploy/hosting buttons */
+}
+#MainMenu {
+    display: block !important;
+    visibility: visible !important;
+}
 
 .stApp {background: #0B0E14; font-family: 'Lexend', sans-serif; color: #F3F4F6;}
 [data-testid="stSidebar"] {background: #111827; border-right: 1px solid #1F2937;}
@@ -362,8 +389,8 @@ def get_client():
 def _call_gemini_with_fallback(contents, config):
     """Strict ordered multi-tier fallback sequence:
     1. gemini-3.8-flash
-    2. gemini-3.7-flash
-    3. gemini-3.6-flash
+    2. gemini-3.7
+    3. gemini-3.6
     4. gemini-3.5-flash-lite
     """
     client = get_client()
@@ -372,8 +399,8 @@ def _call_gemini_with_fallback(contents, config):
     
     models_to_try = [
         "gemini-3.8-flash",
-        "gemini-3.7-flash",
-        "gemini-3.6-flash",
+        "gemini-3.7",
+        "gemini-3.6",
         "gemini-3.5-flash-lite",
     ]
     
@@ -688,6 +715,10 @@ def render_sidebar(t, items):
             st.rerun()
 
         if not st.session_state.authenticated:
+            # Check if an unauthorized URL spoofing attempt occurred
+            if st.session_state.get("unauthorized_url_attempt"):
+                st.error(t["auth_err"])
+
             st.subheader(t["login_tab"])
             fid_in = st.text_input(t["fid"], value=query_param("fridge"),
                                    placeholder=t["fid_ph"], key="login_fid")
@@ -707,6 +738,8 @@ def render_sidebar(t, items):
                         st.session_state.authenticated = True
                         st.session_state.fridge_id = fid
                         st.session_state.login_fails = 0
+                        if "unauthorized_url_attempt" in st.session_state:
+                            del st.session_state["unauthorized_url_attempt"]
                         st.query_params["fridge"] = fid
                         st.rerun()
                     st.session_state.login_fails += 1
@@ -732,6 +765,8 @@ def render_sidebar(t, items):
                         if ok:
                             st.session_state.authenticated = True
                             st.session_state.fridge_id = new_fid
+                            if "unauthorized_url_attempt" in st.session_state:
+                                del st.session_state["unauthorized_url_attempt"]
                             st.query_params["fridge"] = new_fid
                             st.rerun()
                         st.error(t[err])
