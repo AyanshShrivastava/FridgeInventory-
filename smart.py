@@ -10,6 +10,7 @@ import hmac
 import io
 import json
 import logging
+import os
 import re
 import secrets
 import time
@@ -21,35 +22,53 @@ from zoneinfo import ZoneInfo
 import firebase_admin
 import speech_recognition as sr
 import streamlit as st
+try:
+    import extra_streamlit_components as stx
+except ImportError:  # Clear message if the cookie component dependency is missing.
+    stx = None
 from firebase_admin import credentials, firestore
 from google import genai
 from google.api_core.exceptions import AlreadyExists
 from google.genai import types
 from pydantic import BaseModel, Field
+from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi.responses import JSONResponse
 
-from database import EXPIRY_DATABASE
+from database import EXPIRY_DATABASE, CHEESE_DATE_REQUIRED_ITEMS
 
 # ==========================================
-# 1. CONFIG, STATE, VOCABULARY & PERSISTENCE
+# 1. CONFIG, STATE, VOCABULARY
 # ==========================================
-if "sidebar_state" not in st.session_state:
-    st.session_state.sidebar_state = "expanded"
-
 st.set_page_config(
     page_title="FridgeInventory",
     page_icon="🧊",
     layout="centered",
-    initial_sidebar_state=st.session_state.sidebar_state,
+    initial_sidebar_state="expanded",
 )
 
 log = logging.getLogger("fridgeinventory")
 IST = ZoneInfo("Asia/Kolkata")
-APP_URL = "https://fridgeinventory.streamlit.app"
+APP_URL = (os.getenv("APP_URL") or os.getenv("RENDER_EXTERNAL_URL") or "https://fridgeinventory.streamlit.app").rstrip("/")
+# Keep exactly the Gemini 3.x model IDs requested, in the requested order.
+# Note: Google's dedicated Gemini 3.7 Flash page says requests to that ID are
+# automatically routed to Gemini 3.8 Flash, so it may not run a separate 3.7
+# model even though the model ID remains documented.
+SUPPORTED_GEMINI_MODELS = (
+    "gemini-3.5-flash-lite",
+    "gemini-3.6-flash",
+    "gemini-3.7-flash",
+    "gemini-3.8-flash",
+)
+DEFAULT_MODEL = "gemini-3.5-flash-lite"
+MODEL_FALLBACKS = list(SUPPORTED_GEMINI_MODELS)
 PIN_ITERATIONS = 200_000
 MAX_CMD_CHARS = 200
 MAX_AI_LOOKUPS = 4          # unknown items per command (cost guard)
 MAX_TRIES = 5               # wrong PINs before a short lockout
 LOCK_SECONDS = 60
+SESSION_COOKIE_NAME = "fi_session_v2"
+SESSION_DAYS = 30
+_cookie_manager = None
 FRIDGE_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{2,29}$")
 WORD_RE = re.compile(r"[a-z\u0900-\u097f]+")
 SPLIT_RE = re.compile(
@@ -63,64 +82,10 @@ for _key, _val in {
     "recipe": None,
     "login_fails": 0,
     "lock_until": 0.0,
+    "pending_expiry": [],
+    "expiry_form_error": "",
 }.items():
     st.session_state.setdefault(_key, _val)
-
-
-# Initialize Firebase FIRST so session verification can use it immediately
-@st.cache_resource(show_spinner=False)
-def init_firestore():
-    """Return (client_or_None, error_text). Connects once per server."""
-    try:
-        if not firebase_admin._apps:
-            if "firebase" in st.secrets:
-                fb = st.secrets["firebase"]
-                if isinstance(fb, str):
-                    info = json.loads(fb)
-                elif "value" in fb:
-                    info = json.loads(fb["value"])
-                else:
-                    info = dict(fb)
-                cred = credentials.Certificate(info)
-            else:
-                cred = credentials.Certificate("firebase_credentials.json")
-            firebase_admin.initialize_app(cred)
-        return firestore.client(), ""
-    except Exception as exc:
-        log.exception("Firebase initialisation failed")
-        return None, str(exc)
-
-
-db, db_error = init_firestore()
-
-
-# Secure URL Token Restoration (Instant & Bulletproof on Streamlit Cloud)
-def enforce_secure_session():
-    if st.session_state.get("authenticated"):
-        return
-
-    query_fridge = st.query_params.get("fridge", "")
-    query_token = st.query_params.get("token", "")
-
-    if query_fridge and query_token:
-        clean_fid = str(query_fridge).strip().lower()
-        clean_token = str(query_token).strip()
-        try:
-            if db is not None:
-                doc_ref = db.collection("fridges").document(clean_fid)
-                snap = doc_ref.get()
-                if snap.exists:
-                    data = snap.to_dict() or {}
-                    if hmac.compare_digest(data.get("active_session_token", ""), clean_token):
-                        st.session_state.authenticated = True
-                        st.session_state.fridge_id = clean_fid
-                        return
-        except Exception:
-            pass
-        st.session_state.unauthorized_url_attempt = clean_fid
-
-
-enforce_secure_session()
 
 ADD_WORDS = {"brought", "bring", "bought", "buy", "got", "get", "added", "add",
              "purchased", "लाया", "लाई", "लाए", "लिया", "खरीदा", "खरीदी", "खरीदे"}
@@ -149,7 +114,6 @@ STOP_WORDS = ADD_WORDS | TAKE_WORDS | WASTE_WORDS | ALL_WORDS | {
 T = {
     "en": {
         "subtitle": "Tell it what you bought or used. It keeps your kitchen fresh and waste-free.",
-        "open_menu_btn": "☰ Open Login / Sidebar Menu",
         "tab_text": "Type", "tab_voice": "Record", "tab_upload": "Upload WAV",
         "cmd_label": "Command",
         "cmd_ph": "e.g. brought 2 kg palak, milk and tomatoes  |  used milk  |  threw bread",
@@ -190,7 +154,7 @@ T = {
         "no_fridge": "No fridge with that ID.", "wrong_pin": "Wrong PIN.",
         "exists": "That Fridge ID is taken. Choose another.",
         "locked": "Too many wrong attempts. Wait {s} seconds.",
-        "lock_info": "Log in or create a fridge in the sidebar menu to start.",
+        "lock_info": "Log in or create a fridge in the sidebar to start.",
         "lock_btn": "Lock fridge", "lang_btn": "हिंदी में देखें",
         "stats_items": "Items", "stats_soon": "Expiring soon",
         "home_hdr": "Add to home screen",
@@ -198,12 +162,10 @@ T = {
         "open_link": "Open fridge link", "copy_link": "Copy the link below (tap the copy icon)",
         "android": "**Android (Chrome):** tap ⋮ → **Add to Home screen** (or **Install app**).",
         "iphone": "**iPhone (Safari):** tap the Share icon ⎋ → **Add to Home Screen**.",
-        "secure": "PINs are stored as salted hashes. Each fridge is secured by cryptographic session tokens.",
-        "auth_err": "You are not logged in. You must be logged in first for that fridge to work.",
+        "secure": "PINs are stored as salted hashes. Each fridge is isolated by its ID.",
     },
     "hi": {
         "subtitle": "बताइए क्या लाए या इस्तेमाल किया। यह आपकी रसोई को ताज़ा और बर्बादी-मुक्त रखेगा।",
-        "open_menu_btn": "☰ लॉगिन / साइडबार मेनू खोलें",
         "tab_text": "टाइप करें", "tab_voice": "रिकॉर्ड करें", "tab_upload": "WAV अपलोड करें",
         "cmd_label": "कमांड",
         "cmd_ph": "जैसे: 2 किलो पालक, दूध और टमाटर लाया  |  दूध इस्तेमाल किया",
@@ -241,56 +203,27 @@ T = {
         "bad_id": "3 से 30 अक्षर, नंबर, _ या - का उपयोग करें।",
         "need_both": "फ्रिज ID और PIN दोनों डालें।",
         "pin_short": "PIN कम से कम 4 अक्षर का हो।",
-        "no_fridge": "इस ID का कोई फ्रिज नहीं है।", "wrong_pin": "गलत PIN。",
+        "no_fridge": "इस ID का कोई फ्रिज नहीं है।", "wrong_pin": "गलत PIN।",
         "exists": "यह ID पहले से है। कोई और चुनें।",
         "locked": "बहुत अधिक गलत प्रयास। {s} सेकंड रुकें।",
-        "lock_info": "साइडबार मेनू में लॉगिन करें या नया फ्रिज बनाएँ।",
+        "lock_info": "साइडबार में लॉगिन करें या नया फ्रिज बनाएँ।",
         "lock_btn": "फ्रिज लॉक करें", "lang_btn": "View in English",
         "stats_items": "सामान", "stats_soon": "जल्द खराब",
         "home_hdr": "होम स्क्रीन पर जोड़ें",
         "home_note": "वेबसाइट खुद को इंस्टॉल नहीं कर सकती। लिंक Chrome (Android) या Safari (iPhone) में खोलें, फिर नीचे दिए स्टेप्स देखें।",
         "open_link": "फ्रिज लिंक खोलें", "copy_link": "नीचे का लिंक कॉपी करें (कॉपी आइकन दबाएँ)",
         "android": "**Android (Chrome):** ⋮ दबाएँ → **Add to Home screen** (या **Install app**)।",
-        "iphone": "**iPhone (Safari):** Share ⎋ दबाएँ → **Add to Home Screen**。",
-        "secure": "PIN सुरक्षित हैश में सेव होता है। क्रिप्टो टोकन द्वारा सुरक्षित।",
-        "auth_err": "आप लॉग इन नहीं हैं। उस फ्रिज को काम करने के लिए पहले आपको लॉग इन करना होगा।",
+        "iphone": "**iPhone (Safari):** Share ⎋ दबाएँ → **Add to Home Screen**।",
+        "secure": "PIN सुरक्षित हैश में सेव होता है। हर फ्रिज अलग रहता है।",
     },
 }
 
 CSS = """
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Fredoka+One&family=Lexend:wght@400;500;600&display=swap');
-
-/* Hide Streamlit footers, deployment badges, and watermarks */
-[data-testid="stDecoration"] {display: none !important;}
-[data-testid="stFooter"] {display: none !important;}
-footer {display: none !important;}
-.viewerBadge_container__1QSob {display: none !important;}
-.stDeployButton {display: none !important;}
-
-/* Hide the status widget/toolbar badge but explicitly KEEP the 3-dot menu button functional */
-[data-testid="stStatusWidget"] {display: none !important;}
-#MainMenu {visibility: visible !important; display: block !important;}
-header[data-testid="stHeader"] {
-    background: transparent !important;
-}
-header[data-testid="stHeader"] > div:first-child {
-    display: none !important; /* Hides deploy/hosting buttons */
-}
-#MainMenu {
-    display: block !important;
-    visibility: visible !important;
-}
-
+[data-testid="stDecoration"], footer {display: none !important;}
 .stApp {background: #0B0E14; font-family: 'Lexend', sans-serif; color: #F3F4F6;}
-
-/* Make the sidebar bigger, more spacious, and prominent */
-[data-testid="stSidebar"] {
-    background: #111827;
-    border-right: 1px solid #1F2937;
-    min-width: 330px !important;
-}
-
+[data-testid="stSidebar"] {background: #111827; border-right: 1px solid #1F2937;}
 .hdr {background: linear-gradient(135deg, #1E2638 0%, #111827 100%); padding: 22px 24px;
       border-radius: 20px; border: 3px solid #3B82F6; box-shadow: 0 8px 0 #1D4ED8; margin-bottom: 22px;}
 .hdr h1 {font-family: 'Fredoka One', cursive; font-size: 30px; color: #00F2FE; margin: 0;
@@ -321,6 +254,18 @@ div.stButton > button:active {transform: translateY(4px); box-shadow: 0 1px 0 #B
 </style>
 """
 st.markdown(CSS, unsafe_allow_html=True)
+# Keep Streamlit's native sidebar expand/collapse control visible and easy to tap.
+st.markdown("""
+<style>
+[data-testid="stSidebarCollapsedControl"] {
+  display: flex !important; visibility: visible !important; opacity: 1 !important;
+  z-index: 100000 !important;
+}
+[data-testid="stSidebarCollapseButton"] {
+  display: flex !important; visibility: visible !important; opacity: 1 !important;
+}
+</style>
+""", unsafe_allow_html=True)
 
 
 def tr():
@@ -347,8 +292,108 @@ def short_hash(text):
     return hashlib.md5(text.encode("utf-8")).hexdigest()[:10]
 
 
+def query_param(name):
+    value = st.query_params.get(name, "")
+    return value[0] if isinstance(value, list) else value
+
+
+def _session_token_hash(token):
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+def issue_browser_session(fridge_id):
+    """Create a random, server-validated session. Only the token hash is stored."""
+    if db is None or _cookie_manager is None:
+        return False
+    token = secrets.token_urlsafe(48)
+    now = datetime.now(IST)
+    expires = now + timedelta(days=SESSION_DAYS)
+    try:
+        db.collection("fridge_sessions").document(_session_token_hash(token)).set({
+            "fridge_id": fridge_id,
+            "created_at": firestore.SERVER_TIMESTAMP,
+            "expires_at": expires,
+            "revoked": False,
+        })
+        _cookie_manager.set(
+            SESSION_COOKIE_NAME, token,
+            expires_at=expires.replace(tzinfo=None),
+            key="set_fridge_session_cookie",
+        )
+        st.session_state.session_token = token
+        return True
+    except Exception:
+        log.exception("Could not create persistent browser session")
+        return False
+
+
+def revoke_browser_session(token=None):
+    """Revoke the server-side session and clear the browser cookie."""
+    token = token or st.session_state.get("session_token", "")
+    if token and db is not None:
+        try:
+            db.collection("fridge_sessions").document(_session_token_hash(token)).set({
+                "revoked": True,
+                "revoked_at": firestore.SERVER_TIMESTAMP,
+            }, merge=True)
+        except Exception:
+            log.exception("Could not revoke browser session")
+    if _cookie_manager is not None:
+        try:
+            _cookie_manager.delete(SESSION_COOKIE_NAME, key="delete_fridge_session_cookie")
+        except Exception:
+            log.exception("Could not clear browser session cookie")
+    st.session_state.pop("session_token", None)
+
+
+def restore_browser_session():
+    """Restore login only from a random cookie whose server-side record is valid.
+
+    The legacy ?fridge= parameter is never accepted as proof of authentication.
+    """
+    if st.session_state.get("authenticated") or db is None or _cookie_manager is None:
+        return
+    try:
+        cookies = _cookie_manager.get_all() or {}
+        token = cookies.get(SESSION_COOKIE_NAME, "")
+        if not isinstance(token, str) or len(token) < 40:
+            return
+        ref = db.collection("fridge_sessions").document(_session_token_hash(token))
+        snap = ref.get()
+        if not snap.exists:
+            return
+        session = snap.to_dict() or {}
+        expiry = session.get("expires_at")
+        if session.get("revoked") or not session.get("fridge_id") or not expiry:
+            return
+        if expiry.tzinfo is None:
+            expiry = expiry.replace(tzinfo=IST)
+        if expiry <= datetime.now(IST):
+            ref.set({"revoked": True, "expired_at": firestore.SERVER_TIMESTAMP}, merge=True)
+            try:
+                _cookie_manager.delete(SESSION_COOKIE_NAME, key="expired_fridge_session_cookie")
+            except Exception:
+                pass
+            return
+        fridge_id = str(session["fridge_id"])
+        # Confirm the fridge still exists before restoring its access.
+        if not db.collection("fridges").document(fridge_id).get().exists:
+            ref.set({"revoked": True}, merge=True)
+            try:
+                _cookie_manager.delete(SESSION_COOKIE_NAME, key="missing_fridge_session_cookie")
+            except Exception:
+                pass
+            return
+        st.session_state.authenticated = True
+        st.session_state.fridge_id = fridge_id
+        st.session_state.session_token = token
+    except Exception:
+        # Cookie/component loading can be delayed on the first browser render.
+        log.exception("Persistent login restore failed")
+
+
 # ==========================================
-# 3. GEMINI: MODELS, FALLBACK & SCHEMAS
+# 3. GEMINI: MODEL & STRICT FOOD CLASSIFICATION
 # ==========================================
 class FoodCategory(str, Enum):
     FRUIT = "fruit"
@@ -371,8 +416,14 @@ class FoodVerdict(BaseModel):
     is_food: bool = Field(description="True only if people eat or drink this and keep it in a kitchen.")
     category: FoodCategory
     shelf_life_days: int = Field(description="Typical shelf life in days in an Indian kitchen. 0 if not food.")
+    requires_expiry_date: bool = Field(description="True for branded, factory-packaged, sealed, or store-bought items whose printed expiry date should be entered; false for fresh produce and food prepared today.")
     name_en: str = Field(description="Clean English name. Empty if not food.")
     name_hi: str = Field(description="Hindi name in Devanagari. Empty if not food.")
+
+
+class ExpiryDateVerdict(BaseModel):
+    is_valid: bool = Field(description="True only if the supplied date is a plausible, correctly interpreted expiry date for the food item.")
+    reason: str = Field(description="Short explanation if invalid; otherwise an empty or short confirmation.")
 
 
 class EdibleCheck(BaseModel):
@@ -399,9 +450,17 @@ Rules:
   electronics, clothing, furniture, tools, medicines, cleaning products, cosmetics, plants,
   abstract or random words.
 - If you are not clearly sure it is food, it is NOT food. Never pick a food just because the input is vague.
-- If is_food is false: category not_food, shelf_life_days 0, name_en and name_hi empty.
-- If is_food is true: typical shelf life in days for an Indian kitchen (sealed goods last
-  longer than fresh produce), an English name and a Devanagari Hindi name.
+- If is_food is false: category not_food, shelf_life_days 0, requires_expiry_date false, and names empty.
+- If it is fresh fruit, fresh vegetables, raw fresh ingredients, or a dish clearly prepared today,
+  set requires_expiry_date=false and estimate sensible storage life.
+- If it is branded, factory-packaged, sealed, ready-made from a shop/restaurant, a packaged dairy
+  product, or a product whose manufacture date is unknown, set requires_expiry_date=true. Never
+  guess its expiry from a generic shelf-life estimate; ask the user to read the printed label.
+- Cheese varieties bought in a packet/block, packaged sauces, snacks, biscuits, chips, cookies,
+  instant foods, bottled drinks, and branded groceries require the printed expiry date.
+- If the user says the dish was freshly cooked/prepared today, treat it as prepared today unless
+  the wording indicates a sealed commercial product.
+- Return the food category, an English name and a Devanagari Hindi name.
 """
 
 VERIFY_PROMPT = """Does the word "{item}" name something a person eats or drinks?
@@ -420,94 +479,230 @@ Give a Hindi name in Devanagari. Keep each step short.
 
 @st.cache_resource(show_spinner=False)
 def get_client():
+    """Create one Gemini client from Streamlit secrets or environment variables."""
+    key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
     try:
-        raw_key = st.secrets["google"].get("api_key", "")
-        api_key = str(raw_key).strip(" '\"\n\r")
-        if not api_key:
-            log.error("Gemini API key is missing or empty")
-            return None
-        import os
-        os.environ["GEMINI_API_KEY"] = api_key
-        return genai.Client()
+        key = key or st.secrets["google"]["api_key"]
     except Exception:
-        log.exception("Gemini API initialization failed")
+        pass
+    if not key:
+        log.error("Gemini API key missing: set [google].api_key or GEMINI_API_KEY")
+        return None
+    try:
+        return genai.Client(api_key=str(key))
+    except Exception:
+        log.exception("Could not initialise Gemini client")
         return None
 
 
-def _call_gemini_with_fallback(contents, config):
-    """Strict ordered multi-tier fallback sequence:
-    1. gemini-3.8-flash
-    2. gemini-3.7
-    3. gemini-3.6
-    4. gemini-3.5-flash-lite
+def gemini_models():
+    """Return the allowlisted Gemini 3.x model IDs in the requested order.
+
+    Model choices are intentionally fixed to 3.5 -> 3.6 -> 3.7 -> 3.8. This
+    prevents stale Render environment variables from silently changing the
+    order or introducing an unsupported/invented model name.
     """
-    client = get_client()
-    if client is None:
-        raise RuntimeError("Gemini API key is missing")
-    
-    models_to_try = [
-        "gemini-3.8-flash",
-        "gemini-3.7",
-        "gemini-3.6",
-        "gemini-3.5-flash-lite",
-    ]
-    
-    last_exc = None
-    for mdl in models_to_try:
-        try:
-            return client.models.generate_content(
-                model=mdl,
-                contents=contents,
-                config=config,
-            )
-        except Exception as exc:
-            last_exc = exc
-            log.warning(f"Model {mdl} unavailable, trying next tier... Error: {exc}")
-            continue
-    raise last_exc
+    return list(MODEL_FALLBACKS)
+
+def gemini_model():
+    """Return the first model in the explicitly configured fallback order."""
+    return gemini_models()[0]
 
 
 @st.cache_data(ttl=60 * 60 * 24, show_spinner=False)
-def classify_food(phrase):
-    """Return (days, name_en, name_hi) for real food, or None for non-food."""
-    first = _call_gemini_with_fallback(
-        contents=CLASSIFY_PROMPT.format(item=phrase),
-        config=types.GenerateContentConfig(
-            temperature=0,
-            response_mime_type="application/json",
-            response_schema=FoodVerdict,
-        ),
-    )
-    verdict = FoodVerdict.model_validate_json(first.text or "")
-    name_en = verdict.name_en.strip()
-    if not verdict.is_food or verdict.category == FoodCategory.NOT_FOOD or not name_en:
-        return None
-    if not 1 <= verdict.shelf_life_days <= 730:
-        return None
+def classify_food(phrase, model_name):
+    """Classify a food with two checks; try models from lower cost to higher cost."""
+    client = get_client()
+    if client is None:
+        raise RuntimeError("Gemini API key is missing")
 
-    second = _call_gemini_with_fallback(
-        contents=VERIFY_PROMPT.format(item=verdict.corrected_item.strip() or phrase),
-        config=types.GenerateContentConfig(
-            temperature=0,
-            response_mime_type="application/json",
-            response_schema=EdibleCheck,
-        ),
+    models = []
+    allowed_models = set(SUPPORTED_GEMINI_MODELS)
+    for name in [model_name, *gemini_models()]:
+        if name in allowed_models and name not in models:
+            models.append(name)
+    if not models:
+        models = [DEFAULT_MODEL]
+    errors = []
+    for model in models:
+        try:
+            first = client.models.generate_content(
+                model=model,
+                contents=CLASSIFY_PROMPT.format(item=phrase),
+                config=types.GenerateContentConfig(
+                    response_mime_type="application/json",
+                    response_schema=FoodVerdict,
+                ),
+            )
+            verdict = FoodVerdict.model_validate_json(first.text or "")
+            name_en = verdict.name_en.strip()
+            if not verdict.is_food or verdict.category == FoodCategory.NOT_FOOD or not name_en:
+                return None
+            if not verdict.requires_expiry_date and not 1 <= verdict.shelf_life_days <= 730:
+                return None
+            if verdict.requires_expiry_date and verdict.shelf_life_days < 0:
+                return None
+
+            second = client.models.generate_content(
+                model=model,
+                contents=VERIFY_PROMPT.format(item=verdict.corrected_item.strip() or phrase),
+                config=types.GenerateContentConfig(
+                    response_mime_type="application/json",
+                    response_schema=EdibleCheck,
+                ),
+            )
+            if not EdibleCheck.model_validate_json(second.text or "").edible:
+                return None
+            return (verdict.shelf_life_days, name_en,
+                    verdict.name_hi.strip() or name_en,
+                    verdict.category.value, verdict.requires_expiry_date)
+        except Exception as exc:
+            errors.append(f"{model}: {type(exc).__name__}")
+            log.warning("Gemini food classification failed on model %s", model, exc_info=True)
+    raise RuntimeError("All configured Gemini models failed: " + "; ".join(errors))
+
+
+def parse_expiry_date(raw_value):
+    """Parse D/M/YYYY, D-M-YYYY, D.M.YYYY, or strict YYYY-MM-DD dates."""
+    value = str(raw_value or "").strip()
+    accepted = (
+        (r"\d{1,2}/\d{1,2}/\d{4}", "%d/%m/%Y"),
+        (r"\d{1,2}-\d{1,2}-\d{4}", "%d-%m-%Y"),
+        (r"\d{1,2}\.\d{1,2}\.\d{4}", "%d.%m.%Y"),
+        (r"\d{4}-\d{2}-\d{2}", "%Y-%m-%d"),
     )
-    if not EdibleCheck.model_validate_json(second.text or "").edible:
-        return None
-    return verdict.shelf_life_days, name_en, verdict.name_hi.strip() or name_en
+    for pattern, fmt in accepted:
+        if not re.fullmatch(pattern, value):
+            continue
+        try:
+            return datetime.strptime(value, fmt).date()
+        except ValueError:
+            return None
+    return None
+
+
+def validate_expiry_with_gemini(item_name, raw_value, parsed_date=None):
+    """Ask Gemini to sanity-check the printed date; Python also enforces calendar validity."""
+    client = get_client()
+    if client is None:
+        raise RuntimeError("Gemini API key is missing")
+    prompt = (
+        "Check an expiry date entered from a food package label. Do not invent or alter the date. "
+        "Item: " + json.dumps(item_name) + ". User entered: " + json.dumps(raw_value) + ". "
+        + ("Interpreted calendar date: " + parsed_date.isoformat() + ". " if parsed_date else "No valid calendar date could be parsed by the app. ")
+        + "Return is_valid=false if the supplied string is not a clear date, the date is not a "
+        "plausible calendar date, or the date is implausibly far in the future (more than 15 years). "
+        "Do not reject a date merely because it is near; expiry dates may be close. Return JSON only."
+    )
+    errors = []
+    for model in gemini_models():
+        try:
+            response = client.models.generate_content(
+                model=model,
+                contents=prompt,
+                config=types.GenerateContentConfig(
+                    response_mime_type="application/json",
+                    response_schema=ExpiryDateVerdict,
+                ),
+            )
+            verdict = ExpiryDateVerdict.model_validate_json(response.text or "")
+            return verdict.is_valid, verdict.reason
+        except Exception as exc:
+            errors.append(f"{model}: {type(exc).__name__}")
+            log.warning("Gemini expiry-date validation failed on model %s", model, exc_info=True)
+    raise RuntimeError("Gemini date validation failed: " + "; ".join(errors))
+
+
+def add_inventory_item(name_en, name_hi, expiry_date, added_date=None):
+    """Persist one validated inventory item to the active fridge."""
+    today_value = added_date or datetime.now(IST).date()
+    inventory().add({
+        "name_en": name_en,
+        "name_hi": name_hi,
+        "core_id": name_en,
+        "added": today_value.isoformat(),
+        "expiry": expiry_date.isoformat(),
+    })
+
+
+def submit_pending_expiry(raw_date):
+    """Validate the first pending package date; keep the form if anything fails."""
+    pending = list(st.session_state.get("pending_expiry", []))
+    if not pending:
+        return ("warn", "There is no item waiting for an expiry date.")
+    current = pending[0]
+    parsed = parse_expiry_date(raw_date)
+    if parsed is None:
+        try:
+            # Ask Gemini to check the raw entry too, then enforce strict local calendar parsing.
+            valid, reason = validate_expiry_with_gemini(current["name_en"], raw_date, None)
+        except Exception:
+            log.exception("Gemini expiry date validation failed for malformed input")
+            return ("err", "Gemini could not verify that date right now. Please try again; nothing was added.")
+        detail = (reason or "") if not valid else ""
+        return ("err", "Enter a real date in DD/MM/YYYY format, for example 25/12/2026. " + detail)
+    today_value = datetime.now(IST).date()
+    if parsed < today_value:
+        return ("err", "That expiry date has already passed. Check the package label and enter a future date.")
+    try:
+        valid, reason = validate_expiry_with_gemini(current["name_en"], raw_date, parsed)
+    except Exception:
+        log.exception("Gemini expiry date validation failed")
+        return ("err", "Gemini could not verify that date right now. Please try again; nothing was added.")
+    if not valid:
+        return ("err", "Gemini could not verify that expiry date. " + (reason or "Check the printed date and try again."))
+    add_inventory_item(current["name_en"], current["name_hi"], parsed)
+    st.session_state.pending_expiry = pending[1:]
+    st.session_state.expiry_form_error = ""
+    return ("ok", f"Added {current['name_en']} with expiry {parsed.strftime('%d/%m/%Y')}.")
+
+
+def render_expiry_form():
+    """Temporarily replace the command bubble with a printed-expiry-date bubble."""
+    pending = st.session_state.get("pending_expiry", [])
+    if not pending:
+        return
+    item = pending[0]
+    st.markdown(
+        f'<div class="bubble bubble-warn"><b>Enter expiry date</b><br>'
+        f'{esc(item["name_en"])} may have been manufactured before today. Read the date '
+        f'printed on its package and enter it as <b>DD/MM/YYYY</b>. Gemini will check it '
+        f'before the item is saved.</div>',
+        unsafe_allow_html=True,
+    )
+    with st.form("expiry_date_form", clear_on_submit=True):
+        expiry_value = st.text_input("Expiry date (DD/MM/YYYY)", placeholder="25/12/2026", key="expiry_date_value")
+        submitted = st.form_submit_button("Check date and add item", use_container_width=True)
+        if submitted:
+            kind, message = submit_pending_expiry(expiry_value)
+            if kind == "ok":
+                st.toast(message, icon="✅")
+                st.rerun()
+            else:
+                st.error(message)
 
 
 def generate_rescue(names):
-    resp = _call_gemini_with_fallback(
-        contents=RECIPE_PROMPT.format(items=", ".join(names)),
-        config=types.GenerateContentConfig(
-            temperature=0.6,
-            response_mime_type="application/json",
-            response_schema=RescueRecipe,
-        ),
-    )
-    return RescueRecipe.model_validate_json(resp.text or "")
+    """Generate a recipe using the first available model in the fallback chain."""
+    client = get_client()
+    if client is None:
+        raise RuntimeError("Gemini API key is missing")
+    errors = []
+    for model in gemini_models():
+        try:
+            resp = client.models.generate_content(
+                model=model,
+                contents=RECIPE_PROMPT.format(items=", ".join(names)),
+                config=types.GenerateContentConfig(
+                    response_mime_type="application/json",
+                    response_schema=RescueRecipe,
+                ),
+            )
+            return RescueRecipe.model_validate_json(resp.text or "")
+        except Exception as exc:
+            errors.append(f"{model}: {type(exc).__name__}")
+            log.warning("Gemini rescue recipe failed on model %s", model, exc_info=True)
+    raise RuntimeError("All configured Gemini models failed: " + "; ".join(errors))
 
 
 # ==========================================
@@ -530,6 +725,48 @@ def transcribe(raw):
         except sr.RequestError:
             return "", "audio_net"
     return "", "audio_unclear"
+
+
+# ==========================================
+# 5. FIREBASE
+# ==========================================
+@st.cache_resource(show_spinner=False)
+def init_firestore():
+    """Return (client_or_None, error_text); support Streamlit secrets and Render env vars."""
+    try:
+        if not firebase_admin._apps:
+            env_json = (
+                os.getenv("FIREBASE_CREDENTIALS_JSON")
+                or os.getenv("FIREBASE_SERVICE_ACCOUNT_JSON")
+            )
+            credentials_path = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
+
+            if env_json:
+                info = json.loads(env_json)
+                cred = credentials.Certificate(info)
+            elif "firebase" in st.secrets:
+                fb = st.secrets["firebase"]
+                if isinstance(fb, str):
+                    info = json.loads(fb)
+                elif "value" in fb:
+                    info = json.loads(fb["value"])
+                else:
+                    info = dict(fb)
+                cred = credentials.Certificate(info)
+            elif credentials_path and os.path.isfile(credentials_path):
+                cred = credentials.Certificate(credentials_path)
+            else:
+                # Supports a Render secret file or local development file.
+                cred = credentials.Certificate("firebase_credentials.json")
+
+            firebase_admin.initialize_app(cred)
+        return firestore.client(), ""
+    except Exception as exc:
+        log.exception("Firebase initialisation failed")
+        return None, str(exc)
+
+
+db, db_error = init_firestore()
 
 
 def hash_pin(pin, salt):
@@ -583,6 +820,18 @@ def matches_item(item, keys):
     return False
 
 
+def _is_clear_command(cmd):
+    """Avoid clearing the whole fridge when a clear phrase is merely mentioned."""
+    normalized = " ".join(str(cmd or "").lower().split()).strip(" .!?")
+    for phrase in CLEAR_PHRASES:
+        if normalized in {phrase, f"please {phrase}", f"{phrase} please"}:
+            return True
+        # Common first-person commands such as “I used everything”.
+        if normalized in {f"i {phrase}", f"we {phrase}", f"i have {phrase}", f"we have {phrase}"}:
+            return True
+    return False
+
+
 def process_command(raw, t):
     """Apply a command to Firestore. Returns a list of (kind, message) for display."""
     cmd = " ".join(raw.lower().split())[:MAX_CMD_CHARS]
@@ -590,12 +839,13 @@ def process_command(raw, t):
         return []
     if db is None:
         return [("err", t["no_db"])]
-    if any(p in cmd for p in CLEAR_PHRASES):
+    if _is_clear_command(cmd):
         clear_all()
         return [("ok", t["cleared"])]
 
     inv = load_items()
     today = datetime.now(IST).date()
+    model_name = gemini_model()
     added, used, wasted, missing, rejected, ai_failed, too_many = [], [], [], [], [], [], []
     lookups = 0
     last_action = "add"
@@ -604,6 +854,8 @@ def process_command(raw, t):
         tokens = WORD_RE.findall(seg)
         if not tokens:
             continue
+        # A part with no action word takes the previous part's action,
+        # so "used milk and bread" uses both items.
         action = detect_action(tokens) or last_action
         last_action = action
         phrase = " ".join(w for w in tokens if w not in STOP_WORDS)
@@ -611,35 +863,45 @@ def process_command(raw, t):
             continue
 
         if action == "add":
-            matches = {}
-            for trigger, (days, name_en, name_hi) in EXPIRY_DATABASE.items():
-                if trigger in phrase:
-                    matches.setdefault(name_en, (days, name_en, name_hi))
-            if not matches:
-                if lookups >= MAX_AI_LOOKUPS:
-                    too_many.append(phrase)
-                    continue
-                lookups += 1
-                try:
-                    with st.spinner(t["ai_wait"]):
-                        result = classify_food(phrase)
-                except Exception:
-                    log.exception("Gemini classification failed")
-                    ai_failed.append(phrase)
-                    continue
-                if result is None:
-                    rejected.append(phrase)
-                    continue
-                matches[result[1]] = result
-            for days, name_en, name_hi in matches.values():
-                inventory().add({
-                    "name_en": name_en,
-                    "name_hi": name_hi,
-                    "core_id": name_en,
-                    "added": today.isoformat(),
-                    "expiry": (today + timedelta(days=days)).isoformat(),
-                })
-                added.append(pick(name_en, name_hi))
+            if lookups >= MAX_AI_LOOKUPS:
+                too_many.append(phrase)
+                continue
+            lookups += 1
+            # Gemini always gets the first decision: reject non-food, classify the item,
+            # and decide whether a printed expiry date is required.
+            try:
+                with st.spinner(t["ai_wait"]):
+                    result = classify_food(phrase, model_name)
+            except Exception:
+                log.exception("Gemini classification failed")
+                ai_failed.append(phrase)
+                continue
+            if result is None:
+                rejected.append(phrase)
+                continue
+
+            ai_days, name_en, name_hi, category, needs_date = result
+            if needs_date:
+                pending = list(st.session_state.get("pending_expiry", []))
+                # Avoid duplicate pending entries if a voice upload is reprocessed.
+                if not any(p.get("name_en", "").casefold() == name_en.casefold() for p in pending):
+                    pending.append({"name_en": name_en, "name_hi": name_hi, "category": category})
+                    st.session_state.pending_expiry = pending
+                continue
+
+            # Gemini has approved and classified it. For known fresh ingredients,
+            # use the local household estimate; otherwise use Gemini's estimate.
+            local_hits = [
+                (len(trigger), days, local_en, local_hi)
+                for trigger, (days, local_en, local_hi) in EXPIRY_DATABASE.items()
+                if trigger in phrase and trigger not in CHEESE_DATE_REQUIRED_ITEMS
+            ]
+            if local_hits:
+                _, days, _, _ = max(local_hits, key=lambda hit: hit[0])
+            else:
+                days = ai_days
+            add_inventory_item(name_en, name_hi, today + timedelta(days=days), today)
+            added.append(pick(name_en, name_hi))
 
         else:  # take or waste
             keys = {phrase} | {
@@ -655,6 +917,7 @@ def process_command(raw, t):
             if not candidates:
                 missing.append(phrase)
                 continue
+            # "used all milk" removes every match; otherwise only the oldest one.
             targets = candidates if set(tokens) & ALL_WORDS else candidates[:1]
             for it in targets:
                 inventory().document(it["id"]).delete()
@@ -672,12 +935,12 @@ def process_command(raw, t):
     if missing:
         msgs.append(("warn", t["missing"].format(names=", ".join(missing))))
     if rejected:
-        msgs.append(("err", t["rejected"].format(names=", ".join(rejected))))
+        msgs.append(("toast_err", t["rejected"].format(names=", ".join(rejected))))
     if too_many:
         msgs.append(("err", t["too_many"].format(names=", ".join(too_many))))
     if ai_failed:
         msgs.append(("err", t["ai_busy"].format(names=", ".join(ai_failed))))
-    if not (added or used or wasted or missing or rejected or too_many or ai_failed):
+    if not (added or used or wasted or missing or rejected or too_many or ai_failed) and not st.session_state.get("pending_expiry"):
         msgs.append(("warn", t["nothing"]))
     return msgs
 
@@ -707,6 +970,7 @@ def login_fridge(fid, pin):
     if data.get("pin_salt"):
         ok = hmac.compare_digest(data.get("pin_hash", ""), hash_pin(pin, data["pin_salt"]))
     else:
+        # Legacy unsalted SHA-256 PIN from the old app: verify, then upgrade to salted hash.
         legacy = hashlib.sha256(pin.encode()).hexdigest()
         ok = hmac.compare_digest(data.get("pin_hash", ""), legacy)
         if ok:
@@ -734,11 +998,9 @@ def render_sidebar(t, items):
             st.rerun()
 
         if not st.session_state.authenticated:
-            if st.session_state.get("unauthorized_url_attempt"):
-                st.error(t["auth_err"])
-
             st.subheader(t["login_tab"])
-            fid_in = st.text_input(t["fid"], placeholder=t["fid_ph"], key="login_fid")
+            fid_in = st.text_input(t["fid"], value=query_param("fridge"),
+                                   placeholder=t["fid_ph"], key="login_fid")
             pin_in = st.text_input(t["pin"], type="password", key="login_pin")
             fid = fid_in.strip().lower()
             if st.button(t["login_btn"], use_container_width=True, key="login_go"):
@@ -747,29 +1009,30 @@ def render_sidebar(t, items):
                     st.error(t["locked"].format(s=wait))
                 elif not fid or not pin_in:
                     st.error(t["need_both"])
+                elif not FRIDGE_RE.fullmatch(fid):
+                    st.error(t["bad_id"])
                 elif db is None:
                     st.error(t["no_db"])
                 else:
                     ok, err = login_fridge(fid, pin_in)
                     if ok:
-                        session_token = secrets.token_hex(16)
-                        db.collection("fridges").document(fid).update({"active_session_token": session_token})
-
                         st.session_state.authenticated = True
                         st.session_state.fridge_id = fid
                         st.session_state.login_fails = 0
-                        if "unauthorized_url_attempt" in st.session_state:
-                            del st.session_state["unauthorized_url_attempt"]
-
+                        if not issue_browser_session(fid):
+                            st.warning("Logged in for this visit, but persistent login could not be enabled. Check the cookie component and Firebase permissions.")
+                        # Keep the old fridge query parameter only as a convenience/prefill;
+                        # it is never used as authentication proof.
                         st.query_params["fridge"] = fid
-                        st.query_params["token"] = session_token
                         st.rerun()
-
                     st.session_state.login_fails += 1
                     if st.session_state.login_fails >= MAX_TRIES:
                         st.session_state.lock_until = time.time() + LOCK_SECONDS
                         st.session_state.login_fails = 0
-                    st.error(t[err])
+                    if err == "wrong_pin":
+                        st.toast("Username or password is incorrect.", icon="⚠️")
+                    else:
+                        st.error(t[err])
 
             with st.expander(t["create_tab"]):
                 new_fid = st.text_input(t["fid"], placeholder=t["fid_ph"], key="create_fid").strip().lower()
@@ -786,20 +1049,16 @@ def render_sidebar(t, items):
                     else:
                         ok, err = create_fridge(new_fid, new_pin)
                         if ok:
-                            session_token = secrets.token_hex(16)
-                            db.collection("fridges").document(new_fid).update({"active_session_token": session_token})
-
                             st.session_state.authenticated = True
                             st.session_state.fridge_id = new_fid
-                            if "unauthorized_url_attempt" in st.session_state:
-                                del st.session_state["unauthorized_url_attempt"]
-
+                            if not issue_browser_session(new_fid):
+                                st.warning("Fridge created, but persistent login could not be enabled. Check the cookie component and Firebase permissions.")
                             st.query_params["fridge"] = new_fid
-                            st.query_params["token"] = session_token
                             st.rerun()
                         st.error(t[err])
             return
 
+        # ---- Logged in ----
         st.success(f"**{st.session_state.fridge_id.upper()}**")
         c1, c2 = st.columns(2)
         c1.metric(t["stats_items"], len(items))
@@ -809,7 +1068,7 @@ def render_sidebar(t, items):
         st.divider()
         st.subheader(t["home_hdr"])
         st.caption(t["home_note"])
-        link = f"{APP_URL}?fridge={st.session_state.fridge_id}&token={st.query_params.get('token', '')}"
+        link = f"{APP_URL}?fridge={st.session_state.fridge_id}"
         st.link_button(t["open_link"], link, use_container_width=True)
         st.caption(t["copy_link"])
         st.code(link, language=None)
@@ -819,13 +1078,12 @@ def render_sidebar(t, items):
 
         st.divider()
         if st.button(t["lock_btn"], use_container_width=True, key="logout_go"):
+            revoke_browser_session()
             st.session_state.authenticated = False
             st.session_state.fridge_id = ""
             st.session_state.recipe = None
             if "fridge" in st.query_params:
                 del st.query_params["fridge"]
-            if "token" in st.query_params:
-                del st.query_params["token"]
             st.rerun()
 
 
@@ -901,6 +1159,8 @@ def render_dashboard(t, items):
         "bubble bubble-warn",
     )
     if st.button(t["rescue_btn"], use_container_width=True, key="rescue_go"):
+        # A new recipe should always show, even if the old card was closed.
+        st.session_state.pop(f"dismissed_recipe_{short_hash(urgent_key)}", None)
         with st.spinner(t["rescue_wait"]):
             try:
                 recipe = generate_rescue(urgent)
@@ -918,13 +1178,12 @@ def render_dashboard(t, items):
             title = pick(d["recipe_name"], d["recipe_name_hi"])
             ing = "".join(f"<li>{esc(i)}</li>" for i in d["ingredients"])
             steps = "".join(f"<li>{esc(s)}</li>" for s in d["steps"])
-            st.markdown(
-                f'<div class="bubble bubble-rec">'
+            closable(
                 f'<h4 style="margin:0 0 8px;">🍽️ {esc(title)}</h4>'
                 f"<b>{esc(t['ing'])}:</b><ul>{ing}</ul>"
-                f"<b>{esc(t['steps'])}:</b><ol>{steps}</ol>"
-                f'</div>',
-                unsafe_allow_html=True,
+                f"<b>{esc(t['steps'])}:</b><ol>{steps}</ol>",
+                f"recipe_{short_hash(urgent_key)}",
+                "bubble bubble-rec",
             )
 
 
@@ -932,14 +1191,20 @@ def render_dashboard(t, items):
 # 9. MAIN PAGE
 # ==========================================
 def show_messages(msgs):
+    """Show regular outcomes as toasts and rejected-food notices for 11 seconds."""
     for kind, text in msgs:
-        if kind == "err":
+        if kind == "toast_err":
+            # Streamlit supports integer toast durations in seconds in recent versions.
+            st.toast(text, icon="⚠️", duration=11)
+        elif kind == "err":
+            # Keep operational failures visible until the next rerun.
             st.error(text)
         else:
             st.toast(text, icon="✅" if kind == "ok" else "⚠️")
 
 
 def _voice_block(src, key, t):
+    """Transcribe audio, run it once automatically, and show a closable notice."""
     if src is None:
         return []
     raw = src.getvalue()
@@ -952,7 +1217,7 @@ def _voice_block(src, key, t):
     msgs = []
     done_key = f"done_{key}"
     if st.session_state.get(done_key) != audio_id:
-        st.session_state[done_key] = audio_id
+        st.session_state[done_key] = audio_id   # run each recording only once
         msgs = process_command(text, t)
 
     light = st.toggle(t["light_lbl"], key=f"light_{key}")
@@ -962,13 +1227,16 @@ def _voice_block(src, key, t):
 
 
 def main():
+    global _cookie_manager
+    if stx is not None:
+        try:
+            _cookie_manager = stx.CookieManager(key="fridgeinventory_cookie_manager")
+            # CookieManager may return an empty result briefly on its first render.
+            restore_browser_session()
+        except Exception:
+            _cookie_manager = None
+            log.exception("Browser cookie manager failed to initialize")
     t = tr()
-    
-    # Large prominent button displayed at the very top of the page
-    if st.button(t["open_menu_btn"], use_container_width=True, key="toggle_sidebar_top"):
-        st.session_state.sidebar_state = "expanded" if st.session_state.sidebar_state == "collapsed" else "expanded"
-        st.rerun()
-
     st.markdown(
         f'<div class="hdr"><h1>FridgeInventory</h1><p>{esc(t["subtitle"])}</p></div>',
         unsafe_allow_html=True,
@@ -982,10 +1250,11 @@ def main():
         tab_text, tab_rec, tab_up = st.tabs([t["tab_text"], t["tab_voice"], t["tab_upload"]])
 
         with tab_text:
-            with st.form("cmd_form", clear_on_submit=True):
-                cmd = st.text_input(t["cmd_label"], placeholder=t["cmd_ph"], label_visibility="collapsed")
-                if st.form_submit_button(t["submit"], use_container_width=True) and cmd.strip():
-                    msgs += process_command(cmd, t)
+            if not st.session_state.get("pending_expiry"):
+                with st.form("cmd_form", clear_on_submit=True):
+                    cmd = st.text_input(t["cmd_label"], placeholder=t["cmd_ph"], label_visibility="collapsed")
+                    if st.form_submit_button(t["submit"], use_container_width=True) and cmd.strip():
+                        msgs += process_command(cmd, t)
 
         with tab_rec:
             src = st.audio_input(t["rec_label"], key="rec")
@@ -994,16 +1263,85 @@ def main():
         with tab_up:
             src = st.file_uploader(t["upl_label"], type=["wav"], key="upl")
             msgs += _voice_block(src, "upl", t)
+        # Show the same pending-date bubble whether the item came from typing or audio.
+        render_expiry_form()
     else:
         st.markdown(f'<div class="bubble bubble-warn">{esc(t["lock_info"])}</div>', unsafe_allow_html=True)
 
     show_messages(msgs)
 
-    items = load_items()
+    items = load_items() if st.session_state.authenticated and db is not None else []
+    # Exactly one dashboard and one sidebar render per Streamlit run.
     if st.session_state.authenticated and db is not None:
         render_dashboard(t, items)
-
     render_sidebar(t, items)
 
 
-main()
+# ==========================================
+# 10. FASTAPI (same file; optional service mode)
+# ==========================================
+api = FastAPI(title="FridgeInventory API", version="1.0.0")
+
+class ClassifyRequest(BaseModel):
+    item: str = Field(min_length=1, max_length=200)
+
+class RescueRequest(BaseModel):
+    items: list[str] = Field(min_length=1, max_length=30)
+
+@api.get("/health")
+def api_health():
+    return {"ok": True, "service": "FridgeInventory", "gemini_configured": get_client() is not None, "firebase_configured": db is not None}
+
+@api.post("/classify")
+def api_classify(payload: ClassifyRequest):
+    phrase = payload.item.strip()
+    if not phrase:
+        raise HTTPException(status_code=422, detail="Enter a food or grocery item.")
+    try:
+        result = classify_food.__wrapped__(phrase, gemini_model()) if hasattr(classify_food, "__wrapped__") else classify_food(phrase, gemini_model())
+    except Exception as exc:
+        log.exception("API food classification failed")
+        raise HTTPException(status_code=503, detail="Food recognition is temporarily unavailable. Check Gemini key, model access, quota, and logs.") from exc
+    if result is None:
+        return {"is_food": False, "item": phrase, "message": "This does not appear to be a food or grocery item."}
+    days, name_en, name_hi, category, needs_date = result
+    return {"is_food": True, "name_en": name_en, "name_hi": name_hi,
+            "category": category, "requires_expiry_date": needs_date,
+            "shelf_life_days": None if needs_date else days}
+
+@api.post("/rescue")
+def api_rescue(payload: RescueRequest):
+    names = [str(item).strip()[:100] for item in payload.items if str(item).strip()]
+    if not names:
+        raise HTTPException(status_code=422, detail="Provide at least one ingredient.")
+    try:
+        recipe = generate_rescue(names)
+        return recipe.model_dump()
+    except Exception as exc:
+        log.exception("API rescue recipe generation failed")
+        raise HTTPException(status_code=503, detail="Rescue recipe generation is temporarily unavailable. Check Gemini key, model access, quota, and logs.") from exc
+
+@api.post("/transcribe")
+async def api_transcribe(file: UploadFile = File(...)):
+    if not file.filename or not file.filename.lower().endswith(".wav"):
+        raise HTTPException(status_code=415, detail="Upload a WAV audio file.")
+    max_audio_bytes = 15 * 1024 * 1024
+    raw = await file.read(max_audio_bytes + 1)
+    if not raw:
+        raise HTTPException(status_code=400, detail="Audio file is empty.")
+    if len(raw) > max_audio_bytes:
+        raise HTTPException(status_code=413, detail="Audio must be no larger than 15 MB.")
+    text_value, problem = transcribe.__wrapped__(raw) if hasattr(transcribe, "__wrapped__") else transcribe(raw)
+    if problem:
+        raise HTTPException(status_code=422, detail={"problem": problem, "message": "Could not transcribe this audio. Use a clear WAV recording."})
+    return {"text": text_value}
+
+# Run Streamlit normally with: streamlit run smart.py
+# Run the API only with: python smart.py api, or: uvicorn smart:api --host 0.0.0.0 --port $PORT
+# Do not call main() when imported by Uvicorn; imports should only define the app and routes.
+if __name__ == "__main__":
+    if (len(os.sys.argv) > 1 and os.sys.argv[1].lower() == "api") or os.getenv("SERVICE_MODE", "").lower() == "api":
+        import uvicorn
+        uvicorn.run(api, host="0.0.0.0", port=int(os.getenv("PORT", "10000")))
+    else:
+        main()
