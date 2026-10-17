@@ -1,1066 +1,543 @@
-# database.py
-# Comprehensive Multi-Lingual Grocery Matrix (1,500+ Verified Items & Shelf-Life Rules)
+"""Expanded food lookup for FridgeInventory.
 
-EXPIRY_DATABASE = {
-    # ==========================================
-    # 1. DAIRY, PERISHABLES & ALTERNATIVE MILKS (1-10 Days)
-    # ==========================================
-    "milk": (2, "Milk", "दूध"),
-    "doodh": (2, "Milk", "दूध"),
-    "full cream milk": (2, "Full Cream Milk", "फुल क्रीम दूध"),
-    "toned milk": (2, "Toned Milk", "टोंड दूध"),
-    "double toned milk": (2, "Double Toned Milk", "डबल टोंड दूध"),
-    "cow milk": (2, "Cow Milk", "गाय का दूध"),
-    "buffalo milk": (2, "Buffalo Milk", "भैंस का दूध"),
-    "goat milk": (2, "Goat Milk", "बकरी का दूध"),
-    "camel milk": (2, "Camel Milk", "ऊंट का दूध"),
-    "yak milk": (2, "Yak Milk", "याक का दूध"),
-    "raw milk": (1, "Raw Milk", "कच्चा दूध"),
-    "packet milk": (2, "Packet Milk", "पैकेट दूध"),
-    "tetra pak milk": (7, "Tetra Pak Milk", "टेट्रा पैक दूध"),
-    "condensed milk": (30, "Condensed Milk", "कंडेंस्ड मिल्क"),
-    "evaporated milk": (14, "Evaporated Milk", "इवेपोरेटेड मिल्क"),
-    "milk powder": (180, "Milk Powder", "मिल्क पाउडर"),
-    "paneer": (2, "Paneer", "पनीर"),
-    "cottage cheese": (2, "Paneer", "पनीर"),
-    "malai paneer": (2, "Malai Paneer", "मलाई पनीर"),
-    "low fat paneer": (2, "Low Fat Paneer", "कम वसा वाला पनीर"),
-    "curd": (3, "Curd", "दही"),
-    "dahi": (3, "Curd", "दही"),
-    "greek yogurt": (4, "Greek Yogurt", "ग्रीक योगर्ट"),
-    "hung curd": (3, "Hung Curd", "चक्का दही"),
-    "lassi": (2, "Lassi", "लस्सी"),
-    "mango lassi": (2, "Mango Lassi", "आम लस्सी"),
-    "rose lassi": (2, "Rose Lassi", "गुलाब लस्सी"),
-    "chaas": (2, "Buttermilk", "छाछ"),
-    "buttermilk": (2, "Buttermilk", "छाछ"),
-    "mattha": (2, "Mattha", "मट्ठा"),
-    "bread": (3, "Bread", "ब्रेड"),
-    "white bread": (3, "White Bread", "व्हाइट ब्रेड"),
-    "brown bread": (3, "Brown Bread", "ब्राउन ब्रेड"),
-    "multigrain bread": (3, "Multigrain Bread", "मल्टीग्रेन ब्रेड"),
-    "whole wheat bread": (3, "Whole Wheat Bread", "गेहूं की ब्रेड"),
-    "sourdough": (4, "Sourdough Bread", "सॉरडो ब्रेड"),
-    "sourdough bread": (4, "Sourdough Bread", "सॉरडो ब्रेड"),
-    "garlic bread": (2, "Garlic Bread", "गार्लिक ब्रेड"),
-    "brioche": (3, "Brioche Bread", "ब्रियोच ब्रेड"),
-    "focaccia": (3, "Focaccia Bread", "फोकाचिया ब्रेड"),
-    "ciabatta": (3, "Ciabatta", "चियाबट्टा"),
-    "pita bread": (4, "Pita Bread", "पिता ब्रेड"),
-    "pav": (2, "Pav / Bun", "पाव"),
-    "bun": (2, "Bun", "बन"),
-    "burger bun": (2, "Burger Bun", "बर्गर बन"),
-    "hotdog bun": (2, "Hot Dog Bun", "हॉट डॉग बन"),
-    "croissant": (2, "Croissant", "क्रॉसॉन्ट"),
-    "bagel": (3, "Bagel", "बैगेल"),
-    "muffin": (3, "Muffin", "मफिन"),
-    "donut": (2, "Donut", "डोनट"),
-    "butter": (14, "Butter", "मक्खन"),
-    "makhan": (14, "Butter", "मक्खन"),
-    "white butter": (4, "White Butter", "सफेद मक्खन"),
-    "safed makhan": (4, "White Butter", "सफेद मक्खन"),
-    "salted butter": (14, "Salted Butter", "साल्टेड बटर"),
-    "unsalted butter": (10, "Unsalted Butter", "अनसाल्टेड बटर"),
-    "garlic butter": (10, "Garlic Butter", "गार्लिक बटर"),
-    "cream": (3, "Fresh Cream", "मलाई"),
-    "malai": (3, "Fresh Cream", "मलाई"),
-    "whipping cream": (4, "Whipping Cream", "व्हिपिंग क्रीम"),
-    "heavy cream": (4, "Heavy Cream", "हेवी क्रीम"),
-    "sour cream": (5, "Sour Cream", "सावर क्रीम"),
-    "clotted cream": (3, "Clotted Cream", "क्लॉटेड क्रीम"),
-    "khoya": (3, "Khoya", "खोया"),
-    "mawa": (3, "Mawa", "मावा"),
-    "cheese slice": (10, "Cheese Slices", "चीज़ स्लाइस"),
-    "cheese block": (14, "Cheese Block", "चीज़ ब्लॉक"),
-    "processed cheese": (14, "Processed Cheese", "प्रोसेस्ड चीज़"),
-    "mozzarella": (7, "Mozzarella Cheese", "मोज़ेरेला चीज़"),
-    "cheddar": (14, "Cheddar Cheese", "चेडर चीज़"),
-    "parmesan": (30, "Parmesan Cheese", "पारमेसन चीज़"),
-    "feta": (7, "Feta Cheese", "फेटा चीज़"),
-    "ricotta": (4, "Ricotta Cheese", "रिकोटा चीज़"),
-    "brie": (5, "Brie Cheese", "ब्री चीज़"),
-    "gouda": (14, "Gouda Cheese", "गौड़ा चीज़"),
-    "camembert": (5, "Camembert Cheese", "कैमम्बर्ट चीज़"),
-    "blue cheese": (7, "Blue Cheese", "ब्लू चीज़"),
-    "monterey jack": (10, "Monterey Jack", "मोंटेरे जैक"),
-    "provolone": (10, "Provolone", "प्रोवोलोन"),
-    "swiss cheese": (10, "Swiss Cheese", "स्विस चीज़"),
-    "cream cheese": (7, "Cream Cheese", "क्रीम चीज़"),
-    "mascarpone": (5, "Mascarpone Cheese", "मास्कारपोन चीज़"),
-    "halloumi": (10, "Halloumi Cheese", "हलौमी चीज़"),
-    "flavored milk": (3, "Flavored Milk", "फ़्लेवर्ड मिल्क"),
-    "badam milk": (3, "Almond Milk Drink", "बादाम मिल्क"),
-    "kesar milk": (3, "Saffron Milk Drink", "केसर मिल्क"),
-    "chocolate milk": (3, "Chocolate Milk", "चॉकलेट मिल्क"),
-    "probiotic drink": (7, "Probiotic Drink", "प्रोबायोटिक ड्रिंक"),
-    "yakult": (7, "Probiotic Drink", "प्रोबायोटिक ड्रिंक"),
-    "flavoured yogurt": (4, "Flavored Yogurt", "फ़्लेवर्ड योगर्ट"),
-    "fruit yogurt": (4, "Fruit Yogurt", "फ्रूट योगर्ट"),
-    "rabri": (2, "Rabri", "रबड़ी"),
-    "basundi": (2, "Basundi", "बासुंदी"),
-    "shrikhand": (5, "Shrikhand", "श्रीखंड"),
-    "mishti doi": (4, "Mishti Doi", "मिष्टी दोई"),
-    "cold coffee": (2, "Cold Coffee", "कोल्ड कॉफ़ी"),
-    "iced tea": (3, "Iced Tea", "आइस टी"),
-    "kombucha": (14, "Kombucha", "कॉम्बुचा"),
-    "soya milk": (4, "Soya Milk", "सोया दूध"),
-    "soy milk": (4, "Soya Milk", "सोया दूध"),
-    "almond milk": (5, "Almond Milk", "बादाम दूध"),
-    "oat milk": (5, "Oat Milk", "ओट्स मिल्क"),
-    "coconut milk": (3, "Fresh Coconut Milk", "नारियल का दूध"),
-    "coconut cream": (3, "Coconut Cream", "नारियल की क्रीम"),
-    "cashew milk": (4, "Cashew Milk", "काजू दूध"),
-    "hazelnut milk": (4, "Hazelnut Milk", "हेज़लनट दूध"),
-    "rice milk": (5, "Rice Milk", "राइस मिल्क"),
-    "hemp milk": (4, "Hemp Milk", "हेम्प मिल्क"),
+EXPIRY_DATABASE values remain (estimated_days, English_name, Hindi_name), so the
+existing app can use this module without changing its basic lookup contract.
+Days are rough estimates for appropriate storage, not food-safety guarantees.
+Branded/packaged products are intentionally not listed: ask for the printed
+manufacturer expiry date instead of guessing it.
+"""
 
-    # ==========================================
-    # 2. GREEN LEAFY VEGETABLES & HERBS (2-5 Days)
-    # ==========================================
-    "spinach": (3, "Spinach", "पालक"),
-    "palak": (3, "Spinach", "पालक"),
-    "baby spinach": (3, "Baby Spinach", "बेबी पालक"),
-    "coriander": (3, "Coriander", "धनिया"),
-    "dhaniya": (3, "Coriander", "धनिया"),
-    "hara dhaniya": (3, "Fresh Coriander", "हरा धनिया"),
-    "cilantro": (3, "Cilantro", "हरा धनिया"),
-    "methi": (3, "Fenugreek Leaves", "मेथी"),
-    "fenugreek": (3, "Fenugreek Leaves", "मेथी"),
-    "pudina": (3, "Mint Leaves", "पुदीना"),
-    "mint": (3, "Mint Leaves", "पुदीना"),
-    "spearmint": (3, "Spearmint", "पुदीना"),
-    "peppermint": (3, "Peppermint", "पेपरमिंट"),
-    "bathua": (2, "Bathua", "बथुआ"),
-    "sarson": (3, "Mustard Greens", "सरसों का साग"),
-    "mustard greens": (3, "Mustard Greens", "सरसों का साग"),
-    "curry leaves": (5, "Curry Leaves", "कड़ी पत्ता"),
-    "kadi patta": (5, "Curry Leaves", "कड़ी पत्ता"),
-    "spring onion": (4, "Spring Onion", "हरा प्याज"),
-    "hara pyaaz": (4, "Spring Onion", "हरा प्याज"),
-    "scallions": (4, "Scallions", "हरा प्याज"),
-    "amaranth leaves": (2, "Amaranth Leaves", "चौलाई"),
-    "chaulai": (2, "Amaranth Leaves", "चौलाई"),
-    "lal saag": (2, "Red Amaranth", "लाल साग"),
-    "green amaranth": (2, "Green Amaranth", "हरी चौलाई"),
-    "moringa leaves": (3, "Drumstick Leaves", "सहजन की पत्ती"),
-    "sahjan patta": (3, "Drumstick Leaves", "सहजन की पत्ती"),
-    "colocasia leaves": (2, "Colocasia Leaves", "अरबी के पत्ते"),
-    "arbi patta": (2, "Colocasia Leaves", "अरबी के पत्ते"),
-    "gongura": (3, "Sorrel Leaves", "गोन्गूरा"),
-    "lemongrass": (5, "Lemongrass", "लेमनग्रास"),
-    "celery": (5, "Celery", "सेलेरी"),
-    "lettuce": (4, "Lettuce", "सलाद पत्ता"),
-    "iceberg lettuce": (5, "Iceberg Lettuce", "आइसबर्ग लेट्यूस"),
-    "romaine lettuce": (4, "Romaine Lettuce", "रोमेन लेट्यूस"),
-    "butterhead lettuce": (3, "Butterhead Lettuce", "बटरहेड लेट्यूस"),
-    "lollo rosso": (3, "Lollo Rosso Lettuce", "लोलो रोसो लेट्यूस"),
-    "kale": (5, "Kale", "केल"),
-    "curly kale": (5, "Curly Kale", "कर्ली केल"),
-    "lacinato kale": (5, "Lacinato Kale", "लैसिनाटो केल"),
-    "parsley": (4, "Parsley", "पार्सले"),
-    "flat leaf parsley": (4, "Parsley", "पार्सले"),
-    "curly parsley": (4, "Curly Parsley", "कर्ली पार्सले"),
-    "rosemary": (7, "Fresh Rosemary", "रोज़मेरी"),
-    "thyme": (7, "Fresh Thyme", "थाइम"),
-    "basil": (3, "Basil Leaves", "तुलसी / बेसिल"),
-    "sweet basil": (3, "Sweet Basil", "स्वीट बेसिल"),
-    "thai basil": (3, "Thai Basil", "थाई बेसिल"),
-    "tulsi": (4, "Basil Leaves", "तुलसी"),
-    "oregano fresh": (4, "Fresh Oregano", "ताजा ओरिगेनो"),
-    "sage": (5, "Fresh Sage", "सेज"),
-    "dill": (3, "Dill Leaves", "सोया साग"),
-    "suwa saag": (3, "Dill Leaves", "सुवा साग"),
-    "radish leaves": (2, "Radish Leaves", "मूली के पत्ते"),
-    "mooli patta": (2, "Radish Leaves", "मूली के पत्ते"),
-    "beet greens": (3, "Beet Greens", "चुकंदर के पत्ते"),
-    "turnip greens": (3, "Turnip Greens", "शलजम के पत्ते"),
-    "bok choy": (4, "Bok Choy", "बोक चॉय"),
-    "pak choy": (4, "Pak Choy", "पाक चॉय"),
-    "microgreens": (3, "Microgreens", "माइक्रोग्रीन्स"),
-    "arugula": (3, "Arugula / Rocket", "अरुगुला"),
-    "rocket leaves": (3, "Rocket Leaves", "रॉकेट लीव्स"),
-    "watercress": (3, "Watercress", "जलकुंभी"),
-    "chervil": (3, "Chervil", "चेर्विल"),
-    "chives": (4, "Chives", "चाइव्स"),
-    "garlic chives": (4, "Garlic Chives", "गार्लिक चाइव्स"),
-    "marjoram": (4, "Fresh Marjoram", "मरजोरम"),
-    "tarragon": (4, "Fresh Tarragon", "टाररागॉन"),
+EXPIRY_DATABASE = {}
 
-    # ==========================================
-    # 3. FRUITS & EXOTICS (3-7 Days)
-    # ==========================================
-    "banana": (4, "Banana", "केला"),
-    "kela": (4, "Banana", "केला"),
-    "robusta banana": (4, "Robusta Banana", "रोबस्टा केला"),
-    "yelakki banana": (4, "Yelakki Banana", "एलक्की केला"),
-    "red banana": (4, "Red Banana", "लाल केला"),
-    "papaya": (4, "Papaya", "पपीता"),
-    "papita": (4, "Papaya", "पपीता"),
-    "mango": (5, "Mango", "आम"),
-    "aam": (5, "Mango", "आम"),
-    "alphonso": (4, "Alphonso Mango", "हापुस आम"),
-    "hapus": (4, "Alphonso Mango", "हापुस आम"),
-    "dasheri": (4, "Dasheri Mango", "दशहरी आम"),
-    "langra": (4, "Langra Mango", "लंगड़ा आम"),
-    "chaunsa": (4, "Chaunsa Mango", "चौंसा आम"),
-    "badami": (4, "Badami Mango", "बादामी आम"),
-    "totapuri": (5, "Totapuri Mango", "तोतापुरी आम"),
-    "kesar mango": (4, "Kesar Mango", "केसर आम"),
-    "safeda": (5, "Safeda Mango", "सफेदा आम"),
-    "banganapalli": (5, "Banganapalli Mango", "बंगनपल्ली आम"),
-    "grapes": (5, "Grapes", "अंगूर"),
-    "angoor": (5, "Grapes", "अंगूर"),
-    "black grapes": (5, "Black Grapes", "काले अंगूर"),
-    "green grapes": (5, "Green Grapes", "हरे अंगूर"),
-    "red grapes": (5, "Red Grapes", "लाल अंगूर"),
-    "seedless grapes": (5, "Seedless Grapes", "बिना बीज के अंगूर"),
-    "globe grapes": (6, "Red Globe Grapes", "रेड ग्लोब अंगूर"),
-    "strawberry": (3, "Strawberry", "स्ट्रॉबेरी"),
-    "blueberry": (5, "Blueberry", "ब्लूबेरी"),
-    "blackberry": (4, "Blackberry", "ब्लैकबेरी"),
-    "raspberry": (3, "Raspberry", "रास्पबेरी"),
-    "cranberry fresh": (7, "Fresh Cranberry", "ताजा क्रेनबेरी"),
-    "gooseberry": (5, "Gooseberry", "करौंदा"),
-    "karonda": (5, "Karonda", "करौंदा"),
-    "dragonfruit": (5, "Dragonfruit", "ड्रैगन फ्रूट"),
-    "dragon fruit": (5, "Dragonfruit", "ड्रैगन फ्रूट"),
-    "pitaya": (5, "Dragonfruit", "ड्रैगन फ्रूट"),
-    "red dragonfruit": (5, "Red Dragonfruit", "लाल ड्रैगन फ्रूट"),
-    "chikoo": (4, "Sapodilla", "चीकू"),
-    "sapodilla": (4, "Sapodilla", "चीकू"),
-    "custard apple": (3, "Custard Apple", "शरीफ़ा / सीताफल"),
-    "sitaphal": (3, "Custard Apple", "सीताफल"),
-    "sharifa": (3, "Custard Apple", "शरीफ़ा"),
-    "litchi": (4, "Litchi", "लीची"),
-    "lichi": (4, "Litchi", "लीची"),
-    "lychee": (4, "Litchi", "लीची"),
-    "plum": (5, "Plum", "आलूबुखारा"),
-    "aloobukhara": (5, "Plum", "आलूबुखारा"),
-    "peach": (5, "Peach", "आड़ू"),
-    "aadoo": (5, "Peach", "आड़ू"),
-    "nectarine": (5, "Nectarine", "नेक्टराइन"),
-    "cherry": (5, "Cherry", "चेरी"),
-    "sweet cherry": (5, "Sweet Cherry", "मीठी चेरी"),
-    "sour cherry": (4, "Sour Cherry", "खट्टी चेरी"),
-    "pear": (6, "Pear", "नाशपाती"),
-    "nashpati": (6, "Pear", "नाशपाती"),
-    "babugosha": (5, "Babugosha Pear", "बाबूगोशा"),
-    "asian pear": (7, "Asian Pear", "एशियन नाशपाती"),
-    "avocado": (4, "Avocado", "एवोकाडो"),
-    "hass avocado": (5, "Hass Avocado", "हास एवोकाडो"),
-    "kiwi": (6, "Kiwi", "कीवी"),
-    "gold kiwi": (6, "Gold Kiwi", "गोल्ड कीवी"),
-    "muskmelon": (5, "Muskmelon", "खरबूजा"),
-    "kharbuja": (5, "Muskmelon", "खरबूजा"),
-    "cantaloupe": (5, "Cantaloupe", "खरबूजा"),
-    "honeydew melon": (6, "Honeydew Melon", "हनीड्यू तरबूज"),
-    "watermelon": (6, "Watermelon", "तरबूज"),
-    "tarbooj": (6, "Watermelon", "तरबूज"),
-    "yellow watermelon": (6, "Yellow Watermelon", "पीला तरबूज"),
-    "ripe jackfruit": (3, "Ripe Jackfruit", "पका कटहल"),
-    "fresh fig": (3, "Fresh Fig", "ताजा अंजीर"),
-    "anjir": (3, "Fresh Fig", "अंजीर"),
-    "jamun": (3, "Black Plum", "जामुन"),
-    "black plum": (3, "Black Plum", "जामुन"),
-    "phalsa": (2, "Phalsa", "फल्सा"),
-    "starfruit": (5, "Starfruit", "कमरख"),
-    "kamrakh": (5, "Starfruit", "कमरख"),
-    "passion fruit": (5, "Passion Fruit", "पैशन फ्रूट"),
-    "mangosteen": (5, "Mangosteen", "मैंगोस्टीन"),
-    "rambutan": (4, "Rambutan", "रामबुतान"),
-    "durian": (3, "Durian", "ड्यूरियन"),
-    "persimmon": (6, "Persimmon", "तेंदू फल / पर्सिमोन"),
-    "japani fal": (6, "Persimmon", "जापानी फल"),
-    "quince": (7, "Quince", "श्रीफल"),
-    "guava": (4, "Guava", "अमरूद"),
-    "amrood": (4, "Guava", "अमरूद"),
-    "pink guava": (4, "Pink Guava", "गुलाबी अमरूद"),
-    "apricot": (5, "Apricot", "खुबानी"),
-    "khubani": (5, "Apricot", "खुबानी"),
-    "mulberry": (2, "Mulberry", "शहतूत"),
-    "shahtoot": (2, "Mulberry", "शहतूत"),
-    "wood apple": (7, "Wood Apple", "बेल / कैथा"),
-    "bael": (7, "Wood Apple", "बेल"),
-    "breadfruit": (4, "Breadfruit", "विलायती कटहल"),
-    "jabuticaba": (3, "Jabuticaba", "जाबुटिकाबा"),
-    "physalis": (5, "Cape Gooseberry", "रसभरी"),
-    "rasbhari": (5, "Cape Gooseberry", "रसभरी"),
-    "soursop": (3, "Soursop", "लक्ष्मण फल"),
-    "prickly pear": (5, "Prickly Pear", "नागफनी फल"),
 
-    # ==========================================
-    # 4. VEGETABLES & GOURMET PRODUCE (3-7 Days)
-    # ==========================================
-    "tomato": (5, "Tomato", "टमाटर"),
-    "tamatar": (5, "Tomato", "टमाटर"),
-    "cherry tomato": (6, "Cherry Tomatoes", "चेरी टमाटर"),
-    "roma tomato": (6, "Roma Tomatoes", "रोमा टमाटर"),
-    "beefsteak tomato": (5, "Beefsteak Tomato", "बीफस्टेक टमाटर"),
-    "plum tomato": (6, "Plum Tomato", "प्लम टमाटर"),
-    "bhindi": (4, "Ladyfinger", "भिंडी"),
-    "okra": (4, "Ladyfinger", "भिंडी"),
-    "ladyfinger": (4, "Ladyfinger", "भिंडी"),
-    "capsicum": (5, "Capsicum", "शिमला मिर्च"),
-    "shimla mirch": (5, "Capsicum", "शिमला मिर्च"),
-    "green capsicum": (5, "Green Capsicum", "हरी शिमला मिर्च"),
-    "red capsicum": (5, "Red Bell Pepper", "लाल शिमला मिर्च"),
-    "yellow capsicum": (5, "Yellow Bell Pepper", "पीली शिमला मिर्च"),
-    "orange capsicum": (5, "Orange Bell Pepper", "ऑरेंज शिमला मिर्च"),
-    "bell pepper": (5, "Bell Pepper", "शिमला मिर्च"),
-    "cauliflower": (5, "Cauliflower", "गोभी"),
-    "gobi": (5, "Cauliflower", "गोभी"),
-    "phool gobi": (5, "Cauliflower", "फूल गोभी"),
-    "purple cauliflower": (5, "Purple Cauliflower", "बैंगनी गोभी"),
-    "cabbage": (6, "Cabbage", "पत्ता गोभी"),
-    "patta gobi": (6, "Cabbage", "पत्ता गोभी"),
-    "red cabbage": (7, "Red Cabbage", "लाल पत्ता गोभी"),
-    "chinese cabbage": (5, "Chinese Cabbage", "चाइनीज पत्ता गोभी"),
-    "napa cabbage": (5, "Napa Cabbage", "नापा कैबेज"),
-    "savoy cabbage": (6, "Savoy Cabbage", "सवाय कैबेज"),
-    "peas": (5, "Green Peas", "मटर"),
-    "matar": (5, "Green Peas", "मटर"),
-    "hari matar": (5, "Green Peas", "हरी मटर"),
-    "french beans": (5, "French Beans", "फ्रेंच बीन्स"),
-    "beans": (5, "Beans", "बीन्स"),
-    "cluster beans": (5, "Cluster Beans", "ग्वार फली"),
-    "guar fali": (5, "Cluster Beans", "ग्वार फली"),
-    "broad beans": (4, "Broad Beans", "सेम फली"),
-    "sem fali": (4, "Broad Beans", "सेम फली"),
-    "yardlong beans": (4, "Yardlong Beans", "बरबटी"),
-    "barbati": (4, "Yardlong Beans", "बरबटी"),
-    "flat beans": (5, "Flat Beans", "चपटी बीन्स"),
-    "ridge gourd": (5, "Ridge Gourd", "तोरी / तुरई"),
-    "turai": (5, "Ridge Gourd", "तुरई"),
-    "tori": (5, "Ridge Gourd", "तोरी"),
-    "sponge gourd": (5, "Sponge Gourd", "घिया तोरी"),
-    "bottle gourd": (6, "Bottle Gourd", "लौकी"),
-    "lauki": (6, "Bottle Gourd", "लौकी"),
-    "doodhi": (6, "Bottle Gourd", "दूधी"),
-    "bitter gourd": (6, "Bitter Gourd", "करेला"),
-    "karela": (6, "Bitter Gourd", "करेला"),
-    "snake gourd": (5, "Snake Gourd", "चिचिंडा"),
-    "chichinda": (5, "Snake Gourd", "चिचिंडा"),
-    "padwal": (5, "Snake Gourd", "पड़वल"),
-    "ash gourd": (8, "Ash Gourd", "पेठा / सफेद पेठा"),
-    "petha": (8, "Ash Gourd", "पेठा"),
-    "ivy gourd": (5, "Ivy Gourd", "कुंदरू"),
-    "tindora": (5, "Ivy Gourd", "कुंदरू"),
-    "kundru": (5, "Ivy Gourd", "कुंदरू"),
-    "tinda": (5, "Apple Gourd", "टिंडा"),
-    "apple gourd": (5, "Apple Gourd", "टिंडा"),
-    "pointed gourd": (5, "Pointed Gourd", "परवल"),
-    "parwal": (5, "Pointed Gourd", "परवल"),
-    "raw banana": (5, "Raw Banana", "कच्चा केला"),
-    "kachcha kela": (5, "Raw Banana", "कच्चा केला"),
-    "raw mango": (5, "Raw Mango", "कच्चा आम / कैरी"),
-    "kairi": (5, "Raw Mango", "कैरी"),
-    "aambi": (5, "Raw Mango", "अम्बी"),
-    "drumstick": (5, "Drumsticks", "सहजन की फली"),
-    "sahjan": (5, "Drumsticks", "सहजन"),
-    "moringa": (5, "Moringa Pods", "सहजन"),
-    "baby corn": (4, "Baby Corn", "बेबी कॉर्न"),
-    "sweet corn": (4, "Sweet Corn", "स्वीट कॉर्न"),
-    "makkai": (4, "Sweet Corn", "मक्का"),
-    "bhutta": (3, "Corn Cob", "भुट्टा"),
-    "corn cob": (3, "Corn Cob", "भुट्टा"),
-    "mushroom": (4, "Mushroom", "मशरूम"),
-    "button mushroom": (4, "Button Mushroom", "बटन मशरूम"),
-    "oyster mushroom": (3, "Oyster Mushroom", "ऑयस्टर मशरूम"),
-    "shiitake": (4, "Shiitake Mushroom", "शितातके मशरूम"),
-    "portobello": (4, "Portobello Mushroom", "पोर्टोबेलो मशरूम"),
-    "enoki": (3, "Enoki Mushroom", "एनोकी मशरूम"),
-    "king oyster mushroom": (4, "King Oyster", "किंग ऑयस्टर मशरूम"),
-    "morel mushroom": (3, "Morel Mushroom", "गुच्छी मशरूम"),
-    "guchhi": (3, "Guchhi Mushroom", "गुच्छी मशरूम"),
-    "truffle fresh": (5, "Fresh Truffle", "ताजा ट्रफ़ल"),
-    "broccoli": (5, "Broccoli", "ब्रॉकोली"),
-    "brocoli": (5, "Broccoli", "ब्रॉकोली"),
-    "brocolli": (5, "Broccoli", "ब्रॉकोली"),
-    "broccolini": (4, "Broccolini", "ब्रॉकोलिनी"),
-    "zucchini": (5, "Zucchini", "जुकिनी"),
-    "yellow zucchini": (5, "Yellow Zucchini", "पीली जुकिनी"),
-    "green zucchini": (5, "Green Zucchini", "हरी जुकिनी"),
-    "courgette": (5, "Courgette", "जुकिनी"),
-    "artichoke": (5, "Artichoke", "आर्टिचोक"),
-    "asparagus": (4, "Asparagus", "एसपारगुस / शतावरी"),
-    "shatavari": (4, "Asparagus", "शतावरी"),
-    "brussels sprouts": (6, "Brussels Sprouts", "ब्रासल्स स्प्राउट्स"),
-    "edamame": (4, "Edamame Beans", "एडामे बीन्स"),
-    "snow peas": (4, "Snow Peas", "स्नो पीज़"),
-    "snap peas": (4, "Snap Peas", "स्नैप पीज़"),
-    "sprouts": (3, "Mixed Sprouts", "अंकुरित दाल"),
-    "moong sprouts": (3, "Moong Sprouts", "मूंग स्प्राउट्स"),
-    "chana sprouts": (3, "Chana Sprouts", "चना स्प्राउट्स"),
-    "alfa alfa sprouts": (3, "Alfalfa Sprouts", "अल्फाल्फा स्प्राउट्स"),
-    "tofu": (5, "Tofu", "टोफू"),
-    "firm tofu": (5, "Firm Tofu", "फर्म टोफू"),
-    "silken tofu": (4, "Silken Tofu", "सिलकेन टोफू"),
-    "smoked tofu": (7, "Smoked Tofu", "स्मोक्ड टोफू"),
-    "tempeh": (5, "Tempeh", "टेम्पेह"),
-    "seitan": (5, "Seitan", "सेतान"),
-    "soya chunks cooked": (2, "Cooked Soya Chunks", "पकी हुई सोया चंक्स"),
-    "soya chaap": (3, "Soya Chaap", "सोया चाप"),
-    "raw soya chaap": (4, "Raw Soya Chaap", "कच्चा सोया चाप"),
-    "boiled noodles": (2, "Boiled Noodles", "उबले नूडल्स"),
-    "leftover dal": (2, "Cooked Dal", "बची हुई दाल"),
-    "leftover sabzi": (2, "Cooked Sabzi", "बची हुई सब्जी"),
-    "leftover rice": (2, "Cooked Rice", "पका हुआ चावल"),
-    "leftover curry": (2, "Cooked Curry", "बची हुई करी"),
-    "chapati dough": (2, "Chapati Dough", "गूंधा हुआ आटा"),
-    "atta dough": (2, "Chapati Dough", "गूंधा हुआ आटा"),
-    "bamboo shoots": (4, "Bamboo Shoots", "बांस की कोपल"),
-    "lotus stem": (6, "Lotus Stem", "कमल ककड़ी"),
-    "kamal kakdi": (6, "Lotus Stem", "कमल ककड़ी"),
-    "bhein": (6, "Lotus Stem", "भें"),
-    "water chestnut fresh": (5, "Fresh Water Chestnut", "ताजा सिंघाड़ा"),
-    "singhara": (5, "Water Chestnut", "सिंघाड़ा"),
-    "fiddlehead fern": (3, "Fiddlehead Fern", "लिंगुड़ा / डेंकली"),
-    "linguda": (3, "Fiddlehead Fern", "लिंगुड़ा"),
+def _add(days, en, hi, *keys):
+    for key in keys:
+        EXPIRY_DATABASE[key.lower()] = (days, en, hi)
 
-    # ==========================================
-    # 5. ROOT VEGETABLES & SEMI-DURABLES (7-14 Days)
-    # ==========================================
-    "cucumber": (6, "Cucumber", "खीरा"),
-    "kheera": (6, "Cucumber", "खीरा"),
-    "kakdi": (5, "Long Cucumber", "ककड़ी"),
-    "english cucumber": (6, "English Cucumber", "इंग्लिश खीरा"),
-    "ghera": (6, "Gherkin", "खीरा"),
-    "gherkin": (7, "Pickling Cucumber", "छोटा खीरा"),
-    "carrot": (8, "Carrot", "गाजर"),
-    "gajar": (8, "Carrot", "गाजर"),
-    "red carrot": (7, "Red Carrot", "लाल गाजर"),
-    "orange carrot": (8, "Orange Carrot", "ऑरेंज गाजर"),
-    "black carrot": (7, "Black Carrot", "काली गाजर"),
-    "baby carrot": (6, "Baby Carrot", "बेबी गाजर"),
-    "beetroot": (12, "Beetroot", "चुकंदर"),
-    "chukandar": (12, "Beetroot", "चुकंदर"),
-    "radish": (7, "Radish", "मूली"),
-    "mooli": (7, "Radish", "मूली"),
-    "white radish": (7, "White Radish", "सफेद मूली"),
-    "red radish": (7, "Red Radish", "लाल मूली"),
-    "daikon": (8, "Daikon Radish", "दैकोन मूली"),
-    "turnip": (8, "Turnip", "शलजम"),
-    "shaljam": (8, "Turnip", "शलजम"),
-    "rutabaga": (10, "Rutabaga", "स्वीडन शलजम"),
-    "sweet potato": (14, "Sweet Potato", "शकरकंद"),
-    "shakarkand": (14, "Sweet Potato", "शकरकंद"),
-    "purple sweet potato": (14, "Purple Sweet Potato", "बैंगनी शकरकंद"),
-    "yam": (12, "Yam", "जिमीकंद / सूरन"),
-    "jimikand": (12, "Elephant Foot Yam", "जिमीकंद"),
-    "suran": (12, "Elephant Foot Yam", "सूरन"),
-    "colocasia": (8, "Colocasia Root", "अरबी"),
-    "arbi": (8, "Colocasia Root", "अरबी"),
-    "taro": (8, "Taro Root", "अरबी"),
-    "kchalu": (8, "Kachalu", "कचालू"),
-    "raw papaya": (8, "Raw Papaya", "कच्चा पपीता"),
-    "brinjal": (6, "Brinjal", "बैंगन"),
-    "baingan": (6, "Brinjal", "बैंगन"),
-    "eggplant": (6, "Eggplant", "बैंगन"),
-    "long brinjal": (6, "Long Brinjal", "लंबा बैंगन"),
-    "round brinjal": (6, "Round Brinjal", "गोल बैंगन"),
-    "bharta baingan": (6, "Bharta Brinjal", "भर्ता बैंगन"),
-    "baby brinjal": (5, "Baby Brinjal", "छोटा बैंगन"),
-    "apple": (12, "Apple", "सेब"),
-    "seb": (12, "Apple", "सेब"),
-    "kashmiri apple": (14, "Kashmiri Apple", "कश्मीरी सेब"),
-    "green apple": (14, "Green Apple", "हरा सेब"),
-    "granny smith": (14, "Granny Smith Apple", "ग्रैनी स्मिश सेब"),
-    "fuji apple": (14, "Fuji Apple", "फूजी सेब"),
-    "gala apple": (12, "Gala Apple", "गाला सेब"),
-    "red delicious": (12, "Red Delicious Apple", "रेड डिलीशियस सेब"),
-    "orange": (8, "Orange", "संतरा"),
-    "santara": (8, "Orange", "संतरा"),
-    "kinnow": (8, "Kinnow", "किन्नू"),
-    "sweet lime": (8, "Mosambi", "मौसमी"),
-    "mosambi": (8, "Mosambi", "मौसमी"),
-    "mandarin": (7, "Mandarin Orange", "मैंडरिन संतरा"),
-    "clementine": (7, "Clementine", "क्लेमेंटाइन"),
-    "grapefruit": (10, "Grapefruit", "चकोतरा"),
-    "chakotra": (10, "Grapefruit", "चकोतरा"),
-    "pomelo": (10, "Pomelo", "पामेलो / चकोतरा"),
-    "lemon": (12, "Lemon", "नींबू"),
-    "nimbu": (12, "Lemon", "नींबू"),
-    "lime": (12, "Lime", "छोटा नींबू"),
-    "yellow lemon": (12, "Yellow Lemon", "पीला नींबू"),
-    "key lime": (10, "Key Lime", "छोटा हरा नींबू"),
-    "kaffir lime": (10, "Kaffir Lime", "काफिर लेमन"),
-    "green chilli": (7, "Green Chilli", "हरी मिर्च"),
-    "hari mirch": (7, "Green Chilli", "हरी मिर्च"),
-    "chilli": (7, "Chilli", "मिर्च"),
-    "jalapeno": (7, "Jalapeno", "जालापीनो"),
-    "habanero": (7, "Habanero", "हबानेरो"),
-    "bird eye chilli": (7, "Bird Eye Chilli", "बर्ड आई मिर्च"),
-    "bhut jolokia": (8, "Ghost Pepper", "भूत जोलोकिया"),
-    "ginger": (12, "Ginger", "अदरक"),
-    "adrak": (12, "Ginger", "अदरक"),
-    "raw turmeric": (10, "Raw Turmeric", "कच्ची हल्दी"),
-    "kachchi haldi": (10, "Raw Turmeric", "कच्ची हल्दी"),
-    "galangal": (10, "Galangal", "कुलंजन / थाई अदरक"),
-    "eggs": (14, "Eggs", "अंडे"),
-    "anda": (14, "Eggs", "अंडे"),
-    "desi eggs": (14, "Desi Eggs", "देशी अंडे"),
-    "brown eggs": (14, "Brown Eggs", "ब्राउन अंडे"),
-    "quail eggs": (10, "Quail Eggs", "बटेर के अंडे"),
-    "duck eggs": (12, "Duck Eggs", "बतख के अंडे"),
-    "pomegranate": (12, "Pomegranate", "अनार"),
-    "anaar": (12, "Pomegranate", "अनार"),
-    "pineapple": (7, "Pineapple", "अनानास"),
-    "ananas": (7, "Pineapple", "अनानास"),
-    "coconut fresh": (8, "Fresh Coconut", "कच्चा नारियल"),
-    "nariyal": (8, "Fresh Coconut", "नारियल"),
-    "water coconut": (3, "Tender Coconut", "डाब / पानी वाला नारियल"),
-    "nariyal pani": (3, "Tender Coconut", "नारियल पानी"),
-    "amla": (10, "Indian Gooseberry", "आंवला"),
-    "raw jackfruit": (6, "Raw Jackfruit", "कच्चा कटहल"),
-    "kathal": (6, "Raw Jackfruit", "कटहल"),
-    "tamarind fresh": (14, "Fresh Tamarind", "ताजा इमली"),
-    "imli": (14, "Tamarind", "इमली"),
-    "kudampuli": (30, "Malabar Tamarind", "कुडम्पुली"),
-    "kokum fresh": (7, "Fresh Kokum", "कोकम"),
+# Fresh vegetables (typical fridge estimates; whole produce may last longer)
+_add(3, "Spinach", "पालक", "spinach", "palak")
+_add(5, "Lettuce", "सलाद पत्ता", "lettuce", "salad leaves")
+_add(5, "Coriander leaves", "धनिया पत्ता", "coriander", "cilantro", "dhania")
+_add(5, "Mint leaves", "पुदीना", "mint", "pudina")
+_add(3, "Fenugreek leaves", "मेथी", "fenugreek leaves", "methi")
+_add(5, "Tomato", "टमाटर", "tomato", "tomatoes", "tamatar")
+_add(14, "Potato", "आलू", "potato", "potatoes", "aloo")
+_add(14, "Onion", "प्याज़", "onion", "onions", "pyaaz")
+_add(14, "Carrot", "गाजर", "carrot", "carrots", "gajar")
+_add(5, "Cucumber", "खीरा", "cucumber", "cucumbers", "kheera")
+_add(7, "Capsicum", "शिमला मिर्च", "capsicum", "bell pepper", "green pepper")
+_add(7, "Green chilli", "हरी मिर्च", "green chilli", "green chili", "green chillies", "green chilies")
+_add(5, "Cauliflower", "फूलगोभी", "cauliflower", "gobi")
+_add(7, "Cabbage", "पत्तागोभी", "cabbage", "patta gobi")
+_add(5, "Broccoli", "ब्रोकोली", "broccoli")
+_add(5, "Green peas", "मटर", "peas", "green peas", "matar")
+_add(5, "Green beans", "हरी फलियाँ", "beans", "green beans", "french beans")
+_add(4, "Okra", "भिंडी", "okra", "bhindi", "ladyfinger")
+_add(5, "Brinjal", "बैंगन", "brinjal", "eggplant", "aubergine", "baingan")
+_add(7, "Pumpkin", "कद्दू", "pumpkin", "kaddu")
+_add(4, "Bottle gourd", "लौकी", "bottle gourd", "lauki", "ghiya")
+_add(4, "Ridge gourd", "तोरई", "ridge gourd", "turai", "tori")
+_add(4, "Bitter gourd", "करेला", "bitter gourd", "karela")
+_add(5, "Radish", "मूली", "radish", "mooli")
+_add(5, "Beetroot", "चुकंदर", "beetroot", "beet")
+_add(7, "Sweet potato", "शकरकंद", "sweet potato")
+_add(5, "Zucchini", "ज़ुकीनी", "zucchini", "courgette")
+_add(5, "Celery", "अजवाइन की डंठल", "celery")
+_add(5, "Asparagus", "शतावरी", "asparagus")
+_add(4, "Mushrooms", "मशरूम", "mushroom", "mushrooms")
+_add(21, "Ginger", "अदरक", "ginger", "adrak")
+_add(30, "Garlic", "लहसुन", "garlic", "lahsun")
+_add(14, "Lemon", "नींबू", "lemon", "lemons", "nimbu")
+_add(7, "Spring onion", "हरा प्याज़", "spring onion", "scallion", "scallions")
+_add(5, "Coriander root", "धनिया की जड़", "coriander root")
 
-    # ==========================================
-    # 6. FRESH MEAT, POULTRY & SEAFOOD (1-3 Days)
-    # ==========================================
-    "chicken": (2, "Raw Chicken", "कच्चा चिकन"),
-    "murgi": (2, "Raw Chicken", "कच्चा चिकन"),
-    "chicken breast": (2, "Chicken Breast", "चिकन ब्रेस्ट"),
-    "chicken thighs": (2, "Chicken Thighs", "चिकन थाई"),
-    "chicken wings": (2, "Chicken Wings", "चिकन विंग्स"),
-    "chicken drumsticks": (2, "Chicken Drumsticks", "चिकन ड्रमस्टिक"),
-    "minced chicken": (1, "Minced Chicken / Keema", "चिकन कीमा"),
-    "chicken keema": (1, "Chicken Keema", "चिकन कीमा"),
-    "mutton": (2, "Mutton / Goat Meat", "मटन / बकरे का मांस"),
-    "goat meat": (2, "Goat Meat", "बकरे का मांस"),
-    "mutton keema": (1, "Mutton Keema", "मटन कीमा"),
-    "mutton chops": (2, "Mutton Chops", "मटन चाप"),
-    "lamb": (2, "Lamb Meat", "भेड़ का मांस"),
-    "fish": (1, "Fresh Fish", "ताजा मछली"),
-    "machhli": (1, "Fresh Fish", "मछली"),
-    "rohu": (1, "Rohu Fish", "रोहू मछली"),
-    "katla": (1, "Katla Fish", "कतला मछली"),
-    "hilsa": (1, "Hilsa Fish", "इल्लिश / हिलसा मछली"),
-    "pomfret": (1, "Pomfret Fish", "पॉम्फ्रेट मछली"),
-    "surmai": (1, "King Fish / Surmai", "सुरमई मछली"),
-    "salmon": (2, "Salmon Fish", "साल्मन मछली"),
-    "tuna": (1, "Tuna Fish", "टूना मछली"),
-    "raw tuna": (1, "Raw Tuna", "कच्ची टूना"),
-    "basa": (2, "Basa Fish Fillet", "बासा मछली"),
-    "cod": (2, "Cod Fish", "कोड मछली"),
-    "prawns": (1, "Fresh Prawns", "झींगा / प्रॉन्स"),
-    "shrimp": (1, "Shrimp", "छोटे झींगे"),
-    "jhinga": (1, "Prawns", "झींगा"),
-    "crab": (1, "Crab", "केकड़ा"),
-    "lobster": (1, "Lobster", "लॉबस्टर"),
-    "squid": (1, "Squid / Calamari", "स्क्विड"),
-    "octopus": (1, "Octopus", "ऑक्टोपस"),
-    "mussels": (1, "Mussels", "सीप / मसल्स"),
-    "clams": (1, "Clams", "तीसरी / क्लैम्स"),
-    "turkey": (2, "Turkey Meat", "टर्की का मांस"),
-    "duck meat": (2, "Duck Meat", "बतख का मांस"),
-    "pork": (2, "Pork Meat", "सूअर का मांस"),
-    "bacon": (5, "Bacon", "बैकोन"),
-    "ham": (4, "Ham", "हैम"),
-    "salami": (5, "Salami", "सलामी"),
-    "sausage": (4, "Sausages", "सॉसेज"),
-    "chicken sausage": (4, "Chicken Sausage", "चिकन सॉसेज"),
-    "pepperoni": (7, "Pepperoni", "पेपेरोनी"),
+# Fresh fruits
+_add(21, "Apple", "सेब", "apple", "apples", "seb")
+_add(5, "Banana", "केला", "banana", "bananas", "kela")
+_add(5, "Mango", "आम", "mango", "mangoes", "aam")
+_add(14, "Orange", "संतरा", "orange", "oranges", "santra")
+_add(7, "Grapes", "अंगूर", "grapes", "grape")
+_add(3, "Strawberries", "स्ट्रॉबेरी", "strawberry", "strawberries")
+_add(5, "Watermelon", "तरबूज", "watermelon", "tarbooz")
+_add(4, "Papaya", "पपीता", "papaya")
+_add(5, "Pineapple", "अनानास", "pineapple")
+_add(5, "Pear", "नाशपाती", "pear", "pears")
+_add(14, "Pomegranate", "अनार", "pomegranate", "anar")
+_add(5, "Guava", "अमरूद", "guava", "amrood")
+_add(7, "Kiwi", "कीवी", "kiwi")
+_add(5, "Peach", "आड़ू", "peach", "peaches")
+_add(5, "Plum", "आलूबुखारा", "plum", "plums")
+_add(5, "Chikoo", "चीकू", "chikoo", "sapodilla")
+_add(5, "Litchi", "लीची", "litchi", "lychee")
+_add(5, "Jamun", "जामुन", "jamun", "java plum")
+_add(5, "Muskmelon", "खरबूजा", "muskmelon", "cantaloupe")
+_add(5, "Dragon fruit", "ड्रैगन फ्रूट", "dragon fruit")
+_add(5, "Avocado", "एवोकाडो", "avocado", "avocados")
+_add(5, "Coconut", "नारियल", "coconut", "coconuts")
 
-    # ==========================================
-    # 7. LONG SHELF LIFE, PANTRY & GRAINS (14-360 Days)
-    # ==========================================
-    "potato": (14, "Potato", "आलू"),
-    "aloo": (14, "Potato", "आलू"),
-    "baby potato": (14, "Baby Potatoes", "छोटे आलू"),
-    "pahadi aloo": (21, "Pahadi Potato", "पहाड़ी आलू"),
-    "onion": (14, "Onion", "प्याज"),
-    "pyaaz": (14, "Onion", "प्याज"),
-    "red onion": (14, "Red Onion", "लाल प्याज"),
-    "white onion": (14, "White Onion", "सफेद प्याज"),
-    "shallots": (14, "Shallots", "छोटे प्याज / सांभर प्याज"),
-    "garlic": (21, "Garlic", "लहसुन"),
-    "lahsun": (21, "Garlic", "लहसुन"),
-    "lehsun": (21, "Garlic", "लहसुन"),
-    "single clove garlic": (30, "Kashmiri Garlic", "एककली लहसुन"),
-    "pumpkin": (14, "Pumpkin", "कद्दू"),
-    "kaddu": (14, "Pumpkin", "कद्दू"),
-    "red pumpkin": (14, "Red Pumpkin", "लाल कद्दू"),
-    "butternut squash": (21, "Butternut Squash", "बटरनट स्क्वैश"),
-    "dry coconut": (60, "Dry Coconut", "सूखा गोला नारियल"),
-    "dry dates": (90, "Dry Dates", "छुआरा"),
-    "chhuara": (90, "Dry Dates", "छुआरा"),
-    "khajoor": (60, "Dates", "खजूर"),
-    "dates": (60, "Dates", "खजूर"),
-    "medjool dates": (90, "Medjool Dates", "मेडजूल खजूर"),
-    "jaggery": (120, "Jaggery", "गुड़"),
-    "gur": (120, "Jaggery", "गुड़"),
-    "palm jaggery": (120, "Palm Jaggery", "ताड़ का गुड़"),
-    "jaggery powder": (120, "Jaggery Powder", "शक्कर / गुड़ पाउडर"),
-    "shakkar": (120, "Jaggery Powder", "शक्कर"),
-    "honey": (360, "Honey", "शहद"),
-    "raw honey": (360, "Raw Honey", "कच्चा शहद"),
-    "maple syrup": (180, "Maple Syrup", "मैपल सिरप"),
-    "agave nectar": (180, "Agave Nectar", "अगावे सिरप"),
-    "ghee": (180, "Ghee", "घी"),
-    "deshi ghee": (180, "Desi Ghee", "देसी घी"),
-    "cow ghee": (180, "Cow Ghee", "गाय का घी"),
-    "a2 ghee": (180, "A2 Desi Ghee", "A2 देसी घी"),
-    "mustard oil": (180, "Mustard Oil", "सरसों का तेल"),
-    "sarson tel": (180, "Mustard Oil", "सरसों का तेल"),
-    "refined oil": (180, "Refined Oil", "रिफाइंड तेल"),
-    "sunflower oil": (180, "Sunflower Oil", "सूरजमुखी तेल"),
-    "groundnut oil": (180, "Groundnut Oil", "मूंगफली का तेल"),
-    "olive oil": (180, "Olive Oil", "ऑलिव ऑयल"),
-    "extra virgin olive oil": (180, "Extra Virgin Olive Oil", "एक्स्ट्रा वर्जिन ऑलिव ऑयल"),
-    "sesame oil": (180, "Sesame Oil", "तिल का तेल"),
-    "til tel": (180, "Sesame Oil", "तिल का तेल"),
-    "coconut oil": (180, "Coconut Oil", "नारियल तेल"),
-    "rice bran oil": (180, "Rice Bran Oil", "राइस ब्रान तेल"),
-    "canola oil": (180, "Canola Oil", "कैनोला तेल"),
-    "avocado oil": (180, "Avocado Oil", "एवोकाडो तेल"),
-    "pickle": (180, "Pickle / Achar", "अचार"),
-    "achar": (180, "Pickle / Achar", "अचार"),
-    "mango pickle": (180, "Mango Pickle", "आम का अचार"),
-    "lemon pickle": (180, "Lemon Pickle", "नींबू का अचार"),
-    "chilli pickle": (180, "Chilli Pickle", "मिर्च का अचार"),
-    "mixed pickle": (180, "Mixed Pickle", "मिक्स अचार"),
-    "papad": (90, "Papad", "पापड़"),
-    "urad papad": (90, "Urad Dal Papad", "उड़द पापड़"),
-    "rice papad": (90, "Rice Papad", "चावल पापड़"),
-    "vadi": (120, "Mangodi / Vadi", "मंगोड़ी / वड़ी"),
-    "mangodi": (120, "Mangodi", "मंगोड़ी"),
-    "amritsari vadi": (120, "Amritsari Vadi", "अमृतसरी वड़ी"),
-    "sattu": (90, "Sattu", "सत्तू"),
-    "chana sattu": (90, "Chana Sattu", "चना सत्तू"),
-    "besan": (60, "Gram Flour", "बेसन"),
-    "atta": (60, "Wheat Flour", "गेहूं का आटा"),
-    "gehu atta": (60, "Wheat Flour", "गेहूं का आटा"),
-    "multigrain atta": (60, "Multigrain Flour", "मल्टीग्रेन आटा"),
-    "sharbati atta": (60, "Sharbati Atta", "शरबती आटा"),
-    "maida": (60, "Refined Flour", "मैदा"),
-    "suji": (60, "Semolina", "सूजी / रवा"),
-    "rava": (60, "Semolina", "सूजी / रवा"),
-    "chiroti rava": (60, "Chiroti Rava", "चिरोटी रवा"),
-    "rice flour": (90, "Rice Flour", "चावल का आटा"),
-    "chawal atta": (90, "Rice Flour", "चावल का आटा"),
-    "corn flour": (180, "Corn Flour", "कॉर्नफ्लोर"),
-    "corn starch": (180, "Corn Starch", "कॉर्न स्टार्च"),
-    "ragi flour": (60, "Ragi Flour", "रागी का आटा"),
-    "bajra flour": (45, "Bajra Flour", "बाजरे का आटा"),
-    "jowar flour": (45, "Jowar Flour", "ज्वार का आटा"),
-    "kuttu atta": (60, "Buckwheat Flour", "कुट्टू का आटा"),
-    "singhara atta": (60, "Water Chestnut Flour", "सिंघाड़े का आटा"),
-    "rajgira atta": (60, "Amaranth Flour", "राजगिरा का आटा"),
-    "almond flour": (60, "Almond Flour", "बादाम का आटा"),
-    "coconut flour": (90, "Coconut Flour", "नारियल का आटा"),
-    "oat flour": (60, "Oat Flour", "ओट्स का आटा"),
-    "self raising flour": (60, "Self Raising Flour", "सेल्फ रेसिंग आटा"),
-    "poha": (90, "Flattened Rice", "पोहा"),
-    "thick poha": (90, "Thick Poha", "मोटा पोहा"),
-    "thin poha": (90, "Thin Poha", "पतला पोहा"),
-    "chira": (90, "Flattened Rice", "चिड़ा"),
-    "murmura": (60, "Puffed Rice", "मुरमुरे / लाई"),
-    "sabudana": (180, "Sago / Tapioca", "साबूदाना"),
-    "big sabudana": (180, "Large Sago", "बड़ा साबूदाना"),
-    "sevai": (120, "Vermicelli", "सेवई"),
-    "vermicelli": (120, "Vermicelli", "सेवई"),
-    "roasted sevai": (180, "Roasted Vermicelli", "भुनी हुई सेवई"),
-    "pasta": (180, "Pasta", "पास्ता"),
-    "penne pasta": (180, "Penne Pasta", "पेने पास्ता"),
-    "fusilli": (180, "Fusilli Pasta", "फुसिली पास्ता"),
-    "spaghetti": (180, "Spaghetti", "स्पैगेटी"),
-    "macaroni": (180, "Macaroni", "मैक्रोनी"),
-    "farfalle": (180, "Farfalle / Bowtie Pasta", "फॉरफैले पास्ता"),
-    "lasagna sheets": (180, "Lasagna Sheets", "लसग्ना शीट"),
-    "orzo": (180, "Orzo Pasta", "ऑर्ज़ो पास्ता"),
-    "noodles": (120, "Noodles", "नूडल्स"),
-    "hakka noodles": (120, "Hakka Noodles", "हक्का नूडल्स"),
-    "ramen noodles": (120, "Ramen Noodles", "रामेन नूडल्स"),
-    "soba noodles": (120, "Soba Noodles", "सोबा नूडल्स"),
-    "udon noodles": (120, "Udon Noodles", "उडोन नूडल्स"),
-    "rice noodles": (180, "Rice Noodles", "राइस नूडल्स"),
-    "vermicelli noodles": (180, "Rice Vermicelli", "राइस सेवई"),
-    "maggi": (120, "Maggi Noodles", "मैगी नूडल्स"),
-    "instant noodles": (120, "Instant Noodles", "इन्स्टेंट नूडल्स"),
-    "yippee noodles": (120, "Yippee Noodles", "यिप्पी नूडल्स"),
-    "oats": (120, "Oats", "ओट्स"),
-    "rolled oats": (120, "Rolled Oats", "रोल्ड ओट्स"),
-    "steel cut oats": (120, "Steel Cut Oats", "स्टील कट ओट्स"),
-    "instant oats": (120, "Instant Oats", "इन्स्टेंट ओट्स"),
-    "cornflakes": (90, "Cornflakes", "कॉर्नफ्लैक्स"),
-    "muesli": (90, "Muesli", "म्यूस्ली"),
-    "granola": (90, "Granola", "ग्रैनोला"),
-    "wheat flakes": (90, "Wheat Flakes", "वीट फ्लैक्स"),
-    "chocos": (90, "Chocos Cereal", "चोकोस"),
-    "peanut butter": (120, "Peanut Butter", "पीनट बटर"),
-    "creamy peanut butter": (120, "Creamy Peanut Butter", "क्रीमी पीनट बटर"),
-    "crunchy peanut butter": (120, "Crunchy Peanut Butter", "क्रंची पीनट बटर"),
-    "almond butter": (90, "Almond Butter", "बादाम बटर"),
-    "cashew butter": (90, "Cashew Butter", "काजू बटर"),
-    "nutella": (120, "Hazelnut Cocoa Spread", "नुटेला"),
-    "jam": (120, "Fruit Jam", "जैम"),
-    "mixed fruit jam": (120, "Mixed Fruit Jam", "मिक्स फ्रूट जैम"),
-    "strawberry jam": (120, "Strawberry Jam", "स्ट्रॉबेरी जैम"),
-    "marmalade": (120, "Orange Marmalade", "ऑरेंज मारमलेड"),
-    "ketchup": (120, "Tomato Ketchup", "टोमैटो केचप"),
-    "tomato ketchup": (120, "Tomato Ketchup", "टोमैटो केचप"),
-    "chilli sauce": (90, "Chilli Sauce", "चिल्ली सॉस"),
-    "red chilli sauce": (90, "Red Chilli Sauce", "रेड चिल्ली सॉस"),
-    "green chilli sauce": (90, "Green Chilli Sauce", "ग्रीन चिल्ली सॉस"),
-    "sweet chilli sauce": (120, "Sweet Chilli Sauce", "स्वीट चिल्ली सॉस"),
-    "soy sauce": (180, "Soy Sauce", "सोया सॉस"),
-    "dark soy sauce": (180, "Dark Soy Sauce", "डार्क सोया सॉस"),
-    "light soy sauce": (180, "Light Soy Sauce", "लाइट सोया सॉस"),
-    "siracha": (120, "Sriracha Sauce", "श्रीनाचा सॉस"),
-    "schezwan sauce": (90, "Schezwan Sauce", "शेज़वान सॉस"),
-    "salsa": (30, "Tomato Salsa", "सॉल्सा"),
-    "mayonnaise": (60, "Mayonnaise", "मायोनीज़"),
-    "eggless mayonnaise": (60, "Eggless Mayonnaise", "वेज मायोनीज़"),
-    "mustard paste": (90, "Mustard Paste", "सरसों का पेस्ट"),
-    "kasundi": (90, "Kasundi Mustard", "कासुंदी"),
-    "dijon mustard": (120, "Dijon Mustard", "डिजॉन मस्टर्ड"),
-    "tartar sauce": (45, "Tartar Sauce", "टार्टर सॉस"),
-    "bbq sauce": (90, "BBQ Sauce", "बीबीक्यू सॉस"),
-    "barbecue sauce": (90, "Barbecue Sauce", "बारबेक्यू सॉस"),
-    "oyster sauce": (120, "Oyster Sauce", "ऑयस्टर सॉस"),
-    "fish sauce": (180, "Fish Sauce", "फिश सॉस"),
-    "hoisin sauce": (120, "Hoisin Sauce", "होइसिन सॉस"),
-    "teriyaki sauce": (120, "Teriyaki Sauce", "तेरियाकी सॉस"),
-    "tahini": (120, "Tahini Paste", "तहिनी पेस्ट"),
-    "hummus": (5, "Fresh Hummus", "हमस"),
-    "pesto": (7, "Fresh Pesto", "पेस्टो सॉस"),
-    "pasta sauce": (30, "Pasta Sauce", "पास्ता सॉस"),
-    "arrabbiata sauce": (30, "Arrabbiata Sauce", "अराबियाटा सॉस"),
-    "marinara": (30, "Marinara Sauce", "मरीना सॉस"),
-    "vinegar": (360, "Vinegar", "सिरका"),
-    "white vinegar": (360, "White Vinegar", "सफेद सिरका"),
-    "apple cider vinegar": (360, "Apple Cider Vinegar", "एप्पल साइडर विनेगर"),
-    "balsamic vinegar": (360, "Balsamic Vinegar", "बालसमिक विनेगर"),
-    "rice vinegar": (360, "Rice Vinegar", "राइस विनेगर"),
-    "red wine vinegar": (360, "Red Wine Vinegar", "रेड वाइन विनेगर"),
-    "baking soda": (360, "Baking Soda", "बेकिंग सोडा"),
-    "baking powder": (180, "Baking Powder", "बेकिंग पाउडर"),
-    "dry yeast": (90, "Dry Yeast", "ड्राई यीस्ट"),
-    "instant yeast": (90, "Instant Yeast", "इन्स्टेंट यीस्ट"),
-    "cocoa powder": (180, "Cocoa Powder", "कोको पाउडर"),
-    "dark chocolate": (120, "Dark Chocolate", "डार्क चॉकलेट"),
-    "milk chocolate": (120, "Milk Chocolate", "मिल्क चॉकलेट"),
-    "white chocolate": (90, "White Chocolate", "व्हाइट चॉकलेट"),
-    "chocolate chips": (180, "Chocolate Chips", "चॉकलेट चिप्स"),
-    "chocolate": (120, "Chocolate", "चॉकलेट"),
-    "biscuits": (60, "Biscuits", "बिस्कुट"),
-    "glucose biscuits": (60, "Glucose Biscuits", "ग्लूकोज बिस्कुट"),
-    "marie biscuits": (60, "Marie Biscuits", "मारी बिस्कुट"),
-    "cream biscuits": (60, "Cream Biscuits", "क्रीम बिस्कुट"),
-    "digestive biscuits": (60, "Digestive Biscuits", "डाइजेस्टिव बिस्कुट"),
-    "cookies": (60, "Cookies", "कुकीज़"),
-    "chocochip cookies": (60, "Chocochip Cookies", "चोकोचिप कुकीज़"),
-    "oatmeal cookies": (60, "Oatmeal Cookies", "ओटमील कुकीज़"),
-    "rusk": (90, "Rusk / Toast", "टोस्ट / रस्क"),
-    "suji rusk": (90, "Suji Rusk", "सूजी रस्क"),
-    "namkeen": (60, "Namkeen / Bhujia", "नमकीन / भुजिया"),
-    "aloo bhujia": (60, "Aloo Bhujia", "आलू भुजिया"),
-    "bikaneri bhujia": (60, "Bikaneri Bhujia", "बीकानेरी भुजिया"),
-    "sev": (60, "Besan Sev", "बेसन सेव"),
-    "ratlami sev": (60, "Ratlami Sev", "रतलामी सेव"),
-    "chana dal namkeen": (60, "Chana Dal Namkeen", "चना दाल नमकीन"),
-    "chivda": (60, "Chivda / Poha Namkeen", "चिवड़ा"),
-    "mathri": (60, "Mathri", "मठरी"),
-    "khakhra": (90, "Khakhra", "खाखरा"),
-    "potato chips": (45, "Potato Chips", "चिप्स"),
-    "chips": (45, "Potato Chips", "चिप्स"),
-    "wafer": (45, "Potato Wafers", "वेफर"),
-    "banana chips": (60, "Banana Chips", "केले के चिप्स"),
-    "nachos": (60, "Nachos", "नाचोस"),
-    "tortilla chips": (60, "Tortilla Chips", "टॉर्टिला चिप्स"),
-    "popcorn": (120, "Popcorn Kernels", "पॉपकॉर्न"),
-    "microwave popcorn": (90, "Microwave Popcorn", "माइक्रोवेव पॉपकॉर्न"),
-    "frozen peas": (180, "Frozen Green Peas", "फ्रोजन मटर"),
-    "frozen corn": (180, "Frozen Sweet Corn", "फ्रोजन कॉर्न"),
-    "frozen fries": (90, "Frozen French Fries", "फ्रोजन फ्रेंच फ्राइज"),
-    "frozen nuggets": (60, "Frozen Nuggets", "फ्रोजन नगेट्स"),
-    "frozen momos": (45, "Frozen Momos", "फ्रोजन मोमोस"),
-    "frozen paratha": (60, "Frozen Paratha", "फ्रोजन पराठा"),
-    "frozen smilies": (90, "Frozen Potato Smilies", "फ्रोजन स्माइली"),
-    "ice cream": (60, "Ice Cream", "आइसक्रीम"),
-    "vanilla ice cream": (60, "Vanilla Ice Cream", "वैनिला आइसक्रीम"),
-    "chocolate ice cream": (60, "Chocolate Ice Cream", "चॉकलेट आइसक्रीम"),
-    "kulfi": (30, "Kulfi", "कुल्फी"),
-    "gelato": (30, "Gelato", "जिलेटो"),
-    "sorbet": (30, "Sorbet", "सॉर्बेट"),
+# Fresh dairy / eggs / proteins. Packaged cheese varieties are handled below.
+_add(3, "Fresh milk", "दूध", "milk", "fresh milk")
+_add(5, "Curd", "दही", "curd", "yogurt", "yoghurt", "dahi")
+_add(3, "Fresh paneer", "पनीर", "paneer", "fresh paneer")
+_add(3, "Fresh cream", "क्रीम", "cream", "fresh cream")
+_add(14, "Butter", "मक्खन", "butter")
+_add(21, "Eggs", "अंडे", "eggs", "egg")
+_add(2, "Raw chicken", "कच्चा चिकन", "raw chicken", "chicken")
+_add(2, "Raw fish", "कच्ची मछली", "raw fish", "fish")
+_add(2, "Raw mutton", "कच्चा मटन", "raw mutton", "mutton", "lamb")
+_add(4, "Fresh tofu", "टोफू", "tofu")
+_add(2, "Fresh prawns", "ताज़े झींगे", "prawns", "shrimp")
+_add(3, "Fresh coconut milk", "ताज़ा नारियल दूध", "fresh coconut milk")
 
-    # ==========================================
-    # 8. PULSES, LENTILS & GRAINS (90-360 Days)
-    # ==========================================
-    "toor dal": (180, "Toor Dal", "तूर / अरहर दाल"),
-    "arhar dal": (180, "Arhar Dal", "अरहर दाल"),
-    "tuvar dal": (180, "Tuvar Dal", "तुवर दाल"),
-    "moong dal": (180, "Moong Dal", "मूंग दाल"),
-    "yellow moong": (180, "Yellow Moong Dal", "पीली मूंग दाल"),
-    "green moong": (180, "Whole Green Moong", "साबुत मूंग"),
-    "split green moong": (180, "Split Green Moong", "मूंग छिलका दाल"),
-    "urad dal": (180, "Urad Dal", "उड़द दाल"),
-    "black urad": (180, "Black Urad Dal", "काली उड़द"),
-    "white urad": (180, "Washed Urad Dal", "धुली उड़द दाल"),
-    "urad chilka": (180, "Urad Chilka Dal", "उड़द छिलका"),
-    "chana dal": (180, "Chana Dal", "चना दाल"),
-    "masoor dal": (180, "Masoor Dal", "मसूर दाल"),
-    "red lentils": (180, "Red Lentils", "लाल मसूर"),
-    "whole masoor": (180, "Whole Black Masoor", "साबुत मसूर"),
-    "rajma": (180, "Kidney Beans", "राजमा"),
-    "chitra rajma": (180, "Chitra Rajma", "चित्रा राजमा"),
-    "jammu rajma": (180, "Jammu Rajma", "जम्मू राजमा"),
-    "chole": (180, "Chickpeas", "छोले / काबुली चना"),
-    "kabuli chana": (180, "Chickpeas", "काबुली चना"),
-    "kala chana": (180, "Black Chickpeas", "काला चना"),
-    "lobia": (180, "Black Eyed Peas", "लोबिया"),
-    "black eyed peas": (180, "Black Eyed Peas", "लोबिया"),
-    "moth beans": (180, "Moth Beans", "मोठ दाल"),
-    "matar dry": (180, "Dry Peas", "सूखी मटर"),
-    "white matar": (180, "Dry White Peas", "सफेद मटर"),
-    "green dry matar": (180, "Dry Green Peas", "सूखी हरी मटर"),
-    "horse gram": (180, "Horse Gram", "कुलथी दाल"),
-    "kulthi": (180, "Horse Gram", "कुलथी दाल"),
-    "soybean": (180, "Soybean Seeds", "सोयाबीन"),
-    "basmati rice": (360, "Basmati Rice", "बासमती चावल"),
-    "rice": (360, "Rice", "चावल"),
-    "chawal": (360, "Rice", "चावल"),
-    "raw rice": (360, "Raw Rice", "कच्चा चावल"),
-    "boiled rice": (360, "Boiled Rice", "उसना चावल"),
-    "parboiled rice": (360, "Parboiled Rice", "सेला चावल"),
-    "sela rice": (360, "Sela Basmati Rice", "सेला चावल"),
-    "brown rice": (180, "Brown Rice", "ब्राउन राइस"),
-    "red rice": (180, "Red Rice", "लाल चावल"),
-    "matta rice": (180, "Kerala Matta Rice", "मट्टा चावल"),
-    "black rice": (180, "Black Rice", "काला चावल"),
-    "forbidden rice": (180, "Forbidden Black Rice", "फॉर्बिडन राइस"),
-    "jasmine rice": (180, "Jasmine Rice", "जैस्मीन राइस"),
-    "sushi rice": (180, "Sushi Rice", "सुशी राइस"),
-    "arborio rice": (180, "Arborio Rice", "अरबोरियो राइस"),
-    "sticky rice": (180, "Sticky Rice", "स्टीकी राइस"),
-    "gobindobhog": (180, "Gobindobhog Rice", "गोबिंदोभोग चावल"),
-    "sona masoori": (360, "Sona Masoori Rice", "सोना मसूरी चावल"),
-    "kolam rice": (360, "Wada Kolam Rice", "कोलम चावल"),
-    "quinoa": (180, "Quinoa", "क्विनोआ"),
-    "white quinoa": (180, "White Quinoa", "सफेद क्विनोआ"),
-    "red quinoa": (180, "Red Quinoa", "लाल क्विनोआ"),
-    "millet": (120, "Millet", "बाजरा / बाजरा"),
-    "bajra": (120, "Pearl Millet", "बाजरा"),
-    "jowar": (120, "Sorghum", "ज्वार"),
-    "ragi": (120, "Finger Millet", "रागी / मड़ुआ"),
-    "foxtail millet": (120, "Foxtail Millet", "कांगणी"),
-    "barnyard millet": (120, "Barnyard Millet", "सांवा / झंगोरा"),
-    "kodo millet": (120, "Kodo Millet", "कोदो बाजरा"),
-    "little millet": (120, "Little Millet", "कुटकी"),
-    "proso millet": (120, "Proso Millet", "चेना"),
-    "chia seeds": (180, "Chia Seeds", "चिया सीड्स"),
-    "flax seeds": (180, "Flax Seeds", "अलसी के बीज"),
-    "alsi": (180, "Flax Seeds", "अलसी"),
-    "pumpkin seeds": (180, "Pumpkin Seeds", "कद्दू के बीज"),
-    "sunflower seeds": (180, "Sunflower Seeds", "सूरजमुखी के बीज"),
-    "watermelon seeds": (180, "Watermelon Seeds", "तरबूज के बीज"),
-    "magaz": (180, "Melon Seeds / Magaz", "मगज"),
-    "sesame seeds": (180, "Sesame Seeds", "तिल"),
-    "til": (180, "Sesame Seeds", "तिल"),
-    "black sesame": (180, "Black Sesame Seeds", "काले तिल"),
-    "white sesame": (180, "White Sesame Seeds", "सफेद तिल"),
-    "hemp seeds": (180, "Hemp Seeds", "भांग के बीज"),
-
-    # ==========================================
-    # 9. SPICES, CONDIMENTS & SEASONINGS (180-360 Days)
-    # ==========================================
-    "salt": (360, "Salt", "नमक"),
-    "namak": (360, "Salt", "नमक"),
-    "table salt": (360, "Table Salt", "टेबल साल्ट"),
-    "black salt": (360, "Black Salt", "काला नमक"),
-    "kala namak": (360, "Black Salt", "काला नमक"),
-    "rock salt": (360, "Rock Salt", "सेंधा नमक"),
-    "sendha namak": (360, "Rock Salt", "सेंधा नमक"),
-    "pink salt": (360, "Himalayan Pink Salt", "हिमालयन पिंक साल्ट"),
-    "sea salt": (360, "Sea Salt", "समुद्री नमक"),
-    "turmeric powder": (180, "Turmeric Powder", "हल्दी पाउडर"),
-    "haldi": (180, "Turmeric Powder", "हल्दी"),
-    "red chilli powder": (180, "Red Chilli Powder", "लाल मिर्च पाउडर"),
-    "lal mirch": (180, "Red Chilli Powder", "लाल मिर्च"),
-    "kashmiri chilli powder": (180, "Kashmiri Chilli Powder", "कश्मीरी लाल मिर्च"),
-    "degi mirch": (180, "Degi Mirch Powder", "डेगी मिर्च"),
-    "coriander powder": (180, "Coriander Powder", "धनिया पाउडर"),
-    "dhaniya powder": (180, "Coriander Powder", "धनिया पाउडर"),
-    "cumin seeds": (360, "Cumin Seeds", "जीरा"),
-    "jeera": (360, "Cumin Seeds", "जीरा"),
-    "shahi jeera": (360, "Caraway / Shahi Jeera", "शाही जीरा"),
-    "cumin powder": (180, "Coriander Powder", "जीरा पाउडर"),
-    "mustard seeds": (360, "Mustard Seeds", "राउ / सरसों"),
-    "rai": (360, "Mustard Seeds", "राई"),
-    "sarson dana": (360, "Mustard Seeds", "सरसों का दाना"),
-    "fenugreek seeds": (360, "Fenugreek Seeds", "मेथी दाना"),
-    "methi dana": (360, "Fenugreek Seeds", "मेथी दाना"),
-    "fennel seeds": (360, "Fennel Seeds", "सौंफ"),
-    "saunf": (360, "Fennel Seeds", "सौंफ"),
-    "carom seeds": (360, "Carom Seeds", "अजवाइन"),
-    "ajwain": (360, "Carom Seeds", "अजवाइन"),
-    "garam masala": (180, "Garam Masala", "गरम मसाला"),
-    "kitchen king masala": (180, "Kitchen King Masala", "किचन किंग मसाला"),
-    "chole masala": (180, "Chole Masala", "छोले मसाला"),
-    "chat masala": (180, "Chaat Masala", "चाट मसाला"),
-    "chaat masala": (180, "Chaat Masala", "चाट मसाला"),
-    "pav bhaji masala": (180, "Pav Bhaji Masala", "पाव भाजी मसाला"),
-    "sambar powder": (180, "Sambar Powder", "सांबर पाउडर"),
-    "rasam powder": (180, "Rasam Powder", "रसम पाउडर"),
-    "biryani masala": (180, "Biryani Masala", "बिरयानी मसाला"),
-    "chicken masala": (180, "Chicken Masala", "चिकन मसाला"),
-    "meat masala": (180, "Meat Masala", "मीट मसाला"),
-    "fish masala": (180, "Fish Masala", "फिश मसाला"),
-    "panipuri masala": (180, "Pani Puri Masala", "पानीपुरी मसाला"),
-    "black pepper": (360, "Black Pepper", "काली मिर्च"),
-    "kali mirch": (360, "Black Pepper", "काली मिर्च"),
-    "white pepper": (360, "White Pepper", "सफेद मिर्च"),
-    "cloves": (360, "Cloves", "लौंग"),
-    "laung": (360, "Cloves", "लौंग"),
-    "cardamom": (360, "Green Cardamom", "छोटी इलायची"),
-    "choti elaichi": (360, "Green Cardamom", "छोटी इलायची"),
-    "black cardamom": (360, "Black Cardamom", "बड़ी इलायची"),
-    "badi elaichi": (360, "Black Cardamom", "बड़ी इलायची"),
-    "cinnamon": (360, "Cinnamon", "दालचीनी"),
-    "dalchini": (360, "Cinnamon", "दालचीनी"),
-    "cinnamon sticks": (360, "Cinnamon Sticks", "दालचीनी स्टिक"),
-    "bay leaf": (360, "Bay Leaf", "तेजपत्ता"),
-    "tejpatta": (360, "Bay Leaf", "तेजपत्ता"),
-    "star anise": (360, "Star Anise", "चक्र फूल"),
-    "chakra phool": (360, "Star Anise", "चक्र फूल"),
-    "nutmeg": (360, "Nutmeg", "जायफल"),
-    "jaiphal": (360, "Nutmeg", "जायफल"),
-    "mace": (360, "Mace", "जावित्री"),
-    "javitri": (360, "Mace", "जावित्री"),
-    "saffron": (360, "Saffron", "केसर"),
-    "kesar": (360, "Saffron", "केसर"),
-    "hing": (360, "Asafoetida", "हींग"),
-    "asafoetida": (360, "Asafoetida", "हींग"),
-    "kasuri methi": (180, "Dry Fenugreek", "कसूरी मेथी"),
-    "dry ginger": (180, "Dry Ginger Powder", "सोंठ"),
-    "sonth": (180, "Dry Ginger Powder", "सोंठ"),
-    "amchur": (180, "Dry Mango Powder", "अमचूर"),
-    "mango powder": (180, "Dry Mango Powder", "अमचूर"),
-    "anardana": (180, "Pomegranate Seeds", "अनारदाना"),
-    "nigella seeds": (360, "Kalonji", "कलौंजी"),
-    "kalonji": (360, "Kalonji", "कलौंजी"),
-    "poppy seeds": (180, "Poppy Seeds", "खसखस"),
-    "khaskhas": (180, "Poppy Seeds", "खसखस"),
-    "matcha": (180, "Matcha Green Tea", "माचा टी"),
-    "matcha powder": (180, "Matcha Powder", "माचा पाउडर"),
-    "wasabi": (90, "Wasabi Paste", "वसाबी"),
-    "chili flakes": (180, "Chilli Flakes", "चिल्ली फ्लेक्स"),
-    "oregano seasoning": (180, "Oregano Seasoning", "ऑरिगेनो मसाला"),
-    "mixed herbs": (180, "Mixed Herb Seasoning", "मिक्स हर्ब्स"),
-    "peri peri": (180, "Peri Peri Seasoning", "पेरी पेरी मसाला"),
-    "cajun seasoning": (180, "Cajun Seasoning", "केजन मसाला"),
-    "sumac": (180, "Sumac Spice", "सुमैक"),
-    "zaatar": (180, "Za'atar Spice Blend", "ज़ातार"),
-    "garlic powder": (180, "Garlic Powder", "गार्लिक पाउडर"),
-    "onion powder": (180, "Onion Powder", "अनियन पाउडर"),
-    "paprika": (180, "Paprika Powder", "पेपरिका पाउडर"),
-    "smoked paprika": (180, "Smoked Paprika", "स्मोक्ड पेपरिका"),
-
-    # ==========================================
-    # 10. DRY FRUITS, NUTS & TEA/COFFEE (90-360 Days)
-    # ==========================================
-    "almond": (120, "Almonds", "बादाम"),
-    "badam": (120, "Almonds", "बादाम"),
-    "mamra badam": (180, "Mamra Almonds", "मामरा बादाम"),
-    "cashew": (120, "Cashews", "काजू"),
-    "kaju": (120, "Cashews", "काजू"),
-    "walnut": (90, "Walnuts", "अखरोट"),
-    "akhrot": (90, "Walnuts", "अखरोट"),
-    "pistachio": (120, "Pistachios", "पिस्ता"),
-    "pista": (120, "Pistachios", "पिस्ता"),
-    "salted pista": (120, "Salted Pistachios", "साल्टेड पिस्ता"),
-    "raisins": (180, "Raisins", "किसमिश"),
-    "kishmish": (180, "Raisins", "किसमिश"),
-    "black raisins": (180, "Black Raisins", "काली किसमिश"),
-    "apricot dry": (120, "Dry Apricots", "सूखी खुबानी"),
-    "figs dry": (120, "Dry Figs", "सूखा अंजीर"),
-    "anjeer dry": (120, "Dry Figs", "सूखा अंजीर"),
-    "hazelnut": (120, "Hazelnuts", "हेज़लनट"),
-    "macadamia": (90, "Macadamia Nuts", "मैकाडामिया नट्स"),
-    "pecan": (90, "Pecan Nuts", "पेकन नट्स"),
-    "pine nuts": (90, "Pine Nuts", "चिलगोज़ा"),
-    "chilgoza": (90, "Pine Nuts", "चिलगोज़ा"),
-    "makhana": (120, "Fox Nuts", "मखाना"),
-    "fox nuts": (120, "Fox Nuts", "मखाना"),
-    "phool makhana": (120, "Fox Nuts", "फूल मखाना"),
-    "peanuts": (90, "Peanuts", "मूंगफली"),
-    "mungfali": (90, "Peanuts", "मूंगफली"),
-    "roasted peanuts": (90, "Roasted Peanuts", "भुनी मूंगफली"),
-    "tea leaves": (360, "Tea Leaves", "चाय पत्ती"),
-    "chai patti": (360, "Tea Leaves", "चाय पत्ती"),
-    "green tea": (180, "Green Tea", "ग्रीन टी"),
-    "black tea": (360, "Black Tea", "ब्लैक टी"),
-    "earl grey": (180, "Earl Grey Tea", "अर्ल ग्रे टी"),
-    "chamomile tea": (180, "Chamomile Tea", "कैमोमाइल टी"),
-    "coffee powder": (180, "Coffee Powder", "कॉफी पाउडर"),
-    "instant coffee": (180, "Instant Coffee", "इन्स्टेंट कॉफी"),
-    "filter coffee": (120, "Filter Coffee Powder", "फ़िल्टर कॉफ़ी"),
-    "coffee beans": (180, "Coffee Beans", "कॉफी बीन्स"),
-
-    # ==========================================
-    # 11. SNACKS, SWEETS, DESSERTS & BAKERY EXTRAS (30-180 Days)
-    # ==========================================
-    "gulab jamun": (5, "Gulab Jamun", "गुलाब जामुन"),
-    "rasgulla": (5, "Rasgulla", "रसगुल्ला"),
-    "rasmalai": (3, "Rasmalai", "रसमलाई"),
-    "jalebi": (2, "Jalebi", "जलेबी"),
-    "imli candy": (180, "Tamarind Candy", "इमली कैंडी"),
-    "barfi": (7, "Barfi", "बर्फी"),
-    "laddoo": (14, "Laddoo", "लड्डू"),
-    "motichoor laddoo": (10, "Motichoor Laddoo", "मोतीचूर लड्डू"),
-    "besan laddoo": (21, "Besan Laddoo", "बेसन लड्डू"),
-    "soan papdi": (90, "Soan Papdi", "सोहन पापड़ी"),
-    "halwa": (3, "Halwa", "हलवा"),
-    "sooji halwa": (3, "Sooji Halwa", "सूजी हलवा"),
-    "gajar halwa": (4, "Carrot Halwa", "गाजर हलवा"),
-    "kheer": (2, "Kheer / Payasam", "खीर"),
-    "payasam": (2, "Payasam", "पायसम"),
-    "custard": (2, "Custard", "कस्टर्ड"),
-    "cake": (4, "Cake", "केक"),
-    "sponge cake": (4, "Sponge Cake", "स्पंज केक"),
-    "plum cake": (30, "Plum Cake", "प्लम केक"),
-    "brownie": (5, "Brownie", "ब्राउनिया"),
-    "pudding": (3, "Pudding", "पुडिंग"),
-    "waffle": (3, "Waffle", "वाफ़ल"),
-    "pancake": (3, "Pancake", "पैनकेक"),
-    "cereal bar": (90, "Cereal Bar", "सीरियल बार"),
-    "protein bar": (180, "Protein Bar", "प्रोटीन बार"),
-    "energy bar": (120, "Energy Bar", "एनर्जी बार"),
-    "frozen cutlets": (60, "Frozen Cutlets", "फ्रोजन कटलेट"),
-    "frozen spring roll": (60, "Frozen Spring Roll", "फ्रोजन स्प्रिंग रोल"),
-    "frozen garlic bread": (45, "Frozen Garlic Bread", "फ्रोजन गार्लिक ब्रेड"),
-    "frozen kebabs": (60, "Frozen Kebabs", "फ्रोजन कबाब"),
-
-    # ==========================================
-    # 12. SPECIALTY BEVERAGES, SYRUPS & EXTRACTS (90-360 Days)
-    # ==========================================
-    "rose syrup": (180, "Rose Syrup", "रोज़ सिरप"),
-    "rooh afza": (180, "Rooh Afza", "रूह अफ़्ज़ा"),
-    "khus syrup": (180, "Khus Syrup", "खस सिरप"),
-    "thandai syrup": (120, "Thandai Syrup", "थंडाई सिरप"),
-    "lemonade": (3, "Lemonade", "नींबू पानी"),
-    "jaljeera powder": (180, "Jaljeera Powder", "जलजीरा पाउडर"),
-    "nimbu pani powder": (180, "Lemon Drink Powder", "निम्बू पानी पाउडर"),
-    "squash": (180, "Fruit Squash", "फ्रूट स्क्वैश"),
-    "orange squash": (180, "Orange Squash", "ऑरेंज स्क्वैश"),
-    "mango squash": (180, "Mango Squash", "मैंगो स्क्वैश"),
-    "apple juice": (5, "Apple Juice", "सेब का जूस"),
-    "orange juice": (5, "Orange Juice", "संतरे का जूस"),
-    "mixed fruit juice": (5, "Mixed Fruit Juice", "मिक्स फ्रूट जूस"),
-    "coconut water packaged": (90, "Packaged Coconut Water", "पैक्ड नारियल पानी"),
-    "energy drink": (180, "Energy Drink", "एनर्जी ड्रिंक"),
-    "red bull": (180, "Red Bull Energy Drink", "रेड बुल"),
-    "soda": (90, "Carbonated Soda", "सोडा"),
-    "tonic water": (180, "Tonic Water", "टोनिक वाटर"),
-    "ginger ale": (180, "Ginger Ale", "जिंजर एल"),
-    "vanilla extract": (360, "Vanilla Extract", "वैनिला एक्सट्रेक्ट"),
-    "rose water": (360, "Rose Water", "गुलाब जल"),
-    "kewra water": (360, "Kewra Water", "केवड़ा जल"),
-    "food color": (360, "Food Coloring", "फूड कलर"),
-    "red food color": (360, "Red Food Color", "लाल फूड कलर"),
-    "yellow food color": (360, "Food Color", "पीला फूड कलर")
+# Cheese varieties: included for recognition, but use the label date because
+# storage life depends heavily on packaging, opening, processing and brand.
+CHEESE_DATE_REQUIRED_ITEMS = {
+    "cheese", "cheddar", "mozzarella", "parmesan", "gouda", "feta",
+    "blue cheese", "brie", "camembert", "ricotta", "mascarpone",
+    "cream cheese", "processed cheese", "cheese slices", "cheese slice",
+    "cheese block", "cheese cubes", "shredded cheese", "grated cheese",
+    "string cheese", "goat cheese", "swiss cheese", "provolone", "monterey jack",
+    "colby jack", "cottage cheese", "halloumi", "emmental", "edam",
+    "smoked cheese", "cheese spread", "cheese dip", "pizza cheese",
 }
+for _cheese in CHEESE_DATE_REQUIRED_ITEMS:
+    EXPIRY_DATABASE[_cheese] = (7, _cheese.title(), "चीज़")
+
+# Freshly prepared meals / restaurant food (assumes prompt refrigeration).
+_add(3, "Cooked pasta", "पका हुआ पास्ता", "pasta", "cooked pasta", "white sauce pasta", "red sauce pasta", "macaroni", "penne pasta", "spaghetti", "lasagna", "lasagne", "ravioli")
+_add(3, "Pizza", "पिज़्ज़ा", "pizza", "pizza slice", "pizza leftovers")
+_add(2, "Prepared burger", "बर्गर", "burger", "veggie burger", "chicken burger")
+_add(2, "Prepared sandwich", "सैंडविच", "sandwich", "grilled sandwich", "cheese sandwich", "club sandwich")
+_add(3, "Cooked noodles", "पके हुए नूडल्स", "noodles", "hakka noodles", "chow mein", "ramen", "udon")
+_add(3, "Cooked rice", "पके हुए चावल", "rice", "cooked rice", "fried rice", "jeera rice", "lemon rice")
+_add(3, "Biryani", "बिरयानी", "biryani", "veg biryani", "chicken biryani", "mutton biryani")
+_add(3, "Pulao", "पुलाव", "pulao", "pulav", "vegetable pulao")
+_add(3, "Khichdi", "खिचड़ी", "khichdi", "khichri")
+_add(3, "Cooked dal", "पकी हुई दाल", "dal", "daal", "lentil curry", "dal tadka", "dal makhani")
+_add(3, "Chole", "छोले", "chole", "chana masala", "chickpea curry")
+_add(3, "Rajma curry", "राजमा", "rajma", "kidney bean curry")
+_add(3, "Paneer curry", "पनीर की सब्ज़ी", "paneer curry", "paneer butter masala", "shahi paneer", "palak paneer", "kadai paneer")
+_add(3, "Butter chicken", "बटर चिकन", "butter chicken", "murgh makhani")
+_add(3, "Chicken curry", "चिकन करी", "chicken curry", "chicken masala")
+_add(3, "Cooked fish", "पकी हुई मछली", "cooked fish", "fish curry", "fish fry")
+_add(3, "Soup", "सूप", "soup", "tomato soup", "sweet corn soup", "manchow soup")
+_add(2, "Prepared salad", "सलाद", "salad", "fruit salad", "vegetable salad", "caesar salad")
+_add(2, "Raita", "रायता", "raita", "boondi raita", "cucumber raita")
+_add(2, "Curd rice", "दही चावल", "curd rice", "yogurt rice")
+_add(3, "Roti", "रोटी", "roti", "chapati", "phulka")
+_add(3, "Paratha", "पराठा", "paratha", "aloo paratha", "gobi paratha", "paneer paratha", "methi paratha")
+_add(3, "Naan", "नान", "naan", "butter naan", "garlic naan")
+_add(2, "Dosa", "डोसा", "dosa", "masala dosa", "uttapam", "uttapam")
+_add(2, "Idli", "इडली", "idli", "idlis")
+_add(2, "Samosa", "समोसा", "samosa", "samosas")
+_add(2, "Pakora", "पकौड़ा", "pakora", "pakoras", "bhajiya", "onion bhaji")
+_add(3, "Pav bhaji", "पाव भाजी", "pav bhaji")
+_add(3, "Manchurian", "मंचूरियन", "manchurian", "gobi manchurian")
+_add(2, "Omelette", "ऑमलेट", "omelette", "omelet", "scrambled eggs")
+_add(7, "Boiled eggs", "उबले अंडे", "boiled eggs", "boiled egg")
+_add(3, "Pancakes", "पैनकेक", "pancakes", "pancake", "waffles")
+_add(3, "Fresh cake slice", "केक का टुकड़ा", "cake slice", "fresh cake", "homemade cake")
+_add(3, "Lasagna", "लज़ान्या", "lasagna", "lasagne")
+_add(3, "Risotto", "रिसोट्टो", "risotto")
+_add(3, "Tacos", "टाको", "tacos", "taco")
+_add(3, "Burrito", "बुरिटो", "burrito", "burritos")
+_add(3, "Sushi", "सुशी", "sushi")
+_add(3, "Dumplings", "डम्पलिंग", "dumplings", "momos", "momo")
+_add(3, "Spring rolls", "स्प्रिंग रोल", "spring rolls", "spring roll")
+_add(3, "Kebab", "कबाब", "kebab", "kebabs", "seekh kebab")
+_add(3, "Shawarma", "शावरमा", "shawarma")
+_add(3, "Falafel", "फलाफेल", "falafel")
+_add(3, "Hummus", "हम्मस", "hummus")
+_add(3, "Pasta salad", "पास्ता सलाद", "pasta salad")
+_add(3, "Mac and cheese", "मैक एंड चीज़", "mac and cheese", "macaroni and cheese")
+_add(3, "Quiche", "किश", "quiche")
+_add(3, "Freshly cooked vegetables", "पकी सब्ज़ियाँ", "cooked vegetables", "sabzi", "sabji", "vegetable curry", "mixed vegetables")
+_add(3, "Aloo gobi", "आलू गोभी", "aloo gobi")
+_add(3, "Aloo matar", "आलू मटर", "aloo matar")
+_add(3, "Bhindi masala", "भिंडी मसाला", "bhindi masala")
+_add(3, "Baingan bharta", "बैंगन भर्ता", "baingan bharta")
+_add(3, "Kadhi", "कढ़ी", "kadhi", "kadhi pakora")
+_add(3, "Pav", "पाव", "pav", "bread roll")
+
+# Pantry staples and cooking ingredients; these are not branded packaged foods.
+_add(30, "Rice grains", "चावल", "uncooked rice", "rice grains", "basmati rice")
+_add(180, "Lentils", "दाल", "lentils", "dry lentils", "moong dal", "masoor dal", "toor dal", "urad dal", "chana dal")
+_add(90, "Wheat flour", "आटा", "wheat flour", "atta", "whole wheat flour")
+_add(90, "Chickpea flour", "बेसन", "besan", "gram flour", "chickpea flour")
+_add(90, "Semolina", "सूजी", "semolina", "sooji", "rava")
+_add(90, "Oats", "ओट्स", "oats", "rolled oats")
+_add(180, "Sugar", "चीनी", "sugar", "granulated sugar")
+_add(365, "Salt", "नमक", "salt", "table salt")
+_add(180, "Cooking oil", "खाने का तेल", "cooking oil", "vegetable oil", "mustard oil", "olive oil", "sunflower oil")
+_add(180, "Ghee", "घी", "ghee", "clarified butter")
+_add(180, "Turmeric powder", "हल्दी", "turmeric", "turmeric powder", "haldi")
+_add(180, "Cumin seeds", "जीरा", "cumin", "cumin seeds", "jeera")
+_add(180, "Coriander powder", "धनिया पाउडर", "coriander powder", "dhania powder")
+_add(180, "Red chilli powder", "लाल मिर्च पाउडर", "red chilli powder", "chili powder", "chilli powder")
+_add(180, "Black pepper", "काली मिर्च", "black pepper", "peppercorns")
+_add(180, "Cinnamon", "दालचीनी", "cinnamon")
+_add(180, "Cardamom", "इलायची", "cardamom", "elaichi")
+_add(180, "Cloves", "लौंग", "cloves", "clove")
+_add(180, "Cumin powder", "जीरा पाउडर", "cumin powder", "jeera powder")
+_add(180, "Garam masala", "गरम मसाला", "garam masala")
+_add(180, "Curry leaves", "करी पत्ता", "curry leaves", "kadi patta")
+_add(30, "Fresh coriander chutney", "धनिया चटनी", "fresh coriander chutney", "green chutney")
+_add(30, "Homemade tomato chutney", "टमाटर की चटनी", "homemade tomato chutney")
+
+# Never add branded products such as Lay's, Oreo, biscuits, branded cheese
+# spreads, bottled drinks, packaged snacks, or instant foods here. Gemini should
+# classify them and request the printed expiry date.
+
+# Additional produce, herbs and specialty vegetables
+_add(4, "Arugula", "अरुगुला", "arugula", "rocket leaves")
+_add(4, "Kale", "केल", "kale")
+_add(4, "Swiss chard", "स्विस चार्ड", "swiss chard", "chard")
+_add(5, "Bok choy", "बोक चॉय", "bok choy", "pak choi")
+_add(5, "Leek", "लीक", "leek", "leeks")
+_add(5, "Fennel bulb", "सौंफ की गांठ", "fennel bulb")
+_add(5, "Turnip", "शलजम", "turnip", "turnips", "shalgam")
+_add(5, "Parsnip", "पार्सनिप", "parsnip", "parsnips")
+_add(5, "Brussels sprouts", "ब्रसल्स स्प्राउट्स", "brussels sprouts")
+_add(5, "Artichoke", "आर्टिचोक", "artichoke", "artichokes")
+_add(5, "Bean sprouts", "अंकुरित फलियाँ", "bean sprouts", "sprouts")
+_add(4, "Microgreens", "माइक्रोग्रीन्स", "microgreens", "micro greens")
+_add(4, "Dill", "सोआ", "dill", "dill leaves", "suva")
+_add(4, "Parsley", "पार्सले", "parsley")
+_add(4, "Basil", "तुलसी", "basil", "fresh basil")
+_add(4, "Rosemary", "रोज़मेरी", "rosemary", "fresh rosemary")
+_add(4, "Thyme", "थाइम", "thyme", "fresh thyme")
+_add(4, "Oregano", "ओरिगैनो", "fresh oregano")
+_add(5, "Shallots", "छोटे प्याज़", "shallot", "shallots")
+_add(5, "Leeks greens", "लीक के पत्ते", "leek greens")
+_add(5, "Raw corn", "मक्का", "corn on the cob", "fresh corn", "sweet corn cob")
+_add(5, "Yam", "रतालू", "yam", "suran")
+_add(5, "Drumstick", "सहजन", "drumstick vegetable", "moringa pods", "sahjan")
+_add(5, "Ivy gourd", "कुंदरू", "ivy gourd", "tindora", "kundru")
+_add(5, "Pointed gourd", "परवल", "pointed gourd", "parwal", "parval")
+_add(5, "Snake gourd", "चिचिंडा", "snake gourd", "chichinda")
+_add(5, "Raw banana", "कच्चा केला", "raw banana", "green banana")
+_add(5, "Raw papaya", "कच्चा पपीता", "raw papaya", "green papaya")
+_add(5, "Tamarind", "इमली", "fresh tamarind", "tamarind pods")
+_add(5, "Fresh turmeric", "कच्ची हल्दी", "fresh turmeric", "raw turmeric")
+
+# More fruits and fresh fruit preparations
+_add(5, "Blackberries", "ब्लैकबेरी", "blackberries", "blackberry")
+_add(5, "Raspberries", "रसभरी", "raspberries", "raspberry")
+_add(5, "Blueberries", "ब्लूबेरी", "blueberries", "blueberry")
+_add(5, "Cranberries", "क्रैनबेरी", "fresh cranberries", "cranberries")
+_add(5, "Grapefruit", "चकोतरा", "grapefruit")
+_add(5, "Mandarin", "मैंडरिन", "mandarin", "mandarins", "clementine")
+_add(5, "Sweet lime", "मौसंबी", "sweet lime", "mosambi")
+_add(5, "Custard apple", "सीताफल", "custard apple", "sitaphal")
+_add(5, "Passion fruit", "पैशन फ्रूट", "passion fruit")
+_add(5, "Fig", "अंजीर", "fresh fig", "fresh figs")
+_add(5, "Apricot", "खुबानी", "fresh apricot", "fresh apricots")
+_add(5, "Persimmon", "पर्सिमन", "persimmon")
+_add(5, "Longan", "लोंगन", "longan")
+_add(5, "Star fruit", "कमरख", "star fruit", "carambola", "kamrakh")
+_add(5, "Jackfruit", "कटहल", "jackfruit", "kathal")
+_add(5, "Cut fruit", "कटे फल", "cut fruit", "cut fruits", "sliced fruit", "chopped fruit")
+_add(3, "Fresh fruit juice", "ताज़ा फलों का रस", "fresh fruit juice", "fresh orange juice", "fresh apple juice")
+
+# More dairy, plant-based alternatives and refrigerated condiments
+_add(5, "Buttermilk", "छाछ", "buttermilk", "chaas", "mattha")
+_add(5, "Lassi", "लस्सी", "lassi", "sweet lassi", "salted lassi")
+_add(5, "Kefir", "केफिर", "kefir")
+_add(5, "Sour cream", "खट्टी क्रीम", "sour cream")
+_add(5, "Crème fraîche", "क्रेम फ्रेश", "creme fraiche", "crème fraîche")
+_add(5, "Evaporated milk", "इवैपोरेटेड दूध", "evaporated milk")
+_add(5, "Condensed milk", "कंडेंस्ड दूध", "condensed milk", "sweetened condensed milk")
+_add(5, "Almond milk", "बादाम दूध", "almond milk", "opened almond milk")
+_add(5, "Soy milk", "सोया दूध", "soy milk", "soya milk", "opened soy milk")
+_add(5, "Oat milk", "ओट दूध", "oat milk", "opened oat milk")
+_add(5, "Coconut yogurt", "नारियल दही", "coconut yogurt", "coconut yoghurt")
+_add(5, "Plant-based yogurt", "पौधों से बना दही", "plant based yogurt", "vegan yogurt", "soy yogurt")
+_add(5, "Tempeh", "टेम्पेह", "tempeh")
+_add(5, "Seitan", "सीतान", "seitan")
+_add(5, "Hummus opened", "हम्मस", "opened hummus")
+_add(5, "Pesto opened", "पेस्टो", "opened pesto", "fresh pesto")
+_add(5, "Mayonnaise opened", "मेयोनीज़", "opened mayonnaise", "opened mayo")
+_add(5, "Ketchup opened", "केचप", "opened ketchup", "opened tomato ketchup")
+_add(5, "Mustard opened", "सरसों सॉस", "opened mustard", "mustard sauce")
+_add(5, "Salsa opened", "साल्सा", "opened salsa", "fresh salsa")
+_add(5, "Pickles opened", "अचार", "opened pickles", "opened pickle", "achar")
+_add(5, "Jam opened", "जैम", "opened jam", "opened fruit jam")
+_add(5, "Chutney opened", "चटनी", "opened chutney", "opened mint chutney", "opened mango chutney")
+_add(5, "Dips opened", "डिप", "opened dip", "ranch dip", "onion dip", "spinach dip")
+_add(5, "Tzatziki", "त्ज़ात्ज़िकी", "tzatziki")
+_add(5, "Guacamole", "गुआकामोले", "guacamole", "fresh guacamole")
+
+# More raw proteins and seafood. Follow package dates and safe handling guidance.
+_add(2, "Raw turkey", "कच्चा टर्की", "raw turkey", "turkey")
+_add(2, "Raw duck", "कच्ची बत्तख", "raw duck", "duck meat")
+_add(2, "Raw pork", "कच्चा पोर्क", "raw pork", "pork")
+_add(2, "Raw beef", "कच्चा बीफ़", "raw beef", "beef steak", "ground beef")
+_add(2, "Ground chicken", "कीमा चिकन", "ground chicken", "chicken mince")
+_add(2, "Ground mutton", "मटन कीमा", "ground mutton", "mutton mince", "lamb mince")
+_add(2, "Raw squid", "कच्चा स्क्विड", "raw squid", "squid")
+_add(2, "Raw crab", "कच्चा केकड़ा", "raw crab", "crab meat")
+_add(2, "Raw mussels", "कच्चे मसल्स", "raw mussels", "mussels")
+_add(2, "Raw clams", "कच्चे क्लैम", "raw clams", "clams")
+_add(2, "Raw scallops", "कच्चे स्कैलप", "raw scallops", "scallops")
+_add(2, "Smoked salmon opened", "स्मोक्ड सैल्मन", "opened smoked salmon", "smoked salmon")
+_add(2, "Deli meat opened", "डेली मीट", "opened deli meat", "deli meat", "cold cuts")
+_add(2, "Sausages opened", "सॉसेज", "opened sausages", "fresh sausages")
+_add(3, "Cooked shrimp", "पके झींगे", "cooked shrimp", "cooked prawns")
+_add(3, "Cooked turkey", "पका टर्की", "cooked turkey")
+_add(3, "Cooked beef", "पका बीफ़", "cooked beef", "roast beef leftovers")
+_add(3, "Cooked pork", "पका पोर्क", "cooked pork")
+_add(3, "Meatballs cooked", "पके मीटबॉल", "cooked meatballs", "meatballs")
+_add(3, "Gravy", "ग्रेवी", "gravy", "meat gravy")
+
+# More cooked dishes and leftovers
+_add(3, "Vegetable soup", "सब्ज़ियों का सूप", "vegetable soup")
+_add(3, "Chicken soup", "चिकन सूप", "chicken soup")
+_add(3, "Lentil soup", "दाल का सूप", "lentil soup", "dhal soup")
+_add(3, "Minestrone", "मिनेस्ट्रोने", "minestrone")
+_add(3, "Casserole", "कैसरोल", "casserole")
+_add(3, "Shepherd's pie", "शेफर्ड्स पाई", "shepherd's pie", "shepherds pie")
+_add(3, "Meatloaf", "मीटलोफ़", "meatloaf")
+_add(3, "Stuffed peppers", "भरवाँ शिमला मिर्च", "stuffed peppers")
+_add(3, "Stuffed paratha", "भरवाँ पराठा", "stuffed paratha")
+_add(3, "Thepla", "थेपला", "thepla", "methi thepla")
+_add(3, "Poori", "पूरी", "poori", "puri")
+_add(3, "Puri bhaji", "पूरी भाजी", "puri bhaji", "poori bhaji")
+_add(3, "Upma", "उपमा", "upma")
+_add(3, "Poha", "पोहा", "poha", "kanda poha")
+_add(3, "Vada", "वड़ा", "vada", "medu vada", "vada pav filling")
+_add(3, "Dhokla", "ढोकला", "dhokla", "khaman")
+_add(3, "Handvo", "हांडवो", "handvo")
+_add(3, "Misal", "मिसल", "misal", "misal pav")
+_add(3, "Undhiyu", "उंधियू", "undhiyu")
+_add(3, "Sambar", "सांभर", "sambar", "sambhar")
+_add(3, "Rasam", "रसम", "rasam")
+_add(3, "Chutney rice", "चटनी चावल", "chutney rice")
+_add(3, "Stuffed pasta", "भरवाँ पास्ता", "stuffed pasta", "tortellini")
+_add(3, "Gnocchi cooked", "ग्नोच्ची", "cooked gnocchi", "gnocchi")
+_add(3, "Curry leftovers", "करी", "curry leftovers", "leftover curry")
+_add(3, "Roasted vegetables", "भुनी सब्ज़ियाँ", "roasted vegetables", "roast vegetables")
+_add(3, "Mashed potatoes", "मैश किए आलू", "mashed potatoes", "mashed potato")
+_add(3, "Roasted potatoes", "भुने आलू", "roasted potatoes", "roast potatoes")
+_add(3, "Cooked quinoa", "पका क्विनोआ", "cooked quinoa", "quinoa salad")
+_add(3, "Cooked couscous", "पका कूसकूस", "cooked couscous", "couscous")
+_add(3, "Cooked barley", "पका जौ", "cooked barley", "barley soup")
+_add(3, "Cooked beans", "पकी फलियाँ", "cooked beans", "black beans cooked", "kidney beans cooked")
+_add(3, "Refried beans", "रिफ्राइड बीन्स", "refried beans")
+_add(3, "Baked beans opened", "बेक्ड बीन्स", "opened baked beans", "baked beans")
+_add(3, "Cooked lentils", "पकी दाल", "cooked lentils")
+
+# Bakery and desserts made fresh at home or from a bakery (not shelf-stable packaged items)
+_add(3, "Fresh bread", "ताज़ी ब्रेड", "fresh bread", "homemade bread", "bakery bread")
+_add(3, "Sourdough bread", "सॉर्डो ब्रेड", "sourdough bread", "fresh sourdough")
+_add(3, "Fresh pita", "पीटा ब्रेड", "fresh pita", "pita bread")
+_add(3, "Tortillas opened", "टॉर्टिला", "opened tortillas", "fresh tortillas")
+_add(3, "Fresh bagel", "बैगल", "fresh bagel", "bagels")
+_add(3, "Croissant", "क्रोइसाँ", "croissant", "croissants")
+_add(3, "Danish pastry", "डैनिश पेस्ट्री", "danish pastry", "danish pastries")
+_add(3, "Muffin", "मफिन", "muffin", "muffins")
+_add(3, "Brownies", "ब्राउनी", "brownie", "brownies")
+_add(3, "Cheesecake", "चीज़केक", "cheesecake")
+_add(3, "Pudding", "पुडिंग", "pudding", "custard dessert")
+_add(3, "Kheer", "खीर", "kheer", "rice pudding")
+_add(3, "Gulab jamun", "गुलाब जामुन", "gulab jamun", "gulab jamuns")
+_add(3, "Rasgulla", "रसगुल्ला", "rasgulla", "rasgullas")
+_add(3, "Rasmalai", "रसमलाई", "rasmalai")
+_add(3, "Jalebi", "जलेबी", "jalebi", "imarti")
+_add(3, "Shrikhand", "श्रीखंड", "shrikhand", "amrakhand")
+_add(3, "Sandesh", "संदेश", "sandesh")
+_add(3, "Barfi", "बर्फी", "barfi", "burfi", "milk cake")
+_add(3, "Halwa", "हलवा", "halwa", "suji halwa", "gajar halwa")
+_add(3, "Fresh frosting", "केक की क्रीम", "fresh frosting", "buttercream frosting")
+
+# Fresh sauces, stocks and prepared ingredients
+_add(3, "Homemade stock", "घर का स्टॉक", "homemade stock", "chicken stock homemade", "vegetable stock homemade")
+_add(3, "Bone broth opened", "बोन ब्रॉथ", "opened bone broth", "homemade bone broth")
+_add(5, "Fresh ginger paste", "अदरक पेस्ट", "ginger paste", "fresh ginger paste")
+_add(5, "Fresh garlic paste", "लहसुन पेस्ट", "garlic paste", "fresh garlic paste")
+_add(5, "Ginger garlic paste", "अदरक लहसुन पेस्ट", "ginger garlic paste")
+_add(5, "Fresh tomato puree", "टमाटर प्यूरी", "fresh tomato puree", "homemade tomato puree")
+_add(5, "Fresh coconut chutney", "नारियल चटनी", "fresh coconut chutney", "coconut chutney")
+_add(5, "Peanut chutney", "मूंगफली चटनी", "peanut chutney")
+_add(5, "Tamarind chutney", "इमली चटनी", "tamarind chutney", "imli chutney")
+_add(5, "Fresh pasta sauce", "पास्ता सॉस", "fresh pasta sauce", "homemade pasta sauce")
+_add(5, "Opened tomato sauce", "टमाटर सॉस", "opened tomato sauce", "opened pasta sauce")
+_add(5, "Opened curry paste", "करी पेस्ट", "opened curry paste", "opened thai curry paste")
+_add(5, "Fresh salsa verde", "साल्सा वर्दे", "salsa verde", "fresh salsa verde")
+_add(5, "Tahini opened", "ताहिनी", "opened tahini")
+_add(5, "Nut butter opened", "नट बटर", "opened nut butter", "opened peanut butter")
+
+# Reminder: all estimated durations are approximate. For packaged foods, follow
+# the printed date and storage instructions; discard food showing spoilage.
+
+# ---------------------------------------------------------------------------
+# Additional fresh, raw and unprepared ingredients (2026 expansion)
+# ---------------------------------------------------------------------------
+# This section deliberately adds NO cooked dishes, restaurant meals, or leftovers:
+# their age depends on when they were prepared, not merely when they were identified.
+#
+# Food-safety basis:
+# - FSSAI's Food Safety at Home guidance says to prepare food for one meal when
+#   possible, keep advance-prepared/leftover food cold below 5°C, and separate raw
+#   foods from cooked foods.
+# - WHO recommends prompt refrigeration of perishable food (preferably below 5°C)
+#   and warns that chilling slows, but does not stop, spoilage.
+# - USDA/FoodSafety.gov cold-storage charts support the short 1-2 day estimates
+#   used below for raw poultry, ground meats and many fresh fish/shellfish items.
+#
+# The exact numbers below are app reminders, not official FSSAI/WHO shelf-life
+# certifications. Produce varies with freshness, handling and refrigerator
+# temperature. For packaged food, always follow the printed date and label.
+# Sources:
+# https://www.fssai.gov.in/flipbook.php?bookid=31
+# https://fssai.gov.in/faqs/?p=2462
+# https://www.who.int/europe/news-room/fact-sheets/item/public-health-advice-on-food-safety-during-summer
+# https://www.foodsafety.gov/food-safety-charts/cold-food-storage-charts
+# https://www.fsis.usda.gov/food-safety/safe-food-handling-and-preparation/food-safety-basics/refrigeration
+
+
+def _add_if_missing(days, en, hi, *keys):
+    """Add aliases without changing existing mappings or ambiguous generic names."""
+    for key in keys:
+        normalized = key.strip().lower()
+        if normalized and normalized not in EXPIRY_DATABASE:
+            EXPIRY_DATABASE[normalized] = (days, en, hi)
+
+
+# More whole/fresh vegetables and unprepared plant ingredients.
+_add_if_missing(7, "Red cabbage", "लाल पत्तागोभी", "red cabbage", "purple cabbage")
+_add_if_missing(5, "Savoy cabbage", "सेवॉय पत्तागोभी", "savoy cabbage")
+_add_if_missing(5, "Purple cauliflower", "बैंगनी फूलगोभी", "purple cauliflower")
+_add_if_missing(5, "Romanesco", "रोमनेस्को", "romanesco", "romanesco broccoli")
+_add_if_missing(5, "Kohlrabi", "गाँठ गोभी", "kohlrabi", "knol khol", "knol-khol")
+_add_if_missing(5, "Chayote", "चायोटे", "chayote", "christophene")
+_add_if_missing(4, "Yellow squash", "पीला स्क्वैश", "yellow squash")
+_add_if_missing(4, "Pattypan squash", "पैटीपैन स्क्वैश", "pattypan squash", "scallop squash")
+_add_if_missing(7, "Spaghetti squash", "स्पेगेटी स्क्वैश", "spaghetti squash")
+_add_if_missing(7, "Jicama", "जिकामा", "jicama", "yam bean")
+_add_if_missing(4, "Lotus root", "कमल ककड़ी", "lotus root", "kamal kakdi")
+_add_if_missing(4, "Lotus stem", "कमल ककड़ी", "lotus stem")
+_add_if_missing(7, "Taro root", "अरबी", "taro root", "arbi root", "colocasia root")
+_add_if_missing(2, "Taro leaves", "अरबी के पत्ते", "taro leaves", "colocasia leaves", "arbi leaves")
+_add_if_missing(2, "Amaranth leaves", "चौलाई के पत्ते", "amaranth leaves", "chaulai leaves")
+_add_if_missing(3, "Red amaranth leaves", "लाल चौलाई", "red amaranth leaves", "red chaulai")
+_add_if_missing(3, "Mustard greens", "सरसों के पत्ते", "mustard greens", "sarson saag greens")
+_add_if_missing(4, "Collard greens", "कोलार्ड पत्ते", "collard greens", "collards")
+_add_if_missing(3, "Watercress", "वॉटरक्रेस", "watercress")
+_add_if_missing(4, "Radicchio", "रैडिकियो", "radicchio")
+_add_if_missing(4, "Endive", "एंडाइव", "endive", "escarole")
+_add_if_missing(3, "Chicory leaves", "कासनी के पत्ते", "chicory leaves")
+_add_if_missing(4, "Sugar snap peas", "शुगर स्नैप मटर", "sugar snap peas", "sugar snap pea")
+_add_if_missing(4, "Snow peas", "स्नो पीज़", "snow peas", "mangetout")
+_add_if_missing(4, "Fresh broad beans", "ताज़ी बाकला फलियाँ", "fresh broad beans", "fresh fava beans", "fava bean pods")
+_add_if_missing(4, "Fresh lima beans", "ताज़ी लीमा फलियाँ", "fresh lima beans", "lima bean pods")
+_add_if_missing(3, "Fresh edamame pods", "ताज़ी एडामामे फलियाँ", "fresh edamame", "edamame pods", "fresh soybeans in pods")
+_add_if_missing(4, "Garlic scapes", "लहसुन की हरी डंठल", "garlic scapes")
+_add_if_missing(4, "Green garlic", "हरा लहसुन", "green garlic", "spring garlic")
+_add_if_missing(3, "Banana blossom", "केले का फूल", "banana blossom", "banana flower")
+_add_if_missing(3, "Banana stem", "केले का तना", "banana stem", "plantain stem")
+_add_if_missing(3, "Moringa leaves", "सहजन के पत्ते", "moringa leaves", "drumstick leaves", "sahjan leaves")
+_add_if_missing(3, "Sweet potato leaves", "शकरकंद के पत्ते", "sweet potato leaves")
+_add_if_missing(2, "Beet greens", "चुकंदर के पत्ते", "beet greens", "beetroot leaves")
+_add_if_missing(2, "Turnip greens", "शलजम के पत्ते", "turnip greens")
+_add_if_missing(4, "Celeriac", "सेलेरिएक", "celeriac", "celery root")
+_add_if_missing(4, "Fresh water chestnuts", "ताज़े सिंघाड़े", "fresh water chestnuts", "fresh singhara")
+_add_if_missing(3, "Fresh bamboo shoots", "ताज़े बाँस के अंकुर", "fresh bamboo shoots", "raw bamboo shoots")
+_add_if_missing(4, "Baby corn", "बेबी कॉर्न", "baby corn", "young corn cobs")
+_add_if_missing(2, "Purslane", "कुलफा", "purslane", "kulfa greens")
+_add_if_missing(3, "Malabar spinach", "पोई साग", "malabar spinach", "poi saag", "basale leaves")
+_add_if_missing(4, "Fresh lemongrass", "ताज़ी लेमनग्रास", "fresh lemongrass", "lemongrass stalks")
+_add_if_missing(5, "Galangal", "गलंगल", "galangal", "fresh galangal")
+_add_if_missing(4, "Kaffir lime leaves", "काफ़िर लाइम के पत्ते", "kaffir lime leaves", "makrut lime leaves")
+_add_if_missing(4, "Fresh tarragon", "ताज़ा तारगोन", "fresh tarragon", "tarragon leaves")
+_add_if_missing(4, "Fresh chives", "ताज़ा चाइव्स", "fresh chives", "chive leaves")
+_add_if_missing(3, "Fresh chervil", "ताज़ा चर्विल", "fresh chervil", "chervil leaves")
+_add_if_missing(4, "Fresh pandan leaves", "ताज़ी पानदान पत्तियाँ", "fresh pandan leaves", "pandan leaves")
+_add_if_missing(4, "Thai basil", "थाई तुलसी", "thai basil")
+_add_if_missing(4, "Fresh lemon balm", "ताज़ा लेमन बाम", "fresh lemon balm", "lemon balm leaves")
+
+# More whole fresh fruits (not cut-fruit or prepared fruit servings).
+_add_if_missing(7, "Indian gooseberry", "आँवला", "amla", "indian gooseberry", "fresh amla")
+_add_if_missing(3, "Indian jujube", "बेर", "ber fruit", "Indian jujube", "fresh ber")
+_add_if_missing(5, "Kinnow", "किन्नू", "kinnow", "fresh kinnow")
+_add_if_missing(7, "Pomelo", "पमेलो", "pomelo", "chakotra")
+_add_if_missing(5, "Kumquat", "कुमक्वाट", "kumquat", "kumquats")
+_add_if_missing(2, "Mulberries", "शहतूत", "mulberry", "mulberries", "shahtoot")
+_add_if_missing(4, "Blackcurrants", "काली करंट", "blackcurrant", "blackcurrants")
+_add_if_missing(4, "Red currants", "लाल करंट", "red currant", "red currants")
+_add_if_missing(4, "White currants", "सफेद करंट", "white currant", "white currants")
+_add_if_missing(4, "European gooseberries", "यूरोपीय गूजबेरी", "european gooseberry", "european gooseberries")
+_add_if_missing(4, "Soursop", "सॉरसॉप", "soursop", "guanabana")
+_add_if_missing(4, "Rambutan", "रामबूटान", "rambutan", "rambutans")
+_add_if_missing(4, "Mangosteen", "मैंगोस्टीन", "mangosteen", "mangosteens")
+_add_if_missing(4, "Tamarillo", "टमारिलो", "tamarillo", "tree tomato")
+_add_if_missing(4, "Feijoa", "फेइजोआ", "feijoa", "pineapple guava")
+_add_if_missing(7, "Fresh dates", "ताज़े खजूर", "fresh dates", "unprocessed fresh dates")
+_add_if_missing(4, "Finger lime", "फिंगर लाइम", "finger lime", "finger limes")
+_add_if_missing(7, "Wood apple", "बेल फल", "wood apple", "fresh bel fruit")
+_add_if_missing(5, "Raw green mango", "कच्चा आम", "raw green mango", "green mango", "unripe mango")
+_add_if_missing(7, "Fresh lime", "नींबू", "fresh lime", "limes", "lime fruit")
+_add_if_missing(7, "Blood orange", "ब्लड ऑरेंज", "blood orange", "blood oranges")
+_add_if_missing(7, "Fresh navel orange", "नैवेल संतरा", "navel orange", "fresh navel oranges")
+_add_if_missing(4, "Cape gooseberry", "केप गूजबेरी", "cape gooseberry", "cape gooseberries", "goldenberry")
+
+# Distinct fresh mushroom varieties; use short estimates for delicate varieties.
+_add_if_missing(3, "Enoki mushrooms", "एनोकि मशरूम", "enoki mushrooms", "enoki mushroom", "enoki")
+_add_if_missing(4, "Shiitake mushrooms", "शिटाके मशरूम", "shiitake mushrooms", "shiitake mushroom", "shiitake")
+_add_if_missing(4, "Oyster mushrooms", "ऑयस्टर मशरूम", "oyster mushrooms", "oyster mushroom")
+_add_if_missing(4, "Portobello mushrooms", "पोर्टोबेलो मशरूम", "portobello mushrooms", "portobello mushroom", "portobello")
+_add_if_missing(4, "Cremini mushrooms", "क्रेमिनी मशरूम", "cremini mushrooms", "cremini mushroom", "cremini")
+_add_if_missing(3, "Chanterelle mushrooms", "चैंटेरेल मशरूम", "chanterelle mushrooms", "chanterelle mushroom", "chanterelle")
+
+# Fresh fish varieties. The short 1-2 day estimates assume refrigeration at 4-5°C
+# or colder and follow official cold-storage guidance for fresh fish.
+_add_if_missing(2, "Fresh salmon", "ताज़ा सैल्मन", "fresh salmon", "raw salmon", "salmon")
+_add_if_missing(2, "Fresh tuna", "ताज़ा टूना", "fresh tuna", "raw tuna", "tuna steak")
+_add_if_missing(2, "Fresh mackerel", "ताज़ी मैकेरल", "fresh mackerel", "raw mackerel", "bangda", "bangda fish")
+_add_if_missing(2, "Fresh sardines", "ताज़ी सार्डिन", "fresh sardines", "raw sardines", "sardine fish")
+_add_if_missing(2, "Fresh anchovies", "ताज़ी एंचोवी", "fresh anchovies", "raw anchovies")
+_add_if_missing(2, "Rohu fish", "रोहू मछली", "rohu", "rohu fish", "raw rohu")
+_add_if_missing(2, "Catla fish", "कतला मछली", "catla", "catla fish", "raw catla")
+_add_if_missing(2, "Pomfret fish", "पॉम्फ्रेट मछली", "pomfret", "pomfret fish", "raw pomfret")
+_add_if_missing(2, "Hilsa fish", "हिल्सा मछली", "hilsa", "hilsa fish", "ilish", "raw hilsa")
+_add_if_missing(2, "Fresh basa", "ताज़ी बासा मछली", "fresh basa", "raw basa")
+_add_if_missing(2, "Fresh tilapia", "ताज़ी तिलापिया", "fresh tilapia", "raw tilapia")
+_add_if_missing(2, "Fresh cod", "ताज़ा कॉड", "fresh cod", "raw cod")
+_add_if_missing(2, "Fresh haddock", "ताज़ा हैडॉक", "fresh haddock", "raw haddock")
+_add_if_missing(2, "Fresh trout", "ताज़ी ट्राउट", "fresh trout", "raw trout")
+_add_if_missing(2, "Fresh snapper", "ताज़ा स्नैपर", "fresh snapper", "raw snapper")
+_add_if_missing(2, "Fresh grouper", "ताज़ी ग्रूपर", "fresh grouper", "raw grouper")
+_add_if_missing(2, "Fresh seer fish", "ताज़ी सुरमई", "seer fish", "king mackerel", "surmai", "raw seer fish")
+_add_if_missing(2, "Fresh sole fish", "ताज़ी सोल मछली", "fresh sole fish", "raw sole fish")
+_add_if_missing(2, "Fresh mahi-mahi", "ताज़ी माही-माही", "fresh mahi-mahi", "raw mahi-mahi")
+_add_if_missing(2, "Fresh oysters, shucked", "ताज़े शेल हटाए ऑयस्टर", "shucked oysters", "raw shucked oysters")
+_add_if_missing(2, "Fresh lobster meat", "ताज़ा लॉबस्टर मांस", "fresh lobster meat", "raw lobster meat")
+_add_if_missing(2, "Fresh crayfish", "ताज़ा क्रेफ़िश", "fresh crayfish", "raw crayfish")
+
+# Other raw proteins/offal and separated egg ingredients.
+# Raw poultry, ground meat and variety meats are generally only 1-2 days in a
+# properly cold refrigerator; packaged use-by instructions take priority.
+_add_if_missing(2, "Raw goose", "कच्चा हंस", "raw goose", "goose meat raw")
+_add_if_missing(2, "Raw quail", "कच्ची बटेर", "raw quail", "quail meat")
+_add_if_missing(2, "Raw rabbit", "कच्चा खरगोश", "raw rabbit", "rabbit meat raw")
+_add_if_missing(2, "Raw chicken liver", "कच्चा चिकन लीवर", "raw chicken liver", "chicken liver raw")
+_add_if_missing(2, "Raw chicken giblets", "कच्चे चिकन गिब्लेट्स", "raw chicken giblets", "chicken giblets")
+_add_if_missing(2, "Raw chicken gizzards", "कच्चे चिकन गिज़ार्ड", "raw chicken gizzards", "chicken gizzard raw")
+_add_if_missing(2, "Raw chicken hearts", "कच्चे चिकन हार्ट", "raw chicken hearts", "chicken hearts raw")
+_add_if_missing(2, "Raw beef liver", "कच्चा बीफ़ लीवर", "raw beef liver", "beef liver raw")
+_add_if_missing(2, "Raw pork liver", "कच्चा पोर्क लीवर", "raw pork liver", "pork liver raw")
+_add_if_missing(2, "Raw lamb liver", "कच्चा मेमने का लीवर", "raw lamb liver", "lamb liver raw")
+_add_if_missing(2, "Raw kidney meat", "कच्चा गुर्दा मांस", "raw kidney meat", "raw beef kidney", "raw lamb kidney", "raw pork kidney")
+_add_if_missing(2, "Raw heart meat", "कच्चा हार्ट मांस", "raw heart meat", "raw beef heart", "raw lamb heart", "raw pork heart")
+_add_if_missing(3, "Raw egg whites", "कच्चे अंडे का सफेद भाग", "raw egg whites", "egg whites", "egg white")
+_add_if_missing(3, "Raw egg yolks", "कच्चे अंडे की जर्दी", "raw egg yolks", "egg yolks", "egg yolk")
+_add_if_missing(3, "Opened liquid egg product", "खोला हुआ तरल अंडा", "opened liquid eggs", "opened liquid egg product", "liquid eggs opened")
+
+# Add a few fresh dairy types only where a generic pack label isn't the safer guide.
+# Do not guess dates for branded/ultra-pasteurised products: use their labels.
+_add_if_missing(3, "Fresh buffalo milk", "ताज़ा भैंस का दूध", "fresh buffalo milk", "buffalo milk fresh")
+_add_if_missing(3, "Fresh goat milk", "ताज़ा बकरी का दूध", "fresh goat milk", "goat milk fresh")
+_add_if_missing(5, "Fresh Greek-style yogurt", "ताज़ा ग्रीक दही", "fresh greek yogurt", "fresh greek yoghurt")
+
+# Final module note: existing entries are retained for compatibility. This expansion
+# intentionally contains no new cooked dishes, bakery items, or leftovers whose age
+# would be unknowable without the preparation date.
