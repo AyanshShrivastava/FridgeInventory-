@@ -1,6 +1,0 @@
-streamlit
-firebase-admin
-SpeechRecognition
-google-genai
-pydantic
-extra-streamlit-components
