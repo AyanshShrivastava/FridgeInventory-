@@ -1,0 +1,9 @@
+streamlit>=1.54
+extra-streamlit-components>=0.1.71
+firebase-admin>=6.5
+SpeechRecognition>=3.10
+google-genai>=1.0
+pydantic>=2.8
+fastapi>=0.115
+uvicorn[standard]>=0.30
+python-multipart>=0.0.9
