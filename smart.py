@@ -1486,7 +1486,7 @@ def main():
 
 
 # ==========================================
-# 12. FASTAPI FACTORY
+# 12. FASTAPI FACTORY & CONDITIONAL EXPORTS
 # ==========================================
 def create_api():
     try:
@@ -1588,22 +1588,21 @@ def create_api():
         return None
 
 
-# Bind the app to ALL standard global names with fallback safety
-try:
-    from fastapi import FastAPI as _FastAPI
-    _fallback_app = _FastAPI()
-    @_fallback_app.get("/")
-    def _fb_root():
-        return {"ok": True, "fallback": True}
-except Exception:
-    _fallback_app = None
-
-app = create_api() or _fallback_app
-api = app
-fastapi_app = app
-api_app = app
-_app = app
-application = app
+# Only expose FastAPI globals when explicitly running in API mode to prevent hijacking Streamlit
+if API_MODE:
+    app = create_api()
+    api = app
+    fastapi_app = app
+    api_app = app
+    _app = app
+    application = app
+else:
+    app = None
+    api = None
+    fastapi_app = None
+    api_app = None
+    _app = None
+    application = None
 
 if __name__ == "__main__":
     if API_MODE:
