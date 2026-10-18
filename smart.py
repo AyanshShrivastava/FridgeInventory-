@@ -23,6 +23,10 @@ from functools import lru_cache
 from html import escape as esc
 from zoneinfo import ZoneInfo
 
+# Mute the noisy Streamlit context warnings during ASGI bare-mode imports
+logging.getLogger("streamlit.runtime.scriptrunner_utils.script_run_context").setLevel(logging.ERROR)
+logging.getLogger("streamlit.runtime.scriptrunner.script_run_context").setLevel(logging.ERROR)
+
 import firebase_admin
 import speech_recognition as sr
 import streamlit as st
@@ -187,7 +191,7 @@ T = {
         "too_many": "एक बार में बहुत सारे अज्ञात सामान। इनके लिए कुछ सेव नहीं हुआ: {names}। कम सामान लिखें।",
         "added": "जोड़ा गया: {names}", "used": "इस्तेमाल हुआ: {names}",
         "wasted": "फेंका गया: {names}", "missing": "फ्रिज में नहीं मिला: {names}",
-        "rejected": "यह खाने का सामान नहींজীবী नहीं है: {names}। स्पेलिंग जाँचें।",
+        "rejected": "यह खाने का सामान नहीं है: {names}। स्पेलिंग जाँचें।",
         "cleared": "फ्रिज साफ़ कर दिया गया है।",
         "nothing": "यह समझ नहीं आया। उदाहरण: \"दूध और टमाटर लाया\"।",
         "table_hdr": "सक्रिय स्टोरेज", "col_item": "सामान", "col_added": "लाने की तारीख",
@@ -1491,8 +1495,8 @@ def create_api():
     except ImportError:
         return None
 
-    app = FastAPI(title="FridgeInventory API", version="1.0.0")
-    app.add_middleware(
+    api_app = FastAPI(title="FridgeInventory API", version="1.0.0")
+    api_app.add_middleware(
         CORSMiddleware,
         allow_origins=["*"],
         allow_credentials=True,
@@ -1506,8 +1510,8 @@ def create_api():
     class RescueRequest(BaseModel):
         items: list[str] = Field(min_length=1, max_length=30)
 
-    @app.get("/")
-    @app.get("/health")
+    @api_app.get("/")
+    @api_app.get("/health")
     def api_health():
         return {
             "ok": True,
@@ -1516,7 +1520,7 @@ def create_api():
             "firebase_configured": get_db() is not None,
         }
 
-    @app.post("/classify")
+    @api_app.post("/classify")
     def api_classify(payload: ClassifyRequest):
         phrase = payload.item.strip()
         if not phrase:
@@ -1543,7 +1547,7 @@ def create_api():
             "shelf_life_days": None if needs_date else days,
         }
 
-    @app.post("/rescue")
+    @api_app.post("/rescue")
     def api_rescue(payload: RescueRequest):
         names = [str(item).strip()[:100] for item in payload.items if str(item).strip()]
         if not names:
@@ -1558,7 +1562,7 @@ def create_api():
                 detail="Rescue recipe generation is temporarily unavailable.",
             ) from exc
 
-    @app.post("/transcribe")
+    @api_app.post("/transcribe")
     async def api_transcribe(file: UploadFile = File(...)):
         if not file.filename or not file.filename.lower().endswith(".wav"):
             raise HTTPException(status_code=415, detail="Upload a WAV audio file.")
@@ -1577,19 +1581,20 @@ def create_api():
             )
         return {"text": text_value}
 
-    return app
+    return api_app
 
 
-# Always expose fastapi_app and api at module level for ASGI runners
-fastapi_app = create_api()
-api = fastapi_app
+# Always expose the ASGI application under standard names so the runner finds it instantly
+app = create_api()
+fastapi_app = app
+api = app
 
 if __name__ == "__main__":
     if API_MODE:
-        if fastapi_app is None:
+        if app is None:
             print("Error: FastAPI is not installed. Run 'pip install fastapi uvicorn' to use API mode.")
             sys.exit(1)
         import uvicorn
-        uvicorn.run(fastapi_app, host="0.0.0.0", port=int(os.getenv("PORT", "10000")), reload=False)
+        uvicorn.run(app, host="0.0.0.0", port=int(os.getenv("PORT", "10000")), reload=False)
     else:
         main()
