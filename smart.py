@@ -41,7 +41,6 @@ from database import CHEESE_DATE_REQUIRED_ITEMS, EXPIRY_DATABASE
 
 # ==========================================
 # 1. CONSTANTS, MODELS & VOCABULARY
-# (Strictly NO st.* calls at import time so Streamlit 1.66 ASGI import succeeds!)
 # ==========================================
 API_MODE = (
     (len(sys.argv) > 1 and sys.argv[1].lower() == "api")
@@ -56,7 +55,6 @@ APP_URL = (
     or "https://fridgeinventory.streamlit.app"
 ).rstrip("/")
 
-# Keep the exact Gemini 3.x model IDs in the requested order.
 SUPPORTED_GEMINI_MODELS = (
     "gemini-3.5-flash-lite",
     "gemini-3.6-flash",
@@ -68,14 +66,13 @@ MODEL_FALLBACKS = list(SUPPORTED_GEMINI_MODELS)
 
 PIN_ITERATIONS = 200_000
 MAX_CMD_CHARS = 200
-MAX_AI_LOOKUPS = 4          # unknown items per command (cost guard)
-MAX_TRIES = 5               # wrong PINs before a short lockout
+MAX_AI_LOOKUPS = 4          
+MAX_TRIES = 5               
 LOCK_SECONDS = 60
 SESSION_COOKIE_NAME = "fi_session_v2"
 SESSION_DAYS = 30
 _cookie_manager = None
 
-# Process-level singletons (avoids @st.cache_resource import-time warnings in Streamlit 1.66)
 _FIRESTORE_CLIENT = None
 _FIRESTORE_ERR = ""
 _GEMINI_CLIENT = None
@@ -190,7 +187,7 @@ T = {
         "too_many": "एक बार में बहुत सारे अज्ञात सामान। इनके लिए कुछ सेव नहीं हुआ: {names}। कम सामान लिखें।",
         "added": "जोड़ा गया: {names}", "used": "इस्तेमाल हुआ: {names}",
         "wasted": "फेंका गया: {names}", "missing": "फ्रिज में नहीं मिला: {names}",
-        "rejected": "यह खाने का सामान नहीं है: {names}। स्पेलिंग जाँचें।",
+        "rejected": "यह खाने का सामान नहींজীবী नहीं है: {names}। स्पेलिंग जाँचें।",
         "cleared": "फ्रिज साफ़ कर दिया गया है।",
         "nothing": "यह समझ नहीं आया। उदाहरण: \"दूध और टमाटर लाया\"।",
         "table_hdr": "सक्रिय स्टोरेज", "col_item": "सामान", "col_added": "लाने की तारीख",
@@ -398,6 +395,17 @@ div[data-testid="stFormSubmitButton"] > button:active {
 """
 
 
+def _get_st_secrets():
+    """Safely fetch Streamlit secrets without crashing outside the ScriptRunner context."""
+    try:
+        from streamlit.runtime.scriptrunner import get_script_run_ctx
+        if get_script_run_ctx() is not None:
+            return st.secrets
+    except Exception:
+        pass
+    return {}
+
+
 def init_session_state():
     for _key, _val in {
         "authenticated": False,
@@ -468,8 +476,9 @@ def init_firestore():
                 info = json.loads(env_json)
             else:
                 try:
-                    if "firebase" in st.secrets:
-                        fb = st.secrets["firebase"]
+                    secrets = _get_st_secrets()
+                    if "firebase" in secrets:
+                        fb = secrets["firebase"]
                         if isinstance(fb, str):
                             info = json.loads(fb)
                         elif "value" in fb:
@@ -706,15 +715,20 @@ def get_client():
     global _GEMINI_CLIENT
     if _GEMINI_CLIENT is not None:
         return _GEMINI_CLIENT
+    
     key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
     if not key:
         try:
-            key = st.secrets["google"]["api_key"]
+            secrets = _get_st_secrets()
+            if "google" in secrets and "api_key" in secrets["google"]:
+                key = secrets["google"]["api_key"]
         except Exception:
             pass
+            
     if not key:
         log.error("Gemini API key missing: set [google].api_key or GEMINI_API_KEY")
         return None
+        
     try:
         _GEMINI_CLIENT = genai.Client(api_key=str(key).strip())
         return _GEMINI_CLIENT
@@ -745,6 +759,7 @@ def classify_food(phrase, model_name):
             models.append(name)
     if not models:
         models = [DEFAULT_MODEL]
+        
     errors = []
     for model in models:
         try:
@@ -856,6 +871,7 @@ def submit_pending_expiry(raw_date):
         return ("warn", "There is no item waiting for an expiry date.")
     current = pending[0]
     parsed = parse_expiry_date(raw_date)
+    
     if parsed is None:
         try:
             valid, reason = validate_expiry_with_gemini(current["name_en"], raw_date, None)
@@ -864,16 +880,20 @@ def submit_pending_expiry(raw_date):
             return ("err", "Gemini could not verify that date right now. Please try again; nothing was added.")
         detail = (reason or "") if not valid else ""
         return ("err", "Enter a real date in DD/MM/YYYY format, for example 25/12/2026. " + detail)
+        
     today_value = datetime.now(IST).date()
     if parsed < today_value:
         return ("err", "That expiry date has already passed. Check the package label and enter a future date.")
+        
     try:
         valid, reason = validate_expiry_with_gemini(current["name_en"], raw_date, parsed)
     except Exception:
         log.exception("Gemini expiry date validation failed")
         return ("err", "Gemini could not verify that date right now. Please try again; nothing was added.")
+        
     if not valid:
         return ("err", "Gemini could not verify that expiry date. " + (reason or "Check the printed date and try again."))
+        
     add_inventory_item(current["name_en"], current["name_hi"], parsed)
     st.session_state.pending_expiry = pending[1:]
     st.session_state.expiry_form_error = ""
@@ -932,7 +952,6 @@ def generate_rescue(names):
 # ==========================================
 # 7. SPEECH TO TEXT
 # ==========================================
-@lru_cache(maxsize=64)
 def transcribe(raw):
     """Return (text, problem_key). problem_key is "" on success."""
     recognizer = sr.Recognizer()
@@ -1175,7 +1194,8 @@ def render_sidebar(t, items):
                         st.session_state.login_fails = 0
                         if not issue_browser_session(fid):
                             st.warning("Logged in for this visit, but persistent login could not be enabled.")
-                        st.query_params["fridge"] = fid
+                        if "fridge" not in st.query_params or st.query_params["fridge"] != fid:
+                            st.query_params["fridge"] = fid
                         st.rerun()
                     st.session_state.login_fails += 1
                     if st.session_state.login_fails >= MAX_TRIES:
@@ -1462,14 +1482,17 @@ def main():
 
 
 # ==========================================
-# 12. FASTAPI FACTORY (Only created when API_MODE is active)
+# 12. FASTAPI FACTORY
 # ==========================================
 def create_api():
-    from fastapi import FastAPI, File, HTTPException, UploadFile
-    from fastapi.middleware.cors import CORSMiddleware
+    try:
+        from fastapi import FastAPI, File, HTTPException, UploadFile
+        from fastapi.middleware.cors import CORSMiddleware
+    except ImportError:
+        return None
 
-    fastapi_app = FastAPI(title="FridgeInventory API", version="1.0.0")
-    fastapi_app.add_middleware(
+    app = FastAPI(title="FridgeInventory API", version="1.0.0")
+    app.add_middleware(
         CORSMiddleware,
         allow_origins=["*"],
         allow_credentials=True,
@@ -1483,8 +1506,8 @@ def create_api():
     class RescueRequest(BaseModel):
         items: list[str] = Field(min_length=1, max_length=30)
 
-    @fastapi_app.get("/")
-    @fastapi_app.get("/health")
+    @app.get("/")
+    @app.get("/health")
     def api_health():
         return {
             "ok": True,
@@ -1493,7 +1516,7 @@ def create_api():
             "firebase_configured": get_db() is not None,
         }
 
-    @fastapi_app.post("/classify")
+    @app.post("/classify")
     def api_classify(payload: ClassifyRequest):
         phrase = payload.item.strip()
         if not phrase:
@@ -1506,8 +1529,10 @@ def create_api():
                 status_code=503,
                 detail="Food recognition is temporarily unavailable. Check Gemini key, model access, quota, and logs.",
             ) from exc
+            
         if result is None:
             return {"is_food": False, "item": phrase, "message": "This does not appear to be a food or grocery item."}
+            
         days, name_en, name_hi, category, needs_date = result
         return {
             "is_food": True,
@@ -1518,7 +1543,7 @@ def create_api():
             "shelf_life_days": None if needs_date else days,
         }
 
-    @fastapi_app.post("/rescue")
+    @app.post("/rescue")
     def api_rescue(payload: RescueRequest):
         names = [str(item).strip()[:100] for item in payload.items if str(item).strip()]
         if not names:
@@ -1533,7 +1558,7 @@ def create_api():
                 detail="Rescue recipe generation is temporarily unavailable.",
             ) from exc
 
-    @fastapi_app.post("/transcribe")
+    @app.post("/transcribe")
     async def api_transcribe(file: UploadFile = File(...)):
         if not file.filename or not file.filename.lower().endswith(".wav"):
             raise HTTPException(status_code=415, detail="Upload a WAV audio file.")
@@ -1543,6 +1568,7 @@ def create_api():
             raise HTTPException(status_code=400, detail="Audio file is empty.")
         if len(raw) > max_audio_bytes:
             raise HTTPException(status_code=413, detail="Audio must be no larger than 15 MB.")
+        
         text_value, problem = transcribe(raw)
         if problem:
             raise HTTPException(
@@ -1551,15 +1577,19 @@ def create_api():
             )
         return {"text": text_value}
 
-    return fastapi_app
+    return app
 
 
-if API_MODE:
-    api = create_api()
+# Always expose fastapi_app and api at module level for ASGI runners
+fastapi_app = create_api()
+api = fastapi_app
 
 if __name__ == "__main__":
     if API_MODE:
+        if fastapi_app is None:
+            print("Error: FastAPI is not installed. Run 'pip install fastapi uvicorn' to use API mode.")
+            sys.exit(1)
         import uvicorn
-        uvicorn.run(api, host="0.0.0.0", port=int(os.getenv("PORT", "10000")), reload=False)
+        uvicorn.run(fastapi_app, host="0.0.0.0", port=int(os.getenv("PORT", "10000")), reload=False)
     else:
         main()
