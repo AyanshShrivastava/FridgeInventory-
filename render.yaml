@@ -1,0 +1,9 @@
+services:
+  - type: web
+    name: fridgeinventory
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: streamlit run smart.py --server.port $PORT --server.address 0.0.0.0
+    envVars:
+      - key: SERVICE_MODE
+        value: dashboard
