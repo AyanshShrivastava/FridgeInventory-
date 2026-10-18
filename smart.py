@@ -40,10 +40,9 @@ except ImportError:
 from database import CHEESE_DATE_REQUIRED_ITEMS, EXPIRY_DATABASE
 
 # ==========================================
-# 1. STRICT MODE DETECTION (Fixes Streamlit 1.66 ASGI conflict)
+# 1. CONSTANTS, MODELS & VOCABULARY
+# (Strictly NO st.* calls at import time so Streamlit 1.66 ASGI import succeeds!)
 # ==========================================
-# Only enter API_MODE when explicitly requested via SERVICE_MODE=api or `python smart.py api`.
-# Never check sys.argv for "uvicorn", because Streamlit 1.66+ uses Uvicorn internally!
 API_MODE = (
     (len(sys.argv) > 1 and sys.argv[1].lower() == "api")
     or os.getenv("SERVICE_MODE", "").strip().lower() == "api"
@@ -57,7 +56,7 @@ APP_URL = (
     or "https://fridgeinventory.streamlit.app"
 ).rstrip("/")
 
-# Exact Gemini 3.x model IDs in the requested order.
+# Keep the exact Gemini 3.x model IDs in the requested order.
 SUPPORTED_GEMINI_MODELS = (
     "gemini-3.5-flash-lite",
     "gemini-3.6-flash",
@@ -76,7 +75,7 @@ SESSION_COOKIE_NAME = "fi_session_v2"
 SESSION_DAYS = 30
 _cookie_manager = None
 
-# Process-level singletons (avoids top-level @st.cache_resource bare-mode errors in Streamlit 1.66)
+# Process-level singletons (avoids @st.cache_resource import-time warnings in Streamlit 1.66)
 _FIRESTORE_CLIENT = None
 _FIRESTORE_ERR = ""
 _GEMINI_CLIENT = None
@@ -449,10 +448,10 @@ def _session_token_hash(token):
 
 
 # ==========================================
-# 4. FIREBASE (Process-level singleton: 0 Streamlit bare-mode warnings)
+# 4. FIREBASE
 # ==========================================
 def init_firestore():
-    """Return (client_or_None, error_text) without using top-level @st.cache_resource."""
+    """Return (client_or_None, error_text) using a process-level singleton."""
     global _FIRESTORE_CLIENT, _FIRESTORE_ERR
     if _FIRESTORE_CLIENT is not None:
         return _FIRESTORE_CLIENT, ""
@@ -703,7 +702,7 @@ Give a Hindi name in Devanagari. Keep each step short.
 
 
 def get_client():
-    """Return process-cached Gemini client without triggering top-level Streamlit bare-mode warnings."""
+    """Return process-cached Gemini client."""
     global _GEMINI_CLIENT
     if _GEMINI_CLIENT is not None:
         return _GEMINI_CLIENT
@@ -1463,14 +1462,14 @@ def main():
 
 
 # ==========================================
-# 12. ENTRYPOINT: STREAMLIT vs FASTAPI
+# 12. FASTAPI FACTORY (Only created when API_MODE is active)
 # ==========================================
-if API_MODE:
+def create_api():
     from fastapi import FastAPI, File, HTTPException, UploadFile
     from fastapi.middleware.cors import CORSMiddleware
 
-    api = FastAPI(title="FridgeInventory API", version="1.0.0")
-    api.add_middleware(
+    fastapi_app = FastAPI(title="FridgeInventory API", version="1.0.0")
+    fastapi_app.add_middleware(
         CORSMiddleware,
         allow_origins=["*"],
         allow_credentials=True,
@@ -1484,8 +1483,8 @@ if API_MODE:
     class RescueRequest(BaseModel):
         items: list[str] = Field(min_length=1, max_length=30)
 
-    @api.get("/")
-    @api.get("/health")
+    @fastapi_app.get("/")
+    @fastapi_app.get("/health")
     def api_health():
         return {
             "ok": True,
@@ -1494,7 +1493,7 @@ if API_MODE:
             "firebase_configured": get_db() is not None,
         }
 
-    @api.post("/classify")
+    @fastapi_app.post("/classify")
     def api_classify(payload: ClassifyRequest):
         phrase = payload.item.strip()
         if not phrase:
@@ -1519,7 +1518,7 @@ if API_MODE:
             "shelf_life_days": None if needs_date else days,
         }
 
-    @api.post("/rescue")
+    @fastapi_app.post("/rescue")
     def api_rescue(payload: RescueRequest):
         names = [str(item).strip()[:100] for item in payload.items if str(item).strip()]
         if not names:
@@ -1531,10 +1530,10 @@ if API_MODE:
             log.exception("API rescue recipe generation failed")
             raise HTTPException(
                 status_code=503,
-                detail="Rescue recipe generation is temporarily unavailable. Check Gemini key, model access, quota, and logs.",
+                detail="Rescue recipe generation is temporarily unavailable.",
             ) from exc
 
-    @api.post("/transcribe")
+    @fastapi_app.post("/transcribe")
     async def api_transcribe(file: UploadFile = File(...)):
         if not file.filename or not file.filename.lower().endswith(".wav"):
             raise HTTPException(status_code=415, detail="Upload a WAV audio file.")
@@ -1552,8 +1551,15 @@ if API_MODE:
             )
         return {"text": text_value}
 
-    if __name__ == "__main__":
+    return fastapi_app
+
+
+if API_MODE:
+    api = create_api()
+
+if __name__ == "__main__":
+    if API_MODE:
         import uvicorn
-        uvicorn.run("smart:api", host="0.0.0.0", port=int(os.getenv("PORT", "10000")), reload=False)
-else:
-    main()
+        uvicorn.run(api, host="0.0.0.0", port=int(os.getenv("PORT", "10000")), reload=False)
+    else:
+        main()
