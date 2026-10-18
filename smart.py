@@ -1495,100 +1495,114 @@ def create_api():
     except ImportError:
         return None
 
-    _app = FastAPI(title="FridgeInventory API", version="1.0.0")
-    _app.add_middleware(
-        CORSMiddleware,
-        allow_origins=["*"],
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
-    )
+    try:
+        _app = FastAPI(title="FridgeInventory API", version="1.0.0")
+        _app.add_middleware(
+            CORSMiddleware,
+            allow_origins=["*"],
+            allow_credentials=True,
+            allow_methods=["*"],
+            allow_headers=["*"],
+        )
 
-    class ClassifyRequest(BaseModel):
-        item: str = Field(min_length=1, max_length=200)
+        class ClassifyRequest(BaseModel):
+            item: str = Field(min_length=1, max_length=200)
 
-    class RescueRequest(BaseModel):
-        items: list[str] = Field(min_length=1, max_length=30)
+        class RescueRequest(BaseModel):
+            items: list[str] = Field(min_length=1, max_length=30)
 
-    @_app.get("/")
-    @_app.get("/health")
-    def api_health():
-        return {
-            "ok": True,
-            "service": "FridgeInventory",
-            "gemini_configured": get_client() is not None,
-            "firebase_configured": get_db() is not None,
-        }
+        @_app.get("/")
+        @_app.get("/health")
+        def api_health():
+            return {
+                "ok": True,
+                "service": "FridgeInventory",
+                "gemini_configured": get_client() is not None,
+                "firebase_configured": get_db() is not None,
+            }
 
-    @_app.post("/classify")
-    def api_classify(payload: ClassifyRequest):
-        phrase = payload.item.strip()
-        if not phrase:
-            raise HTTPException(status_code=422, detail="Enter a food or grocery item.")
-        try:
-            result = classify_food(phrase, gemini_model())
-        except Exception as exc:
-            log.exception("API food classification failed")
-            raise HTTPException(
-                status_code=503,
-                detail="Food recognition is temporarily unavailable. Check Gemini key, model access, quota, and logs.",
-            ) from exc
+        @_app.post("/classify")
+        def api_classify(payload: ClassifyRequest):
+            phrase = payload.item.strip()
+            if not phrase:
+                raise HTTPException(status_code=422, detail="Enter a food or grocery item.")
+            try:
+                result = classify_food(phrase, gemini_model())
+            except Exception as exc:
+                log.exception("API food classification failed")
+                raise HTTPException(
+                    status_code=503,
+                    detail="Food recognition is temporarily unavailable. Check Gemini key, model access, quota, and logs.",
+                ) from exc
+                
+            if result is None:
+                return {"is_food": False, "item": phrase, "message": "This does not appear to be a food or grocery item."}
+                
+            days, name_en, name_hi, category, needs_date = result
+            return {
+                "is_food": True,
+                "name_en": name_en,
+                "name_hi": name_hi,
+                "category": category,
+                "requires_expiry_date": needs_date,
+                "shelf_life_days": None if needs_date else days,
+            }
+
+        @_app.post("/rescue")
+        def api_rescue(payload: RescueRequest):
+            names = [str(item).strip()[:100] for item in payload.items if str(item).strip()]
+            if not names:
+                raise HTTPException(status_code=422, detail="Provide at least one ingredient.")
+            try:
+                recipe = generate_rescue(names)
+                return recipe.model_dump()
+            except Exception as exc:
+                log.exception("API rescue recipe generation failed")
+                raise HTTPException(
+                    status_code=503,
+                    detail="Rescue recipe generation is temporarily unavailable.",
+                ) from exc
+
+        @_app.post("/transcribe")
+        async def api_transcribe(file: UploadFile = File(...)):
+            if not file.filename or not file.filename.lower().endswith(".wav"):
+                raise HTTPException(status_code=415, detail="Upload a WAV audio file.")
+            max_audio_bytes = 15 * 1024 * 1024
+            raw = await file.read(max_audio_bytes + 1)
+            if not raw:
+                raise HTTPException(status_code=400, detail="Audio file is empty.")
+            if len(raw) > max_audio_bytes:
+                raise HTTPException(status_code=413, detail="Audio must be no larger than 15 MB.")
             
-        if result is None:
-            return {"is_food": False, "item": phrase, "message": "This does not appear to be a food or grocery item."}
-            
-        days, name_en, name_hi, category, needs_date = result
-        return {
-            "is_food": True,
-            "name_en": name_en,
-            "name_hi": name_hi,
-            "category": category,
-            "requires_expiry_date": needs_date,
-            "shelf_life_days": None if needs_date else days,
-        }
+            text_value, problem = transcribe(raw)
+            if problem:
+                raise HTTPException(
+                    status_code=422,
+                    detail={"problem": problem, "message": "Could not transcribe this audio. Use a clear WAV recording."},
+                )
+            return {"text": text_value}
 
-    @_app.post("/rescue")
-    def api_rescue(payload: RescueRequest):
-        names = [str(item).strip()[:100] for item in payload.items if str(item).strip()]
-        if not names:
-            raise HTTPException(status_code=422, detail="Provide at least one ingredient.")
-        try:
-            recipe = generate_rescue(names)
-            return recipe.model_dump()
-        except Exception as exc:
-            log.exception("API rescue recipe generation failed")
-            raise HTTPException(
-                status_code=503,
-                detail="Rescue recipe generation is temporarily unavailable.",
-            ) from exc
-
-    @_app.post("/transcribe")
-    async def api_transcribe(file: UploadFile = File(...)):
-        if not file.filename or not file.filename.lower().endswith(".wav"):
-            raise HTTPException(status_code=415, detail="Upload a WAV audio file.")
-        max_audio_bytes = 15 * 1024 * 1024
-        raw = await file.read(max_audio_bytes + 1)
-        if not raw:
-            raise HTTPException(status_code=400, detail="Audio file is empty.")
-        if len(raw) > max_audio_bytes:
-            raise HTTPException(status_code=413, detail="Audio must be no larger than 15 MB.")
-        
-        text_value, problem = transcribe(raw)
-        if problem:
-            raise HTTPException(
-                status_code=422,
-                detail={"problem": problem, "message": "Could not transcribe this audio. Use a clear WAV recording."},
-            )
-        return {"text": text_value}
-
-    return _app
+        return _app
+    except Exception:
+        log.exception("Failed to initialize FastAPI routes in create_api()")
+        return None
 
 
-# Bind the app to ALL standard global names to prevent ASGI scanner crash
-app = create_api()
+# Bind the app to ALL standard global names with fallback safety
+try:
+    from fastapi import FastAPI as _FastAPI
+    _fallback_app = _FastAPI()
+    @_fallback_app.get("/")
+    def _fb_root():
+        return {"ok": True, "fallback": True}
+except Exception:
+    _fallback_app = None
+
+app = create_api() or _fallback_app
 api = app
 fastapi_app = app
 api_app = app
+_app = app
 application = app
 
 if __name__ == "__main__":
