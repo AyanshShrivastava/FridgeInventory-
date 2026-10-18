@@ -1495,8 +1495,8 @@ def create_api():
     except ImportError:
         return None
 
-    api_app = FastAPI(title="FridgeInventory API", version="1.0.0")
-    api_app.add_middleware(
+    _app = FastAPI(title="FridgeInventory API", version="1.0.0")
+    _app.add_middleware(
         CORSMiddleware,
         allow_origins=["*"],
         allow_credentials=True,
@@ -1510,8 +1510,8 @@ def create_api():
     class RescueRequest(BaseModel):
         items: list[str] = Field(min_length=1, max_length=30)
 
-    @api_app.get("/")
-    @api_app.get("/health")
+    @_app.get("/")
+    @_app.get("/health")
     def api_health():
         return {
             "ok": True,
@@ -1520,7 +1520,7 @@ def create_api():
             "firebase_configured": get_db() is not None,
         }
 
-    @api_app.post("/classify")
+    @_app.post("/classify")
     def api_classify(payload: ClassifyRequest):
         phrase = payload.item.strip()
         if not phrase:
@@ -1547,7 +1547,7 @@ def create_api():
             "shelf_life_days": None if needs_date else days,
         }
 
-    @api_app.post("/rescue")
+    @_app.post("/rescue")
     def api_rescue(payload: RescueRequest):
         names = [str(item).strip()[:100] for item in payload.items if str(item).strip()]
         if not names:
@@ -1562,7 +1562,7 @@ def create_api():
                 detail="Rescue recipe generation is temporarily unavailable.",
             ) from exc
 
-    @api_app.post("/transcribe")
+    @_app.post("/transcribe")
     async def api_transcribe(file: UploadFile = File(...)):
         if not file.filename or not file.filename.lower().endswith(".wav"):
             raise HTTPException(status_code=415, detail="Upload a WAV audio file.")
@@ -1581,13 +1581,15 @@ def create_api():
             )
         return {"text": text_value}
 
-    return api_app
+    return _app
 
 
-# Always expose the ASGI application under standard names so the runner finds it instantly
+# Bind the app to ALL standard global names to prevent ASGI scanner crash
 app = create_api()
-fastapi_app = app
 api = app
+fastapi_app = app
+api_app = app
+application = app
 
 if __name__ == "__main__":
     if API_MODE:
