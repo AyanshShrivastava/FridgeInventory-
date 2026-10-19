@@ -283,10 +283,19 @@ def init_firestore() -> Tuple[Optional[Any], str]:
 
 _gemini_client: Optional[Any] = None
 
-_primary_model = os.getenv("GEMINI_MODEL", "gemini-3.5-flash")
+def normalize_gemini_model_name(name: str) -> str:
+    """Convert colloquial model names (e.g. '3.5 flash lite') to official Gemini API identifiers."""
+    cleaned = name.strip().lower().replace(" ", "-").replace("_", "-")
+    if not cleaned.startswith("gemini-"):
+        cleaned = f"gemini-{cleaned}"
+    return cleaned
+
+_primary_model = os.getenv("GEMINI_MODEL", "gemini-3.5-flash-lite")
 GEMINI_MODELS = list(dict.fromkeys([
-    _primary_model,
+    normalize_gemini_model_name(_primary_model),
+    "gemini-3.5-flash-lite",
     "gemini-3.5-flash",
+    "gemini-3.6-flash-lite",
     "gemini-3.6-flash",
     "gemini-3.7-flash",
     "gemini-3.8-flash",
@@ -422,74 +431,73 @@ class AuthCreateRequest(BaseModel):
 
 
 # ============================================================================
-# 6. STORAGE & MULTI-TENANT FRIDGE SESSIONS
+# 6. STORAGE & MULTI-TENANT FRIDGE SESSIONS (ENHANCED COOKIE SECURITY)
 # ============================================================================
 
 _IN_MEMORY_FRIDGES: Dict[str, dict] = {}
 _IN_MEMORY_SESSIONS: Dict[str, dict] = {}
 _IN_MEMORY_INVENTORIES: Dict[str, Dict[str, dict]] = {}
 
-def _seed_demo_fridge():
-    """Seed a default demo fridge ('myfridge' with PIN '1234') in local memory."""
-    demo_fid = "myfridge"
-    salt = secrets.token_hex(16)
-    _IN_MEMORY_FRIDGES[demo_fid] = {
-        "pin_salt": salt,
-        "pin_hash": hash_pin("1234", salt),
-        "created_at": datetime.now(timezone.utc).isoformat(),
-    }
-    
-    now = datetime.now(IST).date()
-    _IN_MEMORY_INVENTORIES[demo_fid] = {
-        "demo-1": {
-            "id": "demo-1",
-            "name_en": "Fresh Paneer",
-            "name_hi": "ताज़ा पनीर",
-            "category": "dairy",
-            "added_date": (now - timedelta(days=2)).isoformat(),
-            "expiry_date": (now + timedelta(days=1)).isoformat(),
-            "requires_expiry_date": False,
-            "storage_tip": "Keep immersed in cold water inside an airtight container; change water daily.",
-        },
-        "demo-2": {
-            "id": "demo-2",
-            "name_en": "Spinach (Palak)",
-            "name_hi": "पालक",
-            "category": "vegetable",
-            "added_date": (now - timedelta(days=1)).isoformat(),
-            "expiry_date": (now + timedelta(days=2)).isoformat(),
-            "requires_expiry_date": False,
-            "storage_tip": "Wrap in a dry paper towel or cotton bag. Do not wash until ready to cook.",
-        },
-        "demo-3": {
-            "id": "demo-3",
-            "name_en": "Tomatoes",
-            "name_hi": "टमाटर",
-            "category": "vegetable",
-            "added_date": (now - timedelta(days=1)).isoformat(),
-            "expiry_date": (now + timedelta(days=5)).isoformat(),
-            "requires_expiry_date": False,
-            "storage_tip": "Store at cool room temperature stem-down, or refrigerate if fully ripe.",
-        },
-        "demo-4": {
-            "id": "demo-4",
-            "name_en": "Lays Chips",
-            "name_hi": "लेज चिप्स",
-            "category": "snack_bakery",
-            "added_date": (now - timedelta(days=3)).isoformat(),
-            "expiry_date": (now + timedelta(days=45)).isoformat(),
-            "requires_expiry_date": True,
-            "storage_tip": "Seal packet tightly with a clip to prevent moisture absorption.",
-        },
-    }
+SESSION_SECRET = os.getenv(
+    "SESSION_SECRET",
+    "FridgeInventory_Secret_Session_Signer_v2_2026"
+)
 
-_seed_demo_fridge()
+def sign_session_token(token: str) -> str:
+    """Sign token with HMAC-SHA256 to prevent cookie tampering."""
+    sig = hmac.new(SESSION_SECRET.encode("utf-8"), token.encode("utf-8"), hashlib.sha256).hexdigest()[:32]
+    return f"{token}.{sig}"
 
+def verify_and_extract_token(cookie_or_header: Optional[str]) -> Optional[str]:
+    """Verify HMAC signature or extract raw token safely."""
+    if not cookie_or_header:
+        return None
+    val = cookie_or_header.strip()
+    if val.startswith("Bearer "):
+        val = val[7:].strip()
+    if not val:
+        return None
 
-def get_current_fridge_id(request: Request) -> Optional[str]:
-    """Retrieve fridge_id from session cookie or Authorization header."""
-    token = request.cookies.get(SESSION_COOKIE_NAME)
-    if not token or len(token) < 20:
+    # Verify signed token format 'raw_token.signature'
+    if "." in val:
+        parts = val.split(".", 1)
+        raw_token, provided_sig = parts[0], parts[1]
+        expected_sig = hmac.new(SESSION_SECRET.encode("utf-8"), raw_token.encode("utf-8"), hashlib.sha256).hexdigest()[:32]
+        if hmac.compare_digest(expected_sig, provided_sig):
+            return raw_token
+        return None
+
+    # Direct raw token support (for legacy sessions or API headers)
+    if len(val) >= 20:
+        return val
+
+    return None
+
+def set_session_cookie(response: Response, request: Request, raw_token: str):
+    """Set 30-day signed persistent session cookie with secure transport detection."""
+    signed_value = sign_session_token(raw_token)
+    is_https = (
+        request.url.scheme == "https"
+        or request.headers.get("x-forwarded-proto") == "https"
+        or request.headers.get("x-forwarded-ssl") == "on"
+    )
+    response.set_cookie(
+        key=SESSION_COOKIE_NAME,
+        value=signed_value,
+        max_age=SESSION_DAYS * 86400,
+        httponly=True,
+        samesite="lax",
+        secure=is_https,
+        path="/",
+    )
+
+def get_current_session_data(request: Request) -> Optional[dict]:
+    """Retrieve full session dict from signed cookie or Authorization headers."""
+    cookie_val = request.cookies.get(SESSION_COOKIE_NAME)
+    auth_header = request.headers.get("Authorization") or request.headers.get("X-Fridge-Session")
+
+    token = verify_and_extract_token(cookie_val) or verify_and_extract_token(auth_header)
+    if not token:
         return None
 
     token_hash = _session_token_hash(token)
@@ -509,7 +517,13 @@ def get_current_fridge_id(request: Request) -> Optional[str]:
                         expires_at = expires_at.replace(tzinfo=timezone.utc)
                     if expires_at <= now_utc:
                         return None
-                return data.get("fridge_id")
+                fid = data.get("fridge_id")
+                if fid:
+                    return {
+                        "fridge_id": fid,
+                        "pin": data.get("pin", ""),
+                        "token": token,
+                    }
         except Exception as exc:
             logger.error(f"Error checking Firestore session: {exc}")
 
@@ -519,13 +533,27 @@ def get_current_fridge_id(request: Request) -> Optional[str]:
             return None
         if sess.get("expires_at") and sess["expires_at"] <= now_utc:
             return None
-        return sess.get("fridge_id")
+        fid = sess.get("fridge_id")
+        if fid:
+            return {
+                "fridge_id": fid,
+                "pin": sess.get("pin", ""),
+                "token": token,
+            }
 
     return None
 
+def get_current_fridge_id(request: Request) -> Optional[str]:
+    """Retrieve verified fridge_id from current active session."""
+    sess = get_current_session_data(request)
+    return sess.get("fridge_id") if sess else None
 
-def get_fridge_inventory(fridge_id: str) -> List[InventoryItem]:
+
+def get_fridge_inventory(fridge_id: Optional[str]) -> List[InventoryItem]:
     """Retrieve all inventory items belonging to a specific fridge."""
+    if not fridge_id:
+        return []
+
     db, _ = init_firestore()
     today = datetime.now(IST).date()
     items = []
@@ -546,7 +574,8 @@ def get_fridge_inventory(fridge_id: str) -> List[InventoryItem]:
     results: List[InventoryItem] = []
     for item in items:
         try:
-            exp_date = datetime.strptime(item["expiry_date"], "%Y-%m-%d").date()
+            raw_exp = str(item.get("expiry_date", "")).strip()[:10]
+            exp_date = datetime.strptime(raw_exp, "%Y-%m-%d").date()
             days_left = (exp_date - today).days
         except Exception:
             days_left = 0
@@ -860,7 +889,7 @@ def generate_rescue_recipe(items: List[str]) -> RescueRecipe:
     primary = clean_items[0].title()
     all_items_str = ", ".join(clean_items)
     return RescueRecipe(
-        recipe_name=f"Homestyle Rasoi Masala Bhurji / Stir-Fry ({primary})",
+        recipe_name=f"Homestyle Kitchen Masala Bhurji / Stir-Fry ({primary})",
         recipe_name_hi=f"झटपट मसाला {primary} भुर्जी",
         prep_time_minutes=20,
         ingredients_used=clean_items,
@@ -920,12 +949,14 @@ def api_process_command(payload: CommandRequest, request: Request, fridge: Optio
     if not raw_cmd:
         raise HTTPException(status_code=400, detail="Command cannot be empty.")
 
-    fid = get_current_fridge_id(request) or (fridge.strip().lower() if fridge else "myfridge")
-    inv = get_fridge_inventory(fid)
+    fid = get_current_fridge_id(request) or (fridge.strip().lower() if fridge else None)
+    inv = get_fridge_inventory(fid) if fid else []
     cmd_lower = raw_cmd.lower()
 
     # 1. Clear check
     if any(p in cmd_lower for p in CLEAR_PHRASES):
+        if not fid:
+            raise HTTPException(status_code=401, detail="Please login to your fridge to manage items.")
         for item in inv:
             remove_fridge_inventory_item(fid, item.id)
         return {
@@ -1018,16 +1049,26 @@ def api_process_command(payload: CommandRequest, request: Request, fridge: Optio
 
 @app.get("/api/auth/me", summary="Check current fridge authentication status")
 def api_auth_me(request: Request):
-    """Inspects cookie to verify whether user is logged into a family fridge."""
-    fid = get_current_fridge_id(request)
-    if fid:
-        return {"authenticated": True, "fridge_id": fid}
-    return {"authenticated": False, "fridge_id": None}
+    """Inspects cookie or header to verify whether user is logged into a family fridge."""
+    sess = get_current_session_data(request)
+    if sess and sess.get("fridge_id"):
+        return {
+            "authenticated": True,
+            "fridge_id": sess["fridge_id"],
+            "fridge_name": sess["fridge_id"],
+            "pin": sess.get("pin", ""),
+        }
+    return {
+        "authenticated": False,
+        "fridge_id": None,
+        "fridge_name": None,
+        "pin": "",
+    }
 
 
 @app.post("/api/auth/login", summary="Login to existing family fridge")
-def api_auth_login(payload: AuthLoginRequest, response: Response):
-    """Authenticate with Fridge ID and PIN; sets 30-day persistent cookie."""
+def api_auth_login(payload: AuthLoginRequest, request: Request, response: Response):
+    """Authenticate with Fridge ID and PIN; sets 30-day cryptographically signed cookie."""
     fid = payload.fridge_id.strip().lower()
     pin = payload.pin.strip()
 
@@ -1060,7 +1101,7 @@ def api_auth_login(payload: AuthLoginRequest, response: Response):
             raise HTTPException(status_code=500, detail="Database error during login.")
     else:
         if fid not in _IN_MEMORY_FRIDGES:
-            raise HTTPException(status_code=404, detail=f"Fridge '{fid}' not found in local memory.")
+            raise HTTPException(status_code=404, detail=f"Fridge '{fid}' not found. Please create a new fridge.")
         fdata = _IN_MEMORY_FRIDGES[fid]
         authenticated = hmac.compare_digest(fdata["pin_hash"], hash_pin(pin, fdata["pin_salt"]))
 
@@ -1071,34 +1112,35 @@ def api_auth_login(payload: AuthLoginRequest, response: Response):
     token_hash = _session_token_hash(token)
     expires_at = datetime.now(timezone.utc) + timedelta(days=SESSION_DAYS)
 
+    session_data = {
+        "fridge_id": fid,
+        "pin": pin,
+        "created_at": firestore.SERVER_TIMESTAMP if db is not None else datetime.now(timezone.utc).isoformat(),
+        "expires_at": expires_at,
+        "revoked": False,
+    }
+
     if db is not None:
         try:
-            db.collection("fridge_sessions").document(token_hash).set({
-                "fridge_id": fid,
-                "created_at": firestore.SERVER_TIMESTAMP,
-                "expires_at": expires_at,
-                "revoked": False,
-            })
+            db.collection("fridge_sessions").document(token_hash).set(session_data)
         except Exception as exc:
             logger.error(f"Failed to record session in Firestore: {exc}")
-            _IN_MEMORY_SESSIONS[token_hash] = {"fridge_id": fid, "expires_at": expires_at, "revoked": False}
+            _IN_MEMORY_SESSIONS[token_hash] = session_data
     else:
-        _IN_MEMORY_SESSIONS[token_hash] = {"fridge_id": fid, "expires_at": expires_at, "revoked": False}
+        _IN_MEMORY_SESSIONS[token_hash] = session_data
 
-    response.set_cookie(
-        key=SESSION_COOKIE_NAME,
-        value=token,
-        max_age=SESSION_DAYS * 86400,
-        httponly=True,
-        samesite="lax",
-        path="/",
-    )
-    return {"ok": True, "fridge_id": fid, "message": f"Successfully logged into fridge '{fid}'."}
+    set_session_cookie(response, request, token)
+    return {
+        "ok": True,
+        "fridge_id": fid,
+        "pin": pin,
+        "message": f"Successfully logged into fridge '{fid}'."
+    }
 
 
 @app.post("/api/auth/create", summary="Create a new family fridge")
-def api_auth_create(payload: AuthCreateRequest, response: Response):
-    """Creates a new fridge entry with a hashed family PIN and sets session cookie."""
+def api_auth_create(payload: AuthCreateRequest, request: Request, response: Response):
+    """Creates a new fridge entry with a hashed family PIN and sets signed session cookie."""
     fid = payload.fridge_id.strip().lower()
     pin = payload.pin.strip()
 
@@ -1107,7 +1149,7 @@ def api_auth_create(payload: AuthCreateRequest, response: Response):
     if not FRIDGE_RE.fullmatch(fid):
         raise HTTPException(
             status_code=422,
-            detail="Fridge ID must be 3-30 lowercase characters (letters, numbers, hyphens, underscores). Example: 'sharma-rasoi'.",
+            detail="Fridge ID must be 3-30 lowercase characters (letters, numbers, hyphens, underscores). Example: 'sharma-kitchen'.",
         )
     if len(pin) < 4:
         raise HTTPException(status_code=422, detail="PIN must be at least 4 digits long for security.")
@@ -1140,35 +1182,39 @@ def api_auth_create(payload: AuthCreateRequest, response: Response):
     token_hash = _session_token_hash(token)
     expires_at = datetime.now(timezone.utc) + timedelta(days=SESSION_DAYS)
 
+    session_data = {
+        "fridge_id": fid,
+        "pin": pin,
+        "created_at": firestore.SERVER_TIMESTAMP if db is not None else datetime.now(timezone.utc).isoformat(),
+        "expires_at": expires_at,
+        "revoked": False,
+    }
+
     if db is not None:
         try:
-            db.collection("fridge_sessions").document(token_hash).set({
-                "fridge_id": fid,
-                "created_at": firestore.SERVER_TIMESTAMP,
-                "expires_at": expires_at,
-                "revoked": False,
-            })
+            db.collection("fridge_sessions").document(token_hash).set(session_data)
         except Exception as exc:
             logger.error(f"Failed to record session in Firestore: {exc}")
-            _IN_MEMORY_SESSIONS[token_hash] = {"fridge_id": fid, "expires_at": expires_at, "revoked": False}
+            _IN_MEMORY_SESSIONS[token_hash] = session_data
     else:
-        _IN_MEMORY_SESSIONS[token_hash] = {"fridge_id": fid, "expires_at": expires_at, "revoked": False}
+        _IN_MEMORY_SESSIONS[token_hash] = session_data
 
-    response.set_cookie(
-        key=SESSION_COOKIE_NAME,
-        value=token,
-        max_age=SESSION_DAYS * 86400,
-        httponly=True,
-        samesite="lax",
-        path="/",
-    )
-    return {"ok": True, "fridge_id": fid, "message": f"Fridge '{fid}' successfully created!"}
+    set_session_cookie(response, request, token)
+    return {
+        "ok": True,
+        "fridge_id": fid,
+        "pin": pin,
+        "message": f"Fridge '{fid}' successfully created!"
+    }
 
 
 @app.post("/api/auth/logout", summary="Logout and revoke browser session")
 def api_auth_logout(request: Request, response: Response):
     """Revokes session and deletes the session cookie."""
-    token = request.cookies.get(SESSION_COOKIE_NAME)
+    cookie_val = request.cookies.get(SESSION_COOKIE_NAME)
+    auth_header = request.headers.get("Authorization") or request.headers.get("X-Fridge-Session")
+    token = verify_and_extract_token(cookie_val) or verify_and_extract_token(auth_header)
+
     if token:
         token_hash = _session_token_hash(token)
         db, _ = init_firestore()
@@ -1232,21 +1278,27 @@ def api_rescue(payload: RescueRequest):
 @app.get("/api/inventory", response_model=List[InventoryItem], summary="Get All Inventory Items")
 def api_get_inventory(request: Request, fridge: Optional[str] = None):
     """Retrieve all tracked items for the active fridge."""
-    fid = get_current_fridge_id(request) or (fridge.strip().lower() if fridge else "myfridge")
+    fid = get_current_fridge_id(request) or (fridge.strip().lower() if fridge else None)
+    if not fid:
+        return []
     return get_fridge_inventory(fid)
 
 
 @app.post("/api/inventory", response_model=InventoryItem, summary="Add Item to Inventory")
 def api_add_inventory(item: InventoryItemCreate, request: Request, fridge: Optional[str] = None):
     """Add a verified food item into the active fridge inventory."""
-    fid = get_current_fridge_id(request) or (fridge.strip().lower() if fridge else "myfridge")
+    fid = get_current_fridge_id(request) or (fridge.strip().lower() if fridge else None)
+    if not fid:
+        raise HTTPException(status_code=401, detail="Please login to your fridge to add items.")
     return save_fridge_inventory_item(fid, item)
 
 
 @app.delete("/api/inventory/{item_id}", summary="Delete / Consume Inventory Item")
 def api_delete_inventory(item_id: str, request: Request, fridge: Optional[str] = None):
     """Remove an item from the active fridge inventory."""
-    fid = get_current_fridge_id(request) or (fridge.strip().lower() if fridge else "myfridge")
+    fid = get_current_fridge_id(request) or (fridge.strip().lower() if fridge else None)
+    if not fid:
+        raise HTTPException(status_code=401, detail="Please login to your fridge to delete items.")
     removed = remove_fridge_inventory_item(fid, item_id)
     if not removed:
         raise HTTPException(status_code=404, detail=f"Item {item_id} not found.")
@@ -1284,7 +1336,8 @@ HTML_CONTENT = """<!DOCTYPE html>
         }
       }
     };
-    if (localStorage.getItem('rasoi_theme') === 'dark' || (!('rasoi_theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+    const savedTheme = localStorage.getItem('fi_theme') || localStorage.getItem('rasoi_theme');
+    if (savedTheme === 'dark' || (!savedTheme && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
       document.documentElement.classList.add('dark');
     } else {
       document.documentElement.classList.remove('dark');
@@ -1397,14 +1450,79 @@ HTML_CONTENT = """<!DOCTYPE html>
         </button>
       </div>
 
-      <!-- Demo Credentials Helper -->
-      <p class="text-xs text-stone-400 dark:text-stone-500 pt-1" data-i18n="bubble_demo_hint">
-        Demo Access: Fridge ID: <strong class="text-brand-600 dark:text-brand-400">myfridge</strong> | PIN: <strong class="text-brand-600 dark:text-brand-400">1234</strong>
-      </p>
     </div>
 
     <!-- MAIN APP DASHBOARD (SHOWN ONLY WHEN LOGGED IN) -->
-    <div id="app-dashboard" class="space-y-6 hidden">
+    <div id="app-dashboard" class="hidden">
+      <div class="flex flex-col lg:flex-row gap-6 items-start">
+
+        <!-- SLEEK FRIDGE CREDENTIALS & CONTROL SIDEBAR -->
+        <aside id="fridge-sidebar" class="w-full lg:w-72 shrink-0 bg-white dark:bg-stone-900 rounded-3xl p-5 border border-stone-200/80 dark:border-stone-800 shadow-sm space-y-4 lg:sticky lg:top-20 transition-all">
+          
+          <!-- Fridge Profile & Active Badge -->
+          <div class="flex items-center justify-between border-b border-stone-100 dark:border-stone-800 pb-3">
+            <div class="flex items-center gap-2.5">
+              <div class="w-9 h-9 rounded-xl bg-gradient-to-tr from-brand-600 to-amber-500 flex items-center justify-center text-white shadow-sm">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path></svg>
+              </div>
+              <div>
+                <h3 class="font-bold text-sm text-stone-900 dark:text-white" data-i18n="sidebar_title">Fridge Space</h3>
+                <span class="inline-flex items-center gap-1 text-[11px] font-semibold text-leaf-600 dark:text-leaf-400">
+                  <span class="w-1.5 h-1.5 rounded-full bg-leaf-500 animate-pulse"></span>
+                  <span data-i18n="sidebar_connected">Active & Connected</span>
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Fridge Name / ID Box -->
+          <div class="p-3 bg-stone-50 dark:bg-stone-800/80 rounded-2xl border border-stone-200/70 dark:border-stone-700/60 space-y-1">
+            <div class="flex items-center justify-between text-[11px] font-semibold text-stone-500 dark:text-stone-400">
+              <span data-i18n="sidebar_fid_label">Fridge Name</span>
+              <button type="button" id="copy-fid-btn" class="hover:text-brand-600 dark:hover:text-brand-400 transition" title="Copy Fridge ID">
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>
+              </button>
+            </div>
+            <div id="sidebar-fridge-name" class="font-mono font-bold text-sm text-stone-900 dark:text-white break-all">
+              --
+            </div>
+          </div>
+
+          <!-- Fridge Password / PIN Box -->
+          <div class="p-3 bg-stone-50 dark:bg-stone-800/80 rounded-2xl border border-stone-200/70 dark:border-stone-700/60 space-y-1">
+            <div class="flex items-center justify-between text-[11px] font-semibold text-stone-500 dark:text-stone-400">
+              <span data-i18n="sidebar_pin_label">Fridge Password / PIN</span>
+              <div class="flex items-center gap-1.5">
+                <button type="button" id="toggle-pin-btn" class="hover:text-brand-600 dark:hover:text-brand-400 transition" title="Show / Hide PIN">
+                  <svg id="pin-eye-icon" class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path></svg>
+                </button>
+                <button type="button" id="copy-pin-btn" class="hover:text-brand-600 dark:hover:text-brand-400 transition" title="Copy PIN">
+                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>
+                </button>
+              </div>
+            </div>
+            <div id="sidebar-fridge-pin" class="font-mono font-bold text-sm tracking-widest text-brand-600 dark:text-brand-400">
+              ••••
+            </div>
+          </div>
+
+          <!-- Share Fridge Invite Button -->
+          <button type="button" id="share-fridge-btn" class="w-full py-2 px-3 rounded-xl border border-stone-200 dark:border-stone-700 hover:bg-stone-50 dark:hover:bg-stone-800 text-stone-700 dark:text-stone-300 font-medium text-xs flex items-center justify-center gap-1.5 transition">
+            <svg class="w-3.5 h-3.5 text-stone-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"></path></svg>
+            <span data-i18n="sidebar_share_btn">Share with Family</span>
+          </button>
+
+          <!-- Sidebar Logout Button -->
+          <div class="pt-2 border-t border-stone-100 dark:border-stone-800">
+            <button type="button" id="sidebar-logout-btn" class="w-full py-2.5 px-3 rounded-xl bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 dark:hover:bg-rose-900/50 text-rose-600 dark:text-rose-300 font-bold text-xs flex items-center justify-center gap-1.5 border border-rose-200 dark:border-rose-900 shadow-sm transition">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"></path></svg>
+              <span data-i18n="sidebar_logout_btn">Logout from Fridge</span>
+            </button>
+          </div>
+        </aside>
+
+        <!-- MAIN DASHBOARD CONTENT (RIGHT COLUMN) -->
+        <div class="flex-1 w-full space-y-6 min-w-0">
 
       <!-- METRIC STATS STRIP -->
       <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
@@ -1549,13 +1667,13 @@ HTML_CONTENT = """<!DOCTYPE html>
       </div>
     </section>
 
-    <!-- TAB 2: RASOI RESCUE RECIPE SECTION -->
+    <!-- TAB 2: ZERO-WASTE RESCUE RECIPE SECTION -->
     <section id="section-rescue" class="tab-section hidden space-y-6">
       <div class="bg-white dark:bg-stone-900 rounded-3xl p-6 border border-stone-200/80 dark:border-stone-800 shadow-sm transition-colors">
         <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-stone-100 dark:border-stone-800 pb-5">
           <div>
             <h2 class="text-lg font-bold text-stone-900 dark:text-white flex items-center gap-2">
-              <span data-i18n="rescue_title">Rasoi Rescue Chef</span>
+              <span data-i18n="rescue_title">Zero-Waste Rescue Chef</span>
             </h2>
             <p class="text-xs text-stone-500 dark:text-stone-400 mt-1" data-i18n="rescue_desc">
               Select expiring ingredients from your fridge or specify custom leftovers to create an authentic Indian home dish.
@@ -1675,6 +1793,8 @@ HTML_CONTENT = """<!DOCTYPE html>
       </div>
     </section>
 
+        </div> <!-- End of flex-1 main dashboard column -->
+      </div> <!-- End of flex row -->
     </div> <!-- End of #app-dashboard -->
 
   </main>
@@ -1703,7 +1823,7 @@ HTML_CONTENT = """<!DOCTYPE html>
           <input 
             type="text" 
             id="login-fid" 
-            placeholder="e.g. sharma-rasoi or myfridge" 
+            placeholder="e.g. sharma-kitchen or my-fridge" 
             class="w-full px-4 py-2.5 rounded-xl border border-stone-200 dark:border-stone-700 bg-stone-50 dark:bg-stone-800 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
             required
           />
@@ -1721,9 +1841,6 @@ HTML_CONTENT = """<!DOCTYPE html>
         <button type="submit" class="w-full py-2.5 bg-brand-600 hover:bg-brand-700 text-white font-semibold rounded-xl text-sm shadow transition" data-i18n="auth_login_submit">
           Open Fridge
         </button>
-        <p class="text-[11px] text-stone-500 dark:text-stone-400 text-center">
-          Demo: <b class="text-brand-600">myfridge</b> | PIN: <b class="text-brand-600">1234</b>
-        </p>
       </form>
 
       <!-- FORM: CREATE NEW FRIDGE -->
@@ -1759,7 +1876,7 @@ HTML_CONTENT = """<!DOCTYPE html>
   <div id="classify-modal" class="fixed inset-0 bg-stone-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
     <div class="bg-white dark:bg-stone-900 rounded-3xl max-w-md w-full p-6 shadow-2xl border border-stone-100 dark:border-stone-800 text-stone-800 dark:text-stone-100">
       <div class="flex items-center justify-between border-b border-stone-100 dark:border-stone-800 pb-3">
-        <h3 class="font-bold text-base" data-i18n="modal_confirm_title">Confirm Rasoi Entry</h3>
+        <h3 class="font-bold text-base" data-i18n="modal_confirm_title">Confirm Fridge Entry</h3>
         <button id="close-modal-btn" class="text-stone-400 hover:text-stone-600 text-xl font-bold">&times;</button>
       </div>
 
@@ -1813,7 +1930,7 @@ HTML_CONTENT = """<!DOCTYPE html>
     let inventory = [];
     let currentFilter = 'all';
     let currentFridge = null;
-    let currentLang = localStorage.getItem('rasoi_lang') || 'en';
+    let currentLang = localStorage.getItem('fi_lang') || localStorage.getItem('rasoi_lang') || 'en';
     let selectedItemsForRescue = new Set();
     let pendingModalItem = null;
 
@@ -1825,11 +1942,16 @@ HTML_CONTENT = """<!DOCTYPE html>
         lang_btn: "हिन्दी",
         logout_btn: "Logout",
         login_create_btn: "Login",
+        sidebar_title: "Fridge Space",
+        sidebar_connected: "Active & Connected",
+        sidebar_fid_label: "Fridge Name",
+        sidebar_pin_label: "Family PIN / Password",
+        sidebar_share_btn: "Share with Family",
+        sidebar_logout_btn: "Logout from Fridge",
         bubble_title: "Welcome to FridgeInventory",
         bubble_desc: "Your smart household kitchen companion for effortless inventory tracking, expiry prevention, and AI-powered zero-waste cooking.",
         bubble_login_btn: "Login to Fridge",
         bubble_create_btn: "Create a New Fridge",
-        bubble_demo_hint: "Demo Access: Fridge ID: myfridge | PIN: 1234",
         feat_track_title: "Smart Food Tracking",
         feat_track_desc: "Keep real-time tabs on fresh produce, dairy, groceries, and cooked meals.",
         feat_expiry_title: "Expiry Prevention",
@@ -1890,11 +2012,16 @@ HTML_CONTENT = """<!DOCTYPE html>
         lang_btn: "English",
         logout_btn: "लॉगआउट",
         login_create_btn: "लॉग इन",
+        sidebar_title: "फ्रिज स्पेस",
+        sidebar_connected: "सक्रिय और कनेक्टेड",
+        sidebar_fid_label: "फ्रिज का नाम",
+        sidebar_pin_label: "फैमिली PIN / पासवर्ड",
+        sidebar_share_btn: "परिवार के साथ शेयर करें",
+        sidebar_logout_btn: "फ्रिज से लॉगआउट करें",
         bubble_title: "FridgeInventory में आपका स्वागत है",
         bubble_desc: "इन्वेंटरी ट्रैकिंग, एक्सपायरी अलर्ट और ज़ीरो-वेस्ट कुकिंग के लिए आपका स्मार्ट साथी।",
         bubble_login_btn: "फ्रिज में लॉग इन करें",
         bubble_create_btn: "नया फ्रिज बनाएँ",
-        bubble_demo_hint: "डेमो एक्सेस: फ्रिज ID: myfridge | पिन: 1234",
         feat_track_title: "स्मार्ट फूड ट्रैकिंग",
         feat_track_desc: "ताज़ी सब्ज़ियों, डेयरी और किराना सामान पर नज़र रखें।",
         feat_expiry_title: "एक्सपायरी अलर्ट",
@@ -1953,6 +2080,7 @@ HTML_CONTENT = """<!DOCTYPE html>
 
     function applyLanguage(lang) {
       currentLang = lang;
+      localStorage.setItem('fi_lang', lang);
       localStorage.setItem('rasoi_lang', lang);
       const texts = i18n[lang] || i18n.en;
 
@@ -1980,9 +2108,11 @@ HTML_CONTENT = """<!DOCTYPE html>
     function toggleTheme() {
       if (document.documentElement.classList.contains('dark')) {
         document.documentElement.classList.remove('dark');
+        localStorage.setItem('fi_theme', 'light');
         localStorage.setItem('rasoi_theme', 'light');
       } else {
         document.documentElement.classList.add('dark');
+        localStorage.setItem('fi_theme', 'dark');
         localStorage.setItem('rasoi_theme', 'dark');
       }
       initTheme();
@@ -2007,13 +2137,16 @@ HTML_CONTENT = """<!DOCTYPE html>
       }, 3500);
     }
 
-    // Auth & Fridge Management
+    // Auth & Fridge Management (with Sidebar state)
+    let currentFridgePin = '';
+    let pinRevealed = false;
+
     async function checkAuth() {
       try {
         const res = await fetch('/api/auth/me');
         const data = await res.json();
         if (data.authenticated && data.fridge_id) {
-          setAuthenticatedState(data.fridge_id);
+          setAuthenticatedState(data.fridge_id, data.pin);
         } else {
           setLoggedOutState();
         }
@@ -2022,11 +2155,22 @@ HTML_CONTENT = """<!DOCTYPE html>
       }
     }
 
-    function setAuthenticatedState(fid) {
+    function setAuthenticatedState(fid, pin) {
       currentFridge = fid;
+      if (pin) currentFridgePin = pin;
+      else if (!currentFridgePin) currentFridgePin = localStorage.getItem('fi_last_pin_' + fid) || '';
+      if (fid && currentFridgePin) {
+        try { localStorage.setItem('fi_last_pin_' + fid, currentFridgePin); } catch(e){}
+      }
+
       document.getElementById('auth-logged-in').classList.remove('hidden');
       document.getElementById('auth-logged-out').classList.add('hidden');
       document.getElementById('header-fridge-name').textContent = fid.toUpperCase();
+
+      const sFid = document.getElementById('sidebar-fridge-name');
+      if (sFid) sFid.textContent = fid;
+      updateSidebarPinDisplay();
+
       document.getElementById('logged-out-bubble').classList.add('hidden');
       document.getElementById('app-dashboard').classList.remove('hidden');
       loadInventory();
@@ -2034,11 +2178,77 @@ HTML_CONTENT = """<!DOCTYPE html>
 
     function setLoggedOutState() {
       currentFridge = null;
+      currentFridgePin = '';
+      pinRevealed = false;
       document.getElementById('auth-logged-in').classList.add('hidden');
       document.getElementById('auth-logged-out').classList.remove('hidden');
       document.getElementById('logged-out-bubble').classList.remove('hidden');
       document.getElementById('app-dashboard').classList.add('hidden');
       inventory = [];
+    }
+
+    function updateSidebarPinDisplay() {
+      const pinEl = document.getElementById('sidebar-fridge-pin');
+      const eyeIcon = document.getElementById('pin-eye-icon');
+      if (!pinEl) return;
+      if (!currentFridgePin) {
+        pinEl.textContent = '••••';
+        return;
+      }
+      if (pinRevealed) {
+        pinEl.textContent = currentFridgePin;
+        if (eyeIcon) {
+          eyeIcon.innerHTML = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l18 18"></path>';
+        }
+      } else {
+        pinEl.textContent = '•'.repeat(Math.max(4, currentFridgePin.length));
+        if (eyeIcon) {
+          eyeIcon.innerHTML = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path>';
+        }
+      }
+    }
+
+    // Sidebar Interactive Controls
+    document.getElementById('toggle-pin-btn').addEventListener('click', () => {
+      pinRevealed = !pinRevealed;
+      updateSidebarPinDisplay();
+    });
+
+    document.getElementById('copy-pin-btn').addEventListener('click', () => {
+      if (currentFridgePin) {
+        navigator.clipboard.writeText(currentFridgePin).then(() => {
+          showToast(currentLang === 'hi' ? 'पिन कॉपी किया गया!' : 'PIN copied to clipboard!', 'success');
+        });
+      } else {
+        showToast(currentLang === 'hi' ? 'कोई पिन उपलब्ध नहीं' : 'No PIN available', 'warning');
+      }
+    });
+
+    document.getElementById('copy-fid-btn').addEventListener('click', () => {
+      if (currentFridge) {
+        navigator.clipboard.writeText(currentFridge).then(() => {
+          showToast(currentLang === 'hi' ? 'फ्रिज ID कॉपी किया गया!' : 'Fridge ID copied to clipboard!', 'success');
+        });
+      }
+    });
+
+    document.getElementById('share-fridge-btn').addEventListener('click', () => {
+      if (currentFridge) {
+        const text = `FridgeInventory Login Details:\nFridge ID: ${currentFridge}\nPIN / Password: ${currentFridgePin || '(Your Family PIN)'}\nURL: ${window.location.origin}`;
+        navigator.clipboard.writeText(text).then(() => {
+          showToast(currentLang === 'hi' ? 'फ्रिज विवरण शेयर करने के लिए कॉपी किया गया!' : 'Fridge details copied to share with family!', 'success');
+        });
+      }
+    });
+
+    async function handleLogout() {
+      try {
+        await fetch('/api/auth/logout', { method: 'POST' });
+      } catch (e) {
+        console.error('Logout error:', e);
+      }
+      setLoggedOutState();
+      showToast(currentLang === 'hi' ? 'लॉगआउट सफल। सामान्य पृष्ठ पर पुनः निर्देशित।' : 'Logged out. Redirected to welcome page.', 'info');
     }
 
     const authModal = document.getElementById('auth-modal');
@@ -2079,7 +2289,7 @@ HTML_CONTENT = """<!DOCTYPE html>
 
     loginForm.addEventListener('submit', async (e) => {
       e.preventDefault();
-      const fid = document.getElementById('login-fid').value.trim();
+      const fid = document.getElementById('login-fid').value.trim().toLowerCase();
       const pin = document.getElementById('login-pin').value.trim();
       try {
         const res = await fetch('/api/auth/login', {
@@ -2090,7 +2300,7 @@ HTML_CONTENT = """<!DOCTYPE html>
         const data = await res.json();
         if (!res.ok) throw new Error(data.detail || 'Login failed');
         authModal.classList.add('hidden');
-        setAuthenticatedState(data.fridge_id);
+        setAuthenticatedState(data.fridge_id, pin);
         showToast(data.message, 'success');
       } catch (err) {
         showToast(err.message, 'error');
@@ -2099,7 +2309,7 @@ HTML_CONTENT = """<!DOCTYPE html>
 
     createForm.addEventListener('submit', async (e) => {
       e.preventDefault();
-      const fid = document.getElementById('create-fid').value.trim();
+      const fid = document.getElementById('create-fid').value.trim().toLowerCase();
       const pin = document.getElementById('create-pin').value.trim();
       try {
         const res = await fetch('/api/auth/create', {
@@ -2110,22 +2320,15 @@ HTML_CONTENT = """<!DOCTYPE html>
         const data = await res.json();
         if (!res.ok) throw new Error(data.detail || 'Fridge creation failed');
         authModal.classList.add('hidden');
-        setAuthenticatedState(data.fridge_id);
+        setAuthenticatedState(data.fridge_id, pin);
         showToast(data.message, 'success');
       } catch (err) {
         showToast(err.message, 'error');
       }
     });
 
-    document.getElementById('logout-btn').addEventListener('click', async () => {
-      try {
-        await fetch('/api/auth/logout', { method: 'POST' });
-        setLoggedOutState();
-        showToast(currentLang === 'hi' ? 'लॉगआउट सफल' : 'Logged out', 'info');
-      } catch (e) {
-        setLoggedOutState();
-      }
-    });
+    document.getElementById('logout-btn').addEventListener('click', handleLogout);
+    document.getElementById('sidebar-logout-btn').addEventListener('click', handleLogout);
 
     // Load Inventory Items
     async function loadInventory() {
@@ -2486,7 +2689,7 @@ HTML_CONTENT = """<!DOCTYPE html>
       });
     });
 
-    // Rasoi Rescue Generation & Close Button
+    // Zero-Waste Rescue Generation & Close Button
     const generateRecipeBtn = document.getElementById('generate-recipe-btn');
     const rescueInput = document.getElementById('rescue-items-input');
     const recipeContainer = document.getElementById('recipe-container');
