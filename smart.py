@@ -283,13 +283,14 @@ def init_firestore() -> Tuple[Optional[Any], str]:
 
 _gemini_client: Optional[Any] = None
 
-GEMINI_MODELS = [
-    os.getenv("GEMINI_MODEL", "gemini-2.5-flash"),
-    "gemini-2.0-flash",
-    "gemini-1.5-flash",
-    "gemini-2.5-pro",
-    "gemini-3.5-flash-lite",
-]
+_primary_model = os.getenv("GEMINI_MODEL", "gemini-3.5-flash")
+GEMINI_MODELS = list(dict.fromkeys([
+    _primary_model,
+    "gemini-3.5-flash",
+    "gemini-3.6-flash",
+    "gemini-3.7-flash",
+    "gemini-3.8-flash",
+]))
 
 def get_gemini_client() -> Optional[Any]:
     """Retrieve or initialize singleton Google GenAI client."""
