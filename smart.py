@@ -20,7 +20,6 @@ Features:
 from __future__ import annotations
 
 import os
-import sys
 import json
 import logging
 import re
@@ -29,16 +28,34 @@ import secrets
 import hashlib
 import hmac
 import glob
-from datetime import date, datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone
 from enum import Enum
 from typing import Any, Dict, List, Optional, Tuple, Union
 
-# Set up Indian Standard Time (IST) timezone
+# Multi-Country Global Timezone Support
 try:
     from zoneinfo import ZoneInfo
-    IST = ZoneInfo("Asia/Kolkata")
-except Exception:
-    IST = timezone(timedelta(hours=5, minutes=30))
+except ImportError:
+    from backports.zoneinfo import ZoneInfo  # type: ignore[no-redef]
+
+DEFAULT_TIMEZONE = "UTC"
+
+def resolve_tz(tz_identifier: Optional[str] = None) -> Union[timezone, Any]:
+    """
+    Resolves any IANA timezone from anywhere in the world:
+    e.g. 'America/New_York', 'Europe/London', 'Asia/Tokyo', 'Europe/Paris',
+         'Asia/Dubai', 'Australia/Sydney', 'America/Los_Angeles', 'Asia/Kolkata', 'UTC'.
+    Falls back gracefully to UTC if unrecognized or invalid.
+    """
+    if tz_identifier:
+        clean = tz_identifier.strip()
+        try:
+            return ZoneInfo(clean)
+        except Exception:
+            pass
+    return timezone.utc
+
+IST = resolve_tz("Asia/Kolkata")
 
 # Configure production logging
 logging.basicConfig(
@@ -141,7 +158,7 @@ def detect_action(tokens: List[str]) -> str:
 
 from fastapi import FastAPI, HTTPException, Request, Response, status
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 import uvicorn
 
@@ -152,9 +169,9 @@ try:
     HAVE_FIREBASE = True
 except ImportError:
     HAVE_FIREBASE = False
-    firebase_admin = None
-    credentials = None
-    firestore = None
+    firebase_admin = None  # type: ignore[assignment]
+    credentials = None  # type: ignore[assignment]
+    firestore = None  # type: ignore[assignment]
     logger.warning("firebase-admin is not installed. To use Firestore, install 'firebase-admin'.")
 
 # Google GenAI SDK (google-genai)
@@ -164,8 +181,8 @@ try:
     HAVE_GENAI = True
 except ImportError:
     HAVE_GENAI = False
-    genai = None
-    types = None
+    genai = None  # type: ignore[assignment]
+    types = None  # type: ignore[assignment]
     logger.warning("google-genai is not installed. To use Gemini AI, install 'google-genai'.")
 
 # Web Push Notifications (pywebpush)
@@ -174,8 +191,8 @@ try:
     HAVE_WEBPUSH = True
 except ImportError:
     HAVE_WEBPUSH = False
-    webpush = None
-    WebPushException = Exception
+    webpush = None  # type: ignore[assignment]
+    WebPushException = Exception  # type: ignore[assignment,misc]
     logger.warning("pywebpush is not installed. Web push notifications disabled.")
 
 # Optional Local Database (database.py)
@@ -333,7 +350,7 @@ def get_gemini_client() -> Optional[Any]:
         logger.info("Google GenAI client successfully initialized.")
         return _gemini_client
     except Exception as exc:
-        logger.exception(f"Failed to initialize Google GenAI client: {exc}")
+        logger.error(f"Failed to initialize Google GenAI client: {exc}")
         return None
 
 
@@ -435,11 +452,13 @@ class InventoryItem(BaseModel):
 class AuthLoginRequest(BaseModel):
     fridge_id: str
     pin: str
+    timezone: Optional[str] = None
 
 
 class AuthCreateRequest(BaseModel):
     fridge_id: str
     pin: str
+    timezone: Optional[str] = None
 
 
 # ============================================================================
@@ -561,12 +580,12 @@ def get_current_fridge_id(request: Request) -> Optional[str]:
     return sess.get("fridge_id") if sess else None
 
 
-def update_fridge_time_and_inventory(fridge_id: Optional[str]) -> List[InventoryItem]:
+def update_fridge_time_and_inventory(fridge_id: Optional[str], tz_name: Optional[str] = None) -> List[InventoryItem]:
     """
     Core automated time-tracking & inventory freshness sync engine:
-    - Tracks current time in Indian Standard Time (IST).
-    - Updates fridge metadata (last_active_at, last_sync_date).
-    - For every stored food item, compares current date with the day it was added (added_date).
+    - Global multi-country support: calculates freshness in the fridge's local timezone.
+    - Updates fridge metadata (last_active_at, last_sync_date, timezone).
+    - For every stored food item, compares current local date with the day it was added (added_date).
     - Recomputes days_elapsed, days_left, is_expired, and is_expiring_soon.
     - Synchronizes any modified values back to Firestore and in-memory caches.
     """
@@ -574,9 +593,24 @@ def update_fridge_time_and_inventory(fridge_id: Optional[str]) -> List[Inventory
         return []
 
     db, _ = init_firestore()
-    now_ist = datetime.now(IST)
-    today = now_ist.date()
-    now_str = now_ist.strftime("%Y-%m-%d %H:%M:%S IST")
+
+    # Determine fridge timezone: parameter > Firestore doc > in-memory doc > UTC
+    active_tz_name = tz_name
+    if not active_tz_name and db is not None:
+        try:
+            fdoc = db.collection("fridges").document(fridge_id).get()
+            if fdoc.exists:
+                active_tz_name = (fdoc.to_dict() or {}).get("timezone")
+        except Exception:
+            pass
+    if not active_tz_name:
+        active_tz_name = _IN_MEMORY_FRIDGES.get(fridge_id, {}).get("timezone", "UTC")
+
+    tz = resolve_tz(active_tz_name)
+    now_local = datetime.now(tz)
+    today = now_local.date()
+    tz_code = now_local.tzname() or active_tz_name or "UTC"
+    now_str = now_local.strftime(f"%Y-%m-%d %H:%M:%S {tz_code}")
 
     # Update fridge metadata
     if db is not None:
@@ -584,9 +618,15 @@ def update_fridge_time_and_inventory(fridge_id: Optional[str]) -> List[Inventory
             db.collection("fridges").document(fridge_id).set({
                 "last_active_at": now_str,
                 "last_sync_date": today.isoformat(),
+                "timezone": active_tz_name,
             }, merge=True)
         except Exception as exc:
             logger.warning(f"Failed to update fridge sync metadata for {fridge_id}: {exc}")
+    else:
+        if fridge_id in _IN_MEMORY_FRIDGES:
+            _IN_MEMORY_FRIDGES[fridge_id]["last_active_at"] = now_str
+            _IN_MEMORY_FRIDGES[fridge_id]["last_sync_date"] = today.isoformat()
+            _IN_MEMORY_FRIDGES[fridge_id]["timezone"] = active_tz_name
 
     # Fetch inventory documents
     raw_items = []
@@ -689,6 +729,7 @@ def update_fridge_time_and_inventory(fridge_id: Optional[str]) -> List[Inventory
             batch.commit()
             logger.info(f"Persisted time-tracking expiry sync for {len(updates_to_persist)} items in {fridge_id}")
         except Exception as exc:
+            logger.warning(f"Batch update failed in {fridge_id}, attempting individual updates: {exc}")
             for d_id, u_fields in updates_to_persist.items():
                 try:
                     db.collection("fridges").document(fridge_id).collection("inventory").document(d_id).update(u_fields)
@@ -699,17 +740,35 @@ def update_fridge_time_and_inventory(fridge_id: Optional[str]) -> List[Inventory
     return results
 
 
-def get_fridge_inventory(fridge_id: Optional[str]) -> List[InventoryItem]:
+def get_fridge_inventory(fridge_id: Optional[str], tz_name: Optional[str] = None) -> List[InventoryItem]:
     """Retrieve and dynamically time-sync all inventory items belonging to a specific fridge."""
-    return update_fridge_time_and_inventory(fridge_id)
+    return update_fridge_time_and_inventory(fridge_id, tz_name=tz_name)
 
 
-def save_fridge_inventory_item(fridge_id: str, item_data: InventoryItemCreate) -> InventoryItem:
-    """Save an item to a specific fridge's inventory."""
+def save_fridge_inventory_item(fridge_id: str, item_data: InventoryItemCreate, client_tz: Optional[str] = None) -> InventoryItem:
+    """Save an item to a specific fridge's inventory using its local timezone."""
+    if not fridge_id:
+        raise ValueError("fridge_id cannot be empty")
+
     db, _ = init_firestore()
-    now_ist =  datetime.now(IST)
-    today = now_ist.date()
-    now_str = now_ist.strftime("%Y-%m-%d %H:%M:%S IST")
+
+    # Determine fridge timezone
+    active_tz_name = client_tz
+    if not active_tz_name and db is not None:
+        try:
+            fdoc = db.collection("fridges").document(fridge_id).get()
+            if fdoc.exists:
+                active_tz_name = (fdoc.to_dict() or {}).get("timezone")
+        except Exception:
+            pass
+    if not active_tz_name:
+        active_tz_name = _IN_MEMORY_FRIDGES.get(fridge_id, {}).get("timezone", "UTC")
+
+    tz = resolve_tz(active_tz_name)
+    now_local = datetime.now(tz)
+    today = now_local.date()
+    tz_code = now_local.tzname() or active_tz_name or "UTC"
+    now_str = now_local.strftime(f"%Y-%m-%d %H:%M:%S {tz_code}")
 
     if item_data.expiry_date:
         try:
@@ -755,17 +814,17 @@ def save_fridge_inventory_item(fridge_id: str, item_data: InventoryItemCreate) -
 
     return InventoryItem(
         id=doc_id,
-        name_en=payload["name_en"],
-        name_hi=payload["name_hi"],
-        category=payload["category"],
-        added_date=payload["added_date"],
-        expiry_date=payload["expiry_date"],
+        name_en=item_data.name_en.strip(),
+        name_hi=item_data.name_hi.strip(),
+        category=item_data.category.strip(),
+        added_date=today.isoformat(),
+        expiry_date=exp_date.isoformat(),
         days_left=days_left,
         days_elapsed=0,
         is_expired=days_left < 0,
         is_expiring_soon=(0 <= days_left <= 2),
-        requires_expiry_date=payload["requires_expiry_date"],
-        storage_tip=payload["storage_tip"],
+        requires_expiry_date=item_data.requires_expiry_date,
+        storage_tip=item_data.storage_tip.strip(),
         last_synced_at=now_str,
     )
 
@@ -773,6 +832,9 @@ def save_fridge_inventory_item(fridge_id: str, item_data: InventoryItemCreate) -
 
 def remove_fridge_inventory_item(fridge_id: str, item_id: str) -> bool:
     """Remove item from a specific fridge's inventory."""
+    if not fridge_id or not item_id:
+        return False
+
     db, _ = init_firestore()
     success = False
 
@@ -1073,7 +1135,6 @@ def _init_vapid_keys():
     # Auto-generate VAPID keys if not provided
     try:
         from cryptography.hazmat.primitives.asymmetric import ec
-        from cryptography.hazmat.primitives import serialization
         import base64
 
         private_key = ec.generate_private_key(ec.SECP256R1())
@@ -1091,7 +1152,7 @@ def _init_vapid_keys():
         _VAPID_PUBLIC_KEY = base64.urlsafe_b64encode(pub_bytes).rstrip(b'=').decode('ascii')
 
         logger.info(f"Auto-generated VAPID keys. Public key: {_VAPID_PUBLIC_KEY[:20]}...")
-        logger.info(f"Set VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY env vars in Render for persistence.")
+        logger.info("Set VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY env vars in Render for persistence.")
         logger.info(f"VAPID_PUBLIC_KEY={_VAPID_PUBLIC_KEY}")
         logger.info(f"VAPID_PRIVATE_KEY={_VAPID_PRIVATE_KEY}")
     except Exception as exc:
@@ -1156,14 +1217,23 @@ def _get_push_subscriptions_for_fridge(fridge_id: str) -> List[dict]:
         if sub_data.get("fridge_id") == fridge_id and sub_data.get("subscription"):
             subs.append(sub_data["subscription"])
 
-    return subs
+    # Deduplicate subscriptions by endpoint
+    seen_endpoints = set()
+    unique_subs = []
+    for s in subs:
+        endpoint = s.get("endpoint")
+        if endpoint and endpoint not in seen_endpoints:
+            seen_endpoints.add(endpoint)
+            unique_subs.append(s)
+    return unique_subs
 
 
-def _send_push_notification(subscription_info: dict, title: str, body: str, url: str = "/", tag: str = "fridge-alert"):
-    """Send a single Web Push notification."""
+def _send_push_notification(subscription_info: dict, title: str, body: str, url: str = "/", tag: str = "fridge-alert", tz_name: Optional[str] = None):
+    """Send a single Web Push notification with TTL buffering so offline devices receive it on reconnection."""
     if not HAVE_WEBPUSH or not _VAPID_PUBLIC_KEY or not _VAPID_PRIVATE_KEY:
         return False
 
+    tz = resolve_tz(tz_name)
     payload = json.dumps({
         "title": title,
         "body": body,
@@ -1171,7 +1241,7 @@ def _send_push_notification(subscription_info: dict, title: str, body: str, url:
         "badge": "/favicon.ico",
         "url": url,
         "tag": tag,
-        "timestamp": datetime.now(IST).strftime("%H:%M"),
+        "timestamp": datetime.now(tz).strftime("%H:%M"),
     })
 
     try:
@@ -1180,6 +1250,8 @@ def _send_push_notification(subscription_info: dict, title: str, body: str, url:
             data=payload,
             vapid_private_key=_VAPID_PRIVATE_KEY,
             vapid_claims={"sub": _VAPID_SUBJECT},
+            ttl=86400,
+            headers={"Urgency": "high"},
         )
         return True
     except WebPushException as exc:
@@ -1271,6 +1343,8 @@ def api_process_command(payload: CommandRequest, request: Request, fridge: Optio
                     break
 
         if matched_item:
+            if not fid:
+                raise HTTPException(status_code=401, detail="Please login to your fridge to manage items.")
             remove_fridge_inventory_item(fid, matched_item.id)
             verb_en = "Consumed" if action == "take" else "Discarded"
             verb_hi = "इस्तेमाल हुआ" if action == "take" else "फेंका गया"
@@ -1313,14 +1387,34 @@ def api_auth_me(request: Request):
     sess = get_current_session_data(request)
     if sess and sess.get("fridge_id"):
         fid = sess["fridge_id"]
-        # Trigger background time sync for the authenticated fridge
-        update_fridge_time_and_inventory(fid)
+        client_tz = request.headers.get("X-Client-Timezone")
+        update_fridge_time_and_inventory(fid, tz_name=client_tz)
+        
+        # Read active timezone for fridge
+        db, _ = init_firestore()
+        active_tz = client_tz
+        if not active_tz and db is not None:
+            try:
+                fdoc = db.collection("fridges").document(fid).get()
+                if fdoc.exists:
+                    active_tz = (fdoc.to_dict() or {}).get("timezone")
+            except Exception:
+                pass
+        if not active_tz:
+            active_tz = _IN_MEMORY_FRIDGES.get(fid, {}).get("timezone", "UTC")
+            
+        tz = resolve_tz(active_tz)
+        now_local = datetime.now(tz)
+        tz_code = now_local.tzname() or active_tz or "UTC"
         return {
             "authenticated": True,
             "fridge_id": fid,
             "fridge_name": fid,
             "pin": sess.get("pin", ""),
-            "last_sync_time": datetime.now(IST).strftime("%I:%M %p IST"),
+            "timezone": active_tz,
+            "timezone_code": tz_code,
+            "last_sync_time": now_local.strftime(f"%I:%M:%S %p {tz_code}"),
+            "last_login_at": now_local.strftime(f"%Y-%m-%d %H:%M:%S {tz_code}"),
         }
     return {
         "authenticated": False,
@@ -1394,25 +1488,38 @@ def api_auth_login(payload: AuthLoginRequest, request: Request, response: Respon
         _IN_MEMORY_SESSIONS[token_hash] = session_data
 
     # Track login time and automatically update items against addition dates
-    login_time_ist = datetime.now(IST).strftime("%Y-%m-%d %H:%M:%S IST")
+    client_tz = payload.timezone or request.headers.get("X-Client-Timezone")
+    tz = resolve_tz(client_tz)
+    now_local = datetime.now(tz)
+    tz_code = now_local.tzname() or client_tz or "UTC"
+    login_time_str = now_local.strftime(f"%Y-%m-%d %H:%M:%S {tz_code}")
+
     if db is not None:
         try:
             db.collection("fridges").document(fid).set({
-                "last_login_at": login_time_ist,
-                "last_active_at": login_time_ist,
+                "last_login_at": login_time_str,
+                "last_active_at": login_time_str,
+                "timezone": client_tz or "UTC",
             }, merge=True)
         except Exception as exc:
             logger.warning(f"Failed to record login timestamp for {fid}: {exc}")
+    else:
+        if fid in _IN_MEMORY_FRIDGES:
+            _IN_MEMORY_FRIDGES[fid]["last_login_at"] = login_time_str
+            _IN_MEMORY_FRIDGES[fid]["last_active_at"] = login_time_str
+            _IN_MEMORY_FRIDGES[fid]["timezone"] = client_tz or "UTC"
 
-    # Synchronize all inventory items with current time vs added_date
-    synced_items = update_fridge_time_and_inventory(fid)
+    # Synchronize all inventory items with current local time vs added_date
+    synced_items = update_fridge_time_and_inventory(fid, tz_name=client_tz)
 
     set_session_cookie(response, request, token)
     return {
         "ok": True,
         "fridge_id": fid,
         "pin": pin,
-        "last_login_at": login_time_ist,
+        "timezone": client_tz or "UTC",
+        "timezone_code": tz_code,
+        "last_login_at": login_time_str,
         "synced_items_count": len(synced_items),
         "message": f"Successfully logged into fridge '{fid}'. All food items time-synced."
     }
@@ -1480,24 +1587,37 @@ def api_auth_create(payload: AuthCreateRequest, request: Request, response: Resp
     else:
         _IN_MEMORY_SESSIONS[token_hash] = session_data
 
-    login_time_ist = datetime.now(IST).strftime("%Y-%m-%d %H:%M:%S IST")
+    client_tz = payload.timezone or request.headers.get("X-Client-Timezone")
+    tz = resolve_tz(client_tz)
+    now_local = datetime.now(tz)
+    tz_code = now_local.tzname() or client_tz or "UTC"
+    login_time_str = now_local.strftime(f"%Y-%m-%d %H:%M:%S {tz_code}")
+
     if db is not None:
         try:
             db.collection("fridges").document(fid).set({
-                "last_login_at": login_time_ist,
-                "last_active_at": login_time_ist,
+                "last_login_at": login_time_str,
+                "last_active_at": login_time_str,
+                "timezone": client_tz or "UTC",
             }, merge=True)
         except Exception as exc:
             logger.warning(f"Failed to record login timestamp for {fid}: {exc}")
+    else:
+        if fid in _IN_MEMORY_FRIDGES:
+            _IN_MEMORY_FRIDGES[fid]["last_login_at"] = login_time_str
+            _IN_MEMORY_FRIDGES[fid]["last_active_at"] = login_time_str
+            _IN_MEMORY_FRIDGES[fid]["timezone"] = client_tz or "UTC"
 
-    update_fridge_time_and_inventory(fid)
+    update_fridge_time_and_inventory(fid, tz_name=client_tz)
 
     set_session_cookie(response, request, token)
     return {
         "ok": True,
         "fridge_id": fid,
         "pin": pin,
-        "last_login_at": login_time_ist,
+        "timezone": client_tz or "UTC",
+        "timezone_code": tz_code,
+        "last_login_at": login_time_str,
         "message": f"Fridge '{fid}' successfully created!"
     }
 
@@ -1615,7 +1735,8 @@ def api_push_check_expiry(request: Request):
     if not fid:
         raise HTTPException(status_code=401, detail="Login to your fridge first.")
 
-    items = get_fridge_inventory(fid)
+    client_tz = request.headers.get("X-Client-Timezone")
+    items = update_fridge_time_and_inventory(fid, tz_name=client_tz)
     expiring = [i for i in items if 0 <= i.days_left <= 2]
     expired = [i for i in items if i.days_left < 0]
 
@@ -1667,20 +1788,14 @@ def api_check_expiry_cron(request: Request):
         except Exception as exc:
             logger.error(f"Failed to stream fridges in cron: {exc}")
 
-    for fid in _IN_MEMORY_FRIDGES.keys():
+    for fid in _IN_MEMORY_FRIDGES:
         all_fridge_ids.add(fid)
 
-    for fid in _IN_MEMORY_INVENTORIES.keys():
+    for fid in _IN_MEMORY_INVENTORIES:
         all_fridge_ids.add(fid)
 
-    summary = {
-        "ok": True,
-        "service": "FridgeInventory Expiry Cron",
-        "timestamp_ist": datetime.now(IST).strftime("%Y-%m-%d %H:%M:%S IST"),
-        "total_fridges_checked": len(all_fridge_ids),
-        "total_alerts_broadcast": 0,
-        "details": []
-    }
+    total_alerts_broadcast = 0
+    details_list: List[dict] = []
 
     for fid in sorted(all_fridge_ids):
         # Sync time & update days_left against added_date
@@ -1716,8 +1831,8 @@ def api_check_expiry_cron(request: Request):
             ):
                 sent_for_fridge += 1
 
-        summary["total_alerts_broadcast"] += sent_for_fridge
-        summary["details"].append({
+        total_alerts_broadcast += sent_for_fridge
+        details_list.append({
             "fridge_id": fid,
             "items_count": len(items),
             "expiring_24h": len(expiring_24h),
@@ -1726,17 +1841,24 @@ def api_check_expiry_cron(request: Request):
             "alerts_sent": sent_for_fridge
         })
 
-    return summary
+    return {
+        "ok": True,
+        "service": "FridgeInventory Expiry Cron",
+        "timestamp_ist": datetime.now(IST).strftime("%Y-%m-%d %H:%M:%S IST"),
+        "total_fridges_checked": len(all_fridge_ids),
+        "total_alerts_broadcast": total_alerts_broadcast,
+        "details": details_list
+    }
 
 
 
-def _send_push_to_fridge(fridge_id: str, subs: List[dict], title: str, body: str, tag: str = "fridge-alert") -> bool:
-    """Send push notification to all subscriptions for a fridge."""
+def _send_push_to_fridge(fridge_id: str, subs: List[dict], title: str, body: str, tag: str = "fridge-alert", tz_name: Optional[str] = None) -> bool:
+    """Send push notification to all subscriptions for a fridge with TTL buffering."""
     if not subs:
         return False
     success = False
     for sub in subs:
-        if _send_push_notification(sub, title=title, body=body, tag=tag):
+        if _send_push_notification(sub, title=title, body=body, tag=tag, tz_name=tz_name):
             success = True
     return success
 
@@ -1766,11 +1888,12 @@ def api_rescue(payload: RescueRequest):
 
 @app.get("/api/inventory", response_model=List[InventoryItem], summary="Get All Inventory Items")
 def api_get_inventory(request: Request, fridge: Optional[str] = None):
-    """Retrieve all tracked items for the active fridge."""
+    """Retrieve all tracked items for the active fridge, dynamically syncing freshness with local timezone."""
     fid = get_current_fridge_id(request) or (fridge.strip().lower() if fridge else None)
     if not fid:
         return []
-    return get_fridge_inventory(fid)
+    client_tz = request.headers.get("X-Client-Timezone")
+    return get_fridge_inventory(fid, tz_name=client_tz)
 
 
 @app.post("/api/inventory", response_model=InventoryItem, summary="Add Item to Inventory")
@@ -1779,7 +1902,8 @@ def api_add_inventory(item: InventoryItemCreate, request: Request, fridge: Optio
     fid = get_current_fridge_id(request) or (fridge.strip().lower() if fridge else None)
     if not fid:
         raise HTTPException(status_code=401, detail="Please login to your fridge to add items.")
-    return save_fridge_inventory_item(fid, item)
+    client_tz = request.headers.get("X-Client-Timezone")
+    return save_fridge_inventory_item(fid, item, client_tz=client_tz)
 
 
 @app.delete("/api/inventory/{item_id}", summary="Delete / Consume Inventory Item")
@@ -1863,10 +1987,19 @@ HTML_CONTENT = r"""<!DOCTYPE html>
       <!-- Controls: Status Pill, PIN, Push Pill, Language, Theme, Logout -->
       <div class="flex items-center gap-2 text-xs shrink-0">
         
-        <!-- Live IST Time Sync Pill (Shown when logged in) -->
-        <span id="header-sync-pill" class="hidden md:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/60" title="Automatic time comparison with food addition dates is active">
-          <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-          <span id="header-sync-status">Active • IST Synced</span>
+        <!-- Live Multi-Country Time Sync Pill & Timezone Selector (Shown when logged in) -->
+        <div id="header-sync-pill" class="hidden md:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/60" title="Live clock & automatic real-time freshness sync across all countries">
+          <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shrink-0"></span>
+          <span id="header-sync-status">Live • Syncing...</span>
+          <select id="user-tz-select" class="bg-transparent text-[10px] font-mono font-bold text-emerald-800 dark:text-emerald-200 border-none outline-none cursor-pointer pr-1 focus:ring-0 ml-0.5" title="Country / Timezone">
+            <option value="auto">Auto (Local)</option>
+          </select>
+        </div>
+
+        <!-- Offline Status Badge (Visible when internet is disconnected) -->
+        <span id="header-offline-badge" class="hidden items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-800" title="Device is offline. Local inventory cache and offline alerts active.">
+          <span class="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
+          <span>Offline Active</span>
         </span>
 
         <!-- Quick PIN Button (Shown when logged in) -->
@@ -2104,12 +2237,12 @@ HTML_CONTENT = r"""<!DOCTYPE html>
         <div id="sync-banner" class="p-3.5 bg-gradient-to-r from-amber-500/10 via-emerald-500/10 to-transparent dark:from-stone-800/80 dark:to-stone-900 border border-stone-200 dark:border-stone-800 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
           <div class="flex items-center gap-2 text-stone-700 dark:text-stone-300">
             <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shrink-0"></span>
-            <span class="font-bold">Live IST Time Engine:</span>
+            <span class="font-bold" id="sync-engine-heading">Live Freshness Engine:</span>
             <span id="sync-banner-text" data-i18n="time_sync_banner">
-              Automatically comparing current time against the day food items were added. Expiry dates & remaining days are kept up-to-date.
+              Automatically comparing your country's local time against food addition dates. Freshness & expiry countdowns update continuously without refreshing.
             </span>
           </div>
-          <div class="text-[11px] text-stone-500 dark:text-stone-400 font-mono shrink-0" id="sync-timestamp-display">IST Synced</div>
+          <div class="text-[11px] text-stone-500 dark:text-stone-400 font-mono shrink-0" id="sync-timestamp-display">Live Synced</div>
         </div>
 
         <!-- FILTER CONTROLS & RESCUE ACTION BAR -->
@@ -2177,23 +2310,23 @@ HTML_CONTENT = r"""<!DOCTYPE html>
         </div>
       </section>
 
-      <!-- TAB 3: OFFLINE PUSH ALERTS SETTINGS & DIAGNOSTICS -->
+      <!-- TAB 3: OFFLINE PUSH ALERTS -->
       <section id="section-push" class="tab-section hidden space-y-6">
         <div class="bg-white dark:bg-stone-900 rounded-3xl p-6 sm:p-8 border border-stone-200/80 dark:border-stone-800 shadow-sm space-y-6">
           
-          <!-- Hero Header -->
+          <!-- Simple Clean Header -->
           <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-stone-100 dark:border-stone-800 pb-6">
             <div class="flex items-start gap-4">
-              <div class="w-12 h-12 rounded-2xl bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0">
+              <div class="w-12 h-12 rounded-2xl bg-amber-50 dark:bg-amber-950/50 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
                 <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"></path></svg>
               </div>
               <div>
                 <div class="flex items-center gap-2.5">
-                  <h2 class="text-lg sm:text-xl font-bold text-stone-900 dark:text-white" data-i18n="push_hero_title">Offline Web Push Notification System</h2>
+                  <h2 class="text-lg sm:text-xl font-bold text-stone-900 dark:text-white" data-i18n="push_hero_title">Expiry Alerts</h2>
                   <span id="push-hero-badge" class="text-xs font-bold px-2.5 py-0.5 rounded-full bg-stone-100 dark:bg-stone-800 text-stone-500">OFF</span>
                 </div>
-                <p class="text-xs text-stone-500 dark:text-stone-400 mt-1 max-w-2xl leading-relaxed" data-i18n="push_hero_desc">
-                  True offline background system using a dedicated Service Worker and W3C Push API. Delivers native system notifications when items in your fridge hit the 24-hour expiry window, even when your browser tab or app is closed.
+                <p class="text-xs text-stone-500 dark:text-stone-400 mt-1 max-w-xl leading-relaxed" data-i18n="push_hero_desc">
+                  Get notified before food in your fridge expires, even when your browser or phone is closed.
                 </p>
               </div>
             </div>
@@ -2201,72 +2334,91 @@ HTML_CONTENT = r"""<!DOCTYPE html>
             <!-- Master Toggle Button -->
             <button id="push-main-toggle-btn" class="px-6 py-3 rounded-2xl bg-brand-600 hover:bg-brand-700 text-white font-bold text-sm shadow-md transition-all flex items-center justify-center gap-2 shrink-0">
               <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"></path></svg>
-              <span id="push-main-toggle-text">Enable Offline Expiry Alerts</span>
+              <span id="push-main-toggle-text">Enable Expiry Alerts</span>
             </button>
           </div>
 
-          <!-- Testing & Expiry Check Actions -->
-          <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div class="p-5 rounded-2xl bg-stone-50 dark:bg-stone-800/60 border border-stone-200/80 dark:border-stone-700/60 space-y-2.5">
-              <h4 class="font-bold text-sm text-stone-900 dark:text-white flex items-center gap-2">
-                <span>🔔 Test Notification Dispatch</span>
-              </h4>
-              <p class="text-xs text-stone-500 dark:text-stone-400">
-                Immediately triggers a signed test push payload from the backend to verify that Service Worker showNotification() and click-to-focus lifecycle handlers function properly on this device.
-              </p>
-              <button id="push-tab-test-btn" class="w-full py-2.5 px-4 rounded-xl border border-stone-300 dark:border-stone-700 hover:bg-stone-100 dark:hover:bg-stone-700 text-stone-800 dark:text-stone-200 font-semibold text-xs transition flex items-center justify-center gap-2">
-                <span>Send Instant Test Notification</span>
+          <!-- Chrome & Browser Permission Guide (Prominent & Helpful) -->
+          <div id="push-chrome-guide-card" class="p-4 rounded-2xl bg-amber-50/70 dark:bg-amber-950/30 border border-amber-200/80 dark:border-amber-800/60 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 transition-all">
+            <div class="flex items-start gap-3">
+              <div class="w-10 h-10 rounded-xl bg-amber-100 dark:bg-amber-900/60 text-amber-700 dark:text-amber-300 flex items-center justify-center shrink-0 text-xl">
+                🔔
+              </div>
+              <div class="text-xs">
+                <h4 class="font-bold text-stone-900 dark:text-white" data-i18n="push_guide_title">How to allow notifications in Google Chrome</h4>
+                <p class="text-stone-600 dark:text-stone-300 mt-0.5 leading-relaxed" data-i18n="push_guide_desc">
+                  If your browser blocks notifications: click the <strong>lock / tune icon 🔒</strong> next to the web address at the top &gt; <strong>Site settings</strong> &gt; set <strong>Notifications</strong> to <strong>Allow</strong>.
+                </p>
+              </div>
+            </div>
+            <a href="https://support.google.com/chrome/answer/3220216" target="_blank" rel="noopener noreferrer" class="px-4 py-2.5 rounded-xl bg-white dark:bg-stone-800 hover:bg-stone-50 dark:hover:bg-stone-700 text-stone-800 dark:text-stone-100 border border-stone-200 dark:border-stone-700 font-semibold text-xs transition flex items-center gap-1.5 shrink-0 shadow-sm">
+              <span data-i18n="push_guide_btn">Google Help Guide</span>
+              <svg class="w-3.5 h-3.5 text-stone-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path></svg>
+            </a>
+          </div>
+
+          <!-- Quick Action Buttons -->
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
+            <div class="p-4 rounded-2xl bg-stone-50 dark:bg-stone-800/50 border border-stone-200/70 dark:border-stone-700/60 flex items-center justify-between gap-3">
+              <div>
+                <h4 class="font-bold text-xs text-stone-900 dark:text-white">🔔 Test Web Push</h4>
+                <p class="text-[11px] text-stone-500 dark:text-stone-400 mt-0.5">Signed VAPID push (buffers 24h offline).</p>
+              </div>
+              <button id="push-tab-test-btn" class="px-3.5 py-2 rounded-xl bg-white dark:bg-stone-800 hover:bg-stone-100 dark:hover:bg-stone-700 border border-stone-200 dark:border-stone-700 text-stone-800 dark:text-stone-200 font-semibold text-xs transition shrink-0">
+                Send Push
               </button>
             </div>
 
-            <div class="p-5 rounded-2xl bg-amber-50/50 dark:bg-stone-800/60 border border-amber-200/60 dark:border-stone-700/60 space-y-2.5">
-              <h4 class="font-bold text-sm text-stone-900 dark:text-white flex items-center gap-2">
-                <span>⏳ 24-Hour Expiry Window Check</span>
-              </h4>
-              <p class="text-xs text-stone-500 dark:text-stone-400">
-                Scans your fridge items against current IST time. If any item is within the upcoming 24-hour expiration threshold, signs and broadcasts native push notifications to all family devices.
-              </p>
-              <button id="push-tab-expiry-btn" class="w-full py-2.5 px-4 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-semibold text-xs shadow-sm transition flex items-center justify-center gap-2">
-                <span>Check Expiry & Broadcast Alerts</span>
+            <div class="p-4 rounded-2xl bg-stone-50 dark:bg-stone-800/50 border border-stone-200/70 dark:border-stone-700/60 flex items-center justify-between gap-3">
+              <div>
+                <h4 class="font-bold text-xs text-stone-900 dark:text-white">⚡ Test Offline Alert</h4>
+                <p class="text-[11px] text-stone-500 dark:text-stone-400 mt-0.5">Local Service Worker (no Wi-Fi needed).</p>
+              </div>
+              <button id="push-tab-offline-test-btn" class="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs shadow-sm transition shrink-0">
+                Test Offline
+              </button>
+            </div>
+
+            <div class="p-4 rounded-2xl bg-stone-50 dark:bg-stone-800/50 border border-stone-200/70 dark:border-stone-700/60 flex items-center justify-between gap-3">
+              <div>
+                <h4 class="font-bold text-xs text-stone-900 dark:text-white">⏳ Check Expiry Now</h4>
+                <p class="text-[11px] text-stone-500 dark:text-stone-400 mt-0.5">Scan fridge and alert for food expiring soon.</p>
+              </div>
+              <button id="push-tab-expiry-btn" class="px-3.5 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-semibold text-xs shadow-sm transition shrink-0">
+                Check Now
               </button>
             </div>
           </div>
 
-          <!-- System & Subscription Diagnostics -->
-          <div class="p-5 rounded-2xl bg-stone-50 dark:bg-stone-800/40 border border-stone-200/80 dark:border-stone-700/60 space-y-4">
-            <h4 class="font-bold text-xs uppercase tracking-wider text-stone-500 dark:text-stone-400">
-              System & Cryptographic Diagnostics
-            </h4>
-            <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 text-xs">
-              <div class="p-3 bg-white dark:bg-stone-900 rounded-xl border border-stone-200/70 dark:border-stone-700/60 space-y-1">
-                <span class="text-[11px] text-stone-400 font-medium">Service Worker</span>
-                <div class="font-mono font-bold text-stone-800 dark:text-stone-200" id="diag-sw-status">Registered (/sw.js)</div>
+          <!-- Subtle collapsible diagnostics for developers / technical users -->
+          <details class="text-xs text-stone-400 dark:text-stone-500 pt-2 border-t border-stone-100 dark:border-stone-800/60">
+            <summary class="cursor-pointer hover:text-stone-600 dark:hover:text-stone-300 font-medium select-none">
+              ⚙️ Technical status & diagnostics
+            </summary>
+            <div class="mt-3 p-4 rounded-2xl bg-stone-50/80 dark:bg-stone-800/30 border border-stone-200/60 dark:border-stone-700/40 space-y-3">
+              <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[11px]">
+                <div class="p-2 bg-white dark:bg-stone-900 rounded-lg border border-stone-200/60 dark:border-stone-700/40">
+                  <span class="text-stone-400">Worker:</span>
+                  <div class="font-mono font-semibold text-stone-700 dark:text-stone-300 truncate" id="diag-sw-status">Active</div>
+                </div>
+                <div class="p-2 bg-white dark:bg-stone-900 rounded-lg border border-stone-200/60 dark:border-stone-700/40">
+                  <span class="text-stone-400">Fridge:</span>
+                  <div class="font-mono font-semibold text-brand-600 truncate" id="diag-fridge-id">--</div>
+                </div>
+                <div class="p-2 bg-white dark:bg-stone-900 rounded-lg border border-stone-200/60 dark:border-stone-700/40">
+                  <span class="text-stone-400">VAPID:</span>
+                  <div class="font-mono font-semibold text-stone-700 dark:text-stone-300 truncate" id="diag-vapid-key">Loaded</div>
+                </div>
+                <div class="p-2 bg-white dark:bg-stone-900 rounded-lg border border-stone-200/60 dark:border-stone-700/40">
+                  <span class="text-stone-400">Endpoint:</span>
+                  <div class="font-mono font-semibold text-stone-700 dark:text-stone-300 truncate" id="diag-endpoint">Waiting</div>
+                </div>
               </div>
-              <div class="p-3 bg-white dark:bg-stone-900 rounded-xl border border-stone-200/70 dark:border-stone-700/60 space-y-1">
-                <span class="text-[11px] text-stone-400 font-medium">Active Fridge ID</span>
-                <div class="font-mono font-bold text-brand-600 dark:text-brand-400" id="diag-fridge-id">--</div>
-              </div>
-              <div class="p-3 bg-white dark:bg-stone-900 rounded-xl border border-stone-200/70 dark:border-stone-700/60 space-y-1">
-                <span class="text-[11px] text-stone-400 font-medium">VAPID Public Key</span>
-                <div class="font-mono font-bold text-stone-800 dark:text-stone-200 truncate" id="diag-vapid-key">Loaded</div>
-              </div>
-              <div class="p-3 bg-white dark:bg-stone-900 rounded-xl border border-stone-200/70 dark:border-stone-700/60 space-y-1">
-                <span class="text-[11px] text-stone-400 font-medium">Push Service Endpoint</span>
-                <div class="font-mono font-bold text-stone-800 dark:text-stone-200 truncate" id="diag-endpoint">Waiting subscription</div>
+              <div class="text-[11px] text-stone-500 dark:text-stone-400 flex items-center gap-1.5">
+                <span>Cron endpoint: <code class="px-1.5 py-0.5 rounded bg-stone-200 dark:bg-stone-700 font-mono text-[10px]">POST /api/check-expiry-cron</code></span>
               </div>
             </div>
-          </div>
-
-          <!-- Render & Automated Cron Details -->
-          <div class="p-5 rounded-2xl bg-stone-50 dark:bg-stone-800/40 border border-stone-200/80 dark:border-stone-700/60 space-y-2 text-xs text-stone-600 dark:text-stone-300">
-            <div class="font-bold text-stone-900 dark:text-white text-sm flex items-center gap-1.5">
-              <svg class="w-4 h-4 text-brand-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-              <span>Automated Cron Route for Render: <code class="px-2 py-0.5 rounded bg-stone-200 dark:bg-stone-700 font-mono text-[11px]">POST /api/check-expiry-cron</code></span>
-            </div>
-            <p class="leading-relaxed">
-              To automate daily alerts in production on Render, configure a free Render Cron Job or external service (like CronJob.org or GitHub Actions) to send an HTTP POST request to <code class="px-1.5 py-0.5 rounded bg-stone-200 dark:bg-stone-700 font-mono">/api/check-expiry-cron</code> every 24 hours. The server will scan all fridges, track expiration times against IST, and broadcast native web push alerts without requiring anyone to open the app.
-            </p>
-          </div>
+          </details>
 
         </div>
       </section>
@@ -2538,6 +2690,36 @@ HTML_CONTENT = r"""<!DOCTYPE html>
     let swRegistration = null;
     let pushSubscription = null;
 
+    // Multi-Country Global Timezones
+    const GLOBAL_TIMEZONES = [
+      { id: 'auto', name: 'Auto (Detected Local Time)' },
+      { id: 'America/New_York', name: 'New York (EST/EDT)' },
+      { id: 'America/Chicago', name: 'Chicago (CST/CDT)' },
+      { id: 'America/Denver', name: 'Denver (MST/MDT)' },
+      { id: 'America/Los_Angeles', name: 'Los Angeles (PST/PDT)' },
+      { id: 'America/Toronto', name: 'Toronto (EST/EDT)' },
+      { id: 'America/Vancouver', name: 'Vancouver (PST/PDT)' },
+      { id: 'Europe/London', name: 'London / UK (GMT/BST)' },
+      { id: 'Europe/Paris', name: 'Paris / Berlin (CET/CEST)' },
+      { id: 'Asia/Dubai', name: 'Dubai / Gulf (GST)' },
+      { id: 'Asia/Kolkata', name: 'India (IST)' },
+      { id: 'Asia/Singapore', name: 'Singapore (SGT)' },
+      { id: 'Asia/Tokyo', name: 'Tokyo (JST)' },
+      { id: 'Australia/Sydney', name: 'Sydney (AEST/AEDT)' },
+      { id: 'Pacific/Auckland', name: 'Auckland (NZST)' },
+      { id: 'UTC', name: 'UTC' },
+    ];
+
+    let userTimezone = localStorage.getItem('fi_user_tz') || 'auto';
+    function getEffectiveTimezone() {
+      if (userTimezone && userTimezone !== 'auto') return userTimezone;
+      try {
+        return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+      } catch (e) {
+        return 'UTC';
+      }
+    }
+
     // Bilingual Text Dictionary
     const i18n = {
       en: {
@@ -2585,8 +2767,11 @@ HTML_CONTENT = r"""<!DOCTYPE html>
         empty_desc: "Add fresh produce, groceries, or meals using the input above or your microphone.",
         urgent_tab_title: "Urgent Attention Needed",
         urgent_tab_desc: "Items expiring within 48 hours or already expired. Consume or rescue them before they spoil!",
-        push_hero_title: "Native Offline Web Push Notifications",
-        push_hero_desc: "Real background push notification service powered by Service Worker (sw.js) and W3C Push API. Receive system notifications even when the browser or tab is completely closed!",
+        push_hero_title: "Expiry Alerts",
+        push_hero_desc: "Get notified before food in your fridge expires, even when your browser or phone is closed.",
+        push_guide_title: "How to allow notifications in Google Chrome",
+        push_guide_desc: "If your browser blocks notifications: click the lock / tune icon 🔒 next to the web address at the top > Site settings > set Notifications to Allow.",
+        push_guide_btn: "Google Help Guide",
         rescue_title: "Zero-Waste Rescue Chef",
         rescue_desc: "Select expiring ingredients from your fridge or specify custom leftovers to create an authentic homestyle dish.",
         rescue_run_btn: "Generate Rescue Recipe",
@@ -2662,8 +2847,11 @@ HTML_CONTENT = r"""<!DOCTYPE html>
         empty_desc: "ऊपर दिए गए इनपुट या माइक्रोफ़ोन का उपयोग करके ताज़ी सब्ज़ियाँ, किराना या खाना जोड़ें।",
         urgent_tab_title: "तुरंत ध्यान देने योग्य सामान",
         urgent_tab_desc: "सामान जो 48 घंटे में खराब हो सकते हैं या समाप्त हो चुके हैं।",
-        push_hero_title: "ऑफ़लाइन वेब पुश नोटिफ़िकेशन सिस्टम",
-        push_hero_desc: "सर्विस वर्कर (sw.js) और W3C पुश API आधारित असली बैकग्राउंड सिस्टम। ब्राउज़र या टैब बंद होने पर भी नोटिफिकेशन प्राप्त करें!",
+        push_hero_title: "एक्सपायरी अलर्ट",
+        push_hero_desc: "खाना खराब होने से पहले अपने फोन या कंप्यूटर पर नोटिफिकेशन पाएं, चाहे ऐप बंद ही क्यों न हो।",
+        push_guide_title: "गूगल क्रोम में नोटिफिकेशन कैसे चालू करें",
+        push_guide_desc: "यदि नोटिफिकेशन ब्लॉक हैं: ऊपर वेबसाइट पते के पास ताले 🔒 के निशान पर क्लिक करें > Site settings > Notifications को Allow करें।",
+        push_guide_btn: "गूगल हेल्प गाइड",
         rescue_title: "रेस्क्यू शेफ़",
         rescue_desc: "बर्बादी रोकने के लिए अपने फ्रिज से समाप्त होने वाले सामान चुनें और स्वादिष्ट होमस्टाइल रेसिपी बनाएँ।",
         rescue_run_btn: "रेस्क्यू रेसिपी बनाएँ",
@@ -2772,13 +2960,19 @@ HTML_CONTENT = r"""<!DOCTYPE html>
     // Auth & Fridge Management
     async function checkAuth() {
       try {
-        const res = await fetch('/api/auth/me');
+        const activeTz = getEffectiveTimezone();
+        const res = await fetch('/api/auth/me', {
+          headers: { 'X-Client-Timezone': activeTz }
+        });
         const data = await res.json();
         if (data.authenticated && data.fridge_id) {
-          setAuthenticatedState(data.fridge_id, data.pin);
-          if (data.last_sync_time) {
-            document.getElementById('sync-timestamp-display').textContent = 'Synced: ' + data.last_sync_time;
+          if (data.timezone && data.timezone !== 'UTC' && (!userTimezone || userTimezone === 'auto')) {
+            userTimezone = data.timezone;
+            const tzSelect = document.getElementById('user-tz-select');
+            if (tzSelect) tzSelect.value = userTimezone;
           }
+          setAuthenticatedState(data.fridge_id, data.pin);
+          updateLiveClock();
         } else {
           setLoggedOutState();
         }
@@ -2938,19 +3132,21 @@ HTML_CONTENT = r"""<!DOCTYPE html>
       e.preventDefault();
       const fid = document.getElementById('login-fid').value.trim().toLowerCase();
       const pin = document.getElementById('login-pin').value.trim();
+      const activeTz = getEffectiveTimezone();
       try {
         const res = await fetch('/api/auth/login', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ fridge_id: fid, pin: pin })
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Client-Timezone': activeTz,
+          },
+          body: JSON.stringify({ fridge_id: fid, pin: pin, timezone: activeTz })
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.detail || 'Login failed');
         authModal.classList.add('hidden');
         setAuthenticatedState(data.fridge_id, pin);
-        if (data.last_login_at) {
-          document.getElementById('sync-timestamp-display').textContent = 'Synced: ' + data.last_login_at;
-        }
+        updateLiveClock();
         showToast(data.message || 'Login successful!', 'success');
       } catch (err) {
         showToast(err.message, 'error');
@@ -2961,16 +3157,21 @@ HTML_CONTENT = r"""<!DOCTYPE html>
       e.preventDefault();
       const fid = document.getElementById('create-fid').value.trim().toLowerCase();
       const pin = document.getElementById('create-pin').value.trim();
+      const activeTz = getEffectiveTimezone();
       try {
         const res = await fetch('/api/auth/create', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ fridge_id: fid, pin: pin })
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Client-Timezone': activeTz,
+          },
+          body: JSON.stringify({ fridge_id: fid, pin: pin, timezone: activeTz })
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.detail || 'Fridge creation failed');
         authModal.classList.add('hidden');
         setAuthenticatedState(data.fridge_id, pin);
+        updateLiveClock();
         showToast(data.message, 'success');
       } catch (err) {
         showToast(err.message, 'error');
@@ -2979,17 +3180,41 @@ HTML_CONTENT = r"""<!DOCTYPE html>
 
     document.getElementById('logout-btn').addEventListener('click', handleLogout);
 
-    // Load Inventory Items
-    async function loadInventory() {
+    // Load Inventory Items with Offline Caching & Timezone Sync
+    async function loadInventory(silent = false) {
+      const activeTz = getEffectiveTimezone();
       try {
         const url = currentFridge ? `/api/inventory?fridge=${encodeURIComponent(currentFridge)}` : '/api/inventory';
-        const res = await fetch(url);
+        const res = await fetch(url, {
+          headers: { 'X-Client-Timezone': activeTz }
+        });
         if (!res.ok) throw new Error('Failed to load inventory');
         inventory = await res.json();
+        // Save to offline cache for disconnected access
+        try {
+          localStorage.setItem('fi_cached_inventory', JSON.stringify(inventory));
+        } catch (e) {}
         renderInventory();
         updateStats();
+        checkLocalOfflineExpiryAlerts();
       } catch (err) {
-        showToast('Could not load inventory', 'error');
+        // Fallback to offline local cache if network is unavailable
+        const cached = localStorage.getItem('fi_cached_inventory');
+        if (cached) {
+          try {
+            inventory = JSON.parse(cached);
+            renderInventory();
+            updateStats();
+            checkLocalOfflineExpiryAlerts();
+            if (!silent) {
+              showToast(currentLang === 'hi' ? 'ऑफ़लाइन मोड: कैश्ड इन्वेंटरी दिखाई जा रही है' : 'Offline mode: Showing cached inventory', 'info');
+            }
+            return;
+          } catch (e) {}
+        }
+        if (!silent) {
+          showToast('Could not load inventory', 'error');
+        }
       }
     }
 
@@ -3144,6 +3369,7 @@ HTML_CONTENT = r"""<!DOCTYPE html>
         const res = await fetch(url, { method: 'DELETE' });
         if (!res.ok) throw new Error('Delete failed');
         inventory = inventory.filter(i => i.id !== id);
+        try { localStorage.setItem('fi_cached_inventory', JSON.stringify(inventory)); } catch(e){}
         renderInventory();
         updateStats();
         showToast(currentLang === 'hi' ? 'सामान हटा दिया गया' : 'Item removed', 'info');
@@ -3208,13 +3434,17 @@ HTML_CONTENT = r"""<!DOCTYPE html>
         const url = currentFridge ? `/api/inventory?fridge=${encodeURIComponent(currentFridge)}` : '/api/inventory';
         const res = await fetch(url, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Client-Timezone': getEffectiveTimezone(),
+          },
           body: JSON.stringify(payload)
         });
 
         if (!res.ok) throw new Error('Could not add item');
         const saved = await res.json();
         inventory.unshift(saved);
+        try { localStorage.setItem('fi_cached_inventory', JSON.stringify(inventory)); } catch(e){}
         renderInventory();
         updateStats();
         modal.classList.add('hidden');
@@ -3246,13 +3476,17 @@ HTML_CONTENT = r"""<!DOCTYPE html>
         const url = currentFridge ? `/api/inventory?fridge=${encodeURIComponent(currentFridge)}` : '/api/inventory';
         const res = await fetch(url, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Client-Timezone': getEffectiveTimezone(),
+          },
           body: JSON.stringify(payload),
         });
 
         if (!res.ok) throw new Error('Could not add item');
         const saved = await res.json();
         inventory.unshift(saved);
+        try { localStorage.setItem('fi_cached_inventory', JSON.stringify(inventory)); } catch(e){}
         renderInventory();
         updateStats();
         document.getElementById('cmd-input').value = '';
@@ -3282,7 +3516,10 @@ HTML_CONTENT = r"""<!DOCTYPE html>
         const url = currentFridge ? `/api/command?fridge=${encodeURIComponent(currentFridge)}` : '/api/command';
         const res = await fetch(url, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Client-Timezone': getEffectiveTimezone(),
+          },
           body: JSON.stringify({ command: text })
         });
 
@@ -3296,6 +3533,7 @@ HTML_CONTENT = r"""<!DOCTYPE html>
         // 1. Clear action
         if (data.action === 'clear') {
           inventory = [];
+          try { localStorage.setItem('fi_cached_inventory', JSON.stringify(inventory)); } catch(e){}
           renderInventory();
           updateStats();
           cmdInput.value = '';
@@ -3304,6 +3542,7 @@ HTML_CONTENT = r"""<!DOCTYPE html>
         // 2. Consume / Remove action (e.g. "i ate lays")
         else if (data.action === 'removed') {
           inventory = inventory.filter(i => i.id !== data.item_id);
+          try { localStorage.setItem('fi_cached_inventory', JSON.stringify(inventory)); } catch(e){}
           renderInventory();
           updateStats();
           cmdInput.value = '';
@@ -3685,8 +3924,14 @@ HTML_CONTENT = r"""<!DOCTYPE html>
         showToast(currentLang === 'hi' ? 'ऑफ़लाइन पुश अलर्ट सक्रिय!' : 'Offline push alerts enabled!', 'success');
       } catch (err) {
         console.error('Push subscribe error:', err);
-        if (err.name === 'NotAllowedError') {
-          showToast(currentLang === 'hi' ? 'कृपया ब्राउज़र में नोटिफिकेशन की अनुमति दें' : 'Please allow notifications in your browser', 'warning');
+        if (err.name === 'NotAllowedError' || (window.Notification && Notification.permission === 'denied')) {
+          showToast(currentLang === 'hi' ? 'नोटिफिकेशन ब्लॉक हैं! नीचे गूगल गाइड पर क्लिक करें।' : 'Notifications blocked! See Google Chrome guide below.', 'warning');
+          const guide = document.getElementById('push-chrome-guide-card');
+          if (guide) {
+            guide.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            guide.classList.add('ring-4', 'ring-amber-500');
+            setTimeout(() => guide.classList.remove('ring-4', 'ring-amber-500'), 3500);
+          }
         } else {
           showToast(err.message || 'Failed to enable notifications', 'error');
         }
@@ -3738,10 +3983,19 @@ HTML_CONTENT = r"""<!DOCTYPE html>
       }
     });
 
+    // Offline Service Worker Direct Notification Test
+    document.getElementById('push-tab-offline-test-btn').addEventListener('click', triggerLocalOfflineTest);
+
     // Check Expiry & Broadcast Button (24h window)
     document.getElementById('push-tab-expiry-btn').addEventListener('click', async () => {
       try {
-        const res = await fetch('/api/push/check-expiry', { method: 'POST' });
+        const res = await fetch('/api/push/check-expiry', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Client-Timezone': getEffectiveTimezone(),
+          }
+        });
         const data = await res.json();
         if (!res.ok) throw new Error(data.detail || 'Check failed');
         if (data.alerts_sent > 0) {
@@ -3754,12 +4008,191 @@ HTML_CONTENT = r"""<!DOCTYPE html>
       }
     });
 
+    // Multi-Country Timezone Selector
+    function initTimezoneSelector() {
+      const select = document.getElementById('user-tz-select');
+      if (!select) return;
+      select.innerHTML = '';
+      GLOBAL_TIMEZONES.forEach(tz => {
+        const opt = document.createElement('option');
+        opt.value = tz.id;
+        opt.textContent = tz.name;
+        if (tz.id === userTimezone) opt.selected = true;
+        select.appendChild(opt);
+      });
+      select.addEventListener('change', (e) => {
+        userTimezone = e.target.value;
+        try { localStorage.setItem('fi_user_tz', userTimezone); } catch(e){}
+        updateLiveClock();
+        if (currentFridge) {
+          loadInventory(true);
+        }
+        showToast(currentLang === 'hi' ? `टाइमज़ोन बदला गया: ${getEffectiveTimezone()}` : `Timezone updated: ${getEffectiveTimezone()}`, 'info');
+      });
+    }
+
+    // Real-Time Live Clock Ticker (Ticking every second without refresh)
+    function updateLiveClock() {
+      const activeTz = getEffectiveTimezone();
+      const now = new Date();
+      let timeStr = '';
+      let fullStr = '';
+      let tzAbbr = '';
+
+      try {
+        timeStr = new Intl.DateTimeFormat('en-US', {
+          timeZone: activeTz,
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit',
+          hour12: true
+        }).format(now);
+
+        fullStr = new Intl.DateTimeFormat('en-US', {
+          timeZone: activeTz,
+          year: 'numeric',
+          month: 'short',
+          day: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit',
+          hour12: true,
+          timeZoneName: 'short'
+        }).format(now);
+
+        const parts = new Intl.DateTimeFormat('en-US', {
+          timeZone: activeTz,
+          timeZoneName: 'short'
+        }).formatToParts(now);
+        const tzPart = parts.find(p => p.type === 'timeZoneName');
+        tzAbbr = tzPart ? tzPart.value : (activeTz.split('/').pop().replace('_', ' '));
+      } catch (e) {
+        timeStr = now.toLocaleTimeString();
+        fullStr = now.toLocaleString();
+        tzAbbr = 'Local';
+      }
+
+      const statusEl = document.getElementById('header-sync-status');
+      if (statusEl) {
+        statusEl.textContent = `Live • ${timeStr} ${tzAbbr}`;
+      }
+
+      const syncTsEl = document.getElementById('sync-timestamp-display');
+      if (syncTsEl) {
+        syncTsEl.textContent = fullStr;
+      }
+
+      const engineHeadingEl = document.getElementById('sync-engine-heading');
+      if (engineHeadingEl) {
+        const countryOrCity = activeTz === 'auto' ? 'Auto Local' : activeTz.split('/').pop().replace('_', ' ');
+        engineHeadingEl.textContent = `Live Freshness Engine (${countryOrCity} • ${tzAbbr}):`;
+      }
+    }
+
+    // Local Offline Notification Engine (Works completely without Wi-Fi / Cellular)
+    function checkLocalOfflineExpiryAlerts() {
+      if (!swRegistration || !swRegistration.active) return;
+      if (!inventory || inventory.length === 0) return;
+
+      const expiringItems = inventory.filter(i => i.days_left <= 1);
+      if (expiringItems.length === 0) return;
+
+      // Throttle offline notifications so we don't spam on every 30s interval
+      const lastAlert = parseInt(localStorage.getItem('fi_last_offline_alert') || '0', 10);
+      const now = Date.now();
+      if (now - lastAlert < 3 * 3600 * 1000) return;
+
+      try { localStorage.setItem('fi_last_offline_alert', now.toString()); } catch(e){}
+      const itemNames = expiringItems.map(i => currentLang === 'hi' ? (i.name_hi || i.name_en) : i.name_en).slice(0, 3).join(', ');
+      const count = expiringItems.length;
+
+      swRegistration.active.postMessage({
+        type: 'SHOW_OFFLINE_NOTIFICATION',
+        title: currentLang === 'hi' ? `🚨 खाद्य समाप्ति अलर्ट (${count} सामान)` : `🚨 Food Expiry Alert (${count} item${count > 1 ? 's' : ''})`,
+        body: currentLang === 'hi' ? `${itemNames} जल्द समाप्त हो रहे हैं! फ्रिज खोलकर उपयोग करें।` : `${itemNames} expiring soon! Open your fridge to inspect.`,
+        tag: 'offline-expiry-alert',
+        url: '/'
+      });
+    }
+
+    async function triggerLocalOfflineTest() {
+      if (!swRegistration || !swRegistration.active) {
+        showToast(currentLang === 'hi' ? 'सर्विस वर्कर सक्रिय नहीं है' : 'Service Worker not active yet', 'error');
+        return;
+      }
+      swRegistration.active.postMessage({
+        type: 'SHOW_OFFLINE_NOTIFICATION',
+        title: currentLang === 'hi' ? '🔔 ऑफ़लाइन टेस्ट नोटिफिकेशन' : '🔔 Native Offline Notification',
+        body: currentLang === 'hi' ? 'यह नोटिफिकेशन बिना किसी इंटरनेट कनेक्शन के सर्विस वर्कर द्वारा भेजा गया है!' : 'Delivered directly by Service Worker without requiring active internet!',
+        tag: 'offline-test-notification',
+        url: '/'
+      });
+      showToast(currentLang === 'hi' ? 'ऑफ़लाइन नोटिफिकेशन भेजा गया!' : 'Offline notification triggered locally via Service Worker!', 'success');
+    }
+
+    // Offline / Online Connection Detection
+    function initOfflineNetworkListeners() {
+      function updateOnlineStatus() {
+        const offlineBadge = document.getElementById('header-offline-badge');
+        if (offlineBadge) {
+          if (!navigator.onLine) {
+            offlineBadge.classList.remove('hidden');
+            offlineBadge.classList.add('flex');
+            showToast(currentLang === 'hi' ? 'इंटरनेट डिस्कनेक्ट हो गया — ऑफ़लाइन मोड चालू' : 'You are offline — local storage & alerts active', 'warning');
+          } else {
+            offlineBadge.classList.add('hidden');
+            offlineBadge.classList.remove('flex');
+          }
+        }
+      }
+
+      window.addEventListener('online', () => {
+        updateOnlineStatus();
+        showToast(currentLang === 'hi' ? 'इंटरनेट फिर से कनेक्ट हुआ — डेटा सिंक हो रहा है' : 'Internet reconnected — syncing fridge data', 'success');
+        if (currentFridge) loadInventory(true);
+      });
+
+      window.addEventListener('offline', () => {
+        updateOnlineStatus();
+        checkLocalOfflineExpiryAlerts();
+      });
+
+      updateOnlineStatus();
+    }
+
     // Initialize on page load
     window.addEventListener('DOMContentLoaded', () => {
       initTheme();
+      initTimezoneSelector();
       applyLanguage(currentLang);
       checkAuth();
       initPushNotifications();
+      initOfflineNetworkListeners();
+
+      // Live Real-Time Clock Ticker (Updates every second with zero refresh needed)
+      updateLiveClock();
+      setInterval(updateLiveClock, 1000);
+
+      // Continuous Background Freshness Engine Sync (Every 30 seconds)
+      setInterval(() => {
+        if (currentFridge) {
+          loadInventory(true);
+        }
+      }, 30000);
+
+      // Automatic live sync when user switches back to this tab or wakes up device
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible' && currentFridge) {
+          updateLiveClock();
+          loadInventory(true);
+        }
+      });
+      window.addEventListener('focus', () => {
+        if (currentFridge) {
+          updateLiveClock();
+          loadInventory(true);
+        }
+      });
     });
   </script>
 </body>
@@ -3767,26 +4200,79 @@ HTML_CONTENT = r"""<!DOCTYPE html>
 """
 
 SERVICE_WORKER_JS = """
-// FridgeInventory Service Worker - Web Push Notifications
-// ========================================================
+// Service Worker for FridgeInventory Web Push & Offline Notifications
+const CACHE_NAME = 'fridge-inventory-v2.3';
 
-const CACHE_NAME = 'fridge-inventory-v2';
+const OFFLINE_SHELL_ASSETS = [
+  '/',
+  '/favicon.ico',
+];
 
-// Install event - cache essential assets
+// Install: Cache essential app shell
 self.addEventListener('install', (event) => {
+  event.waitUntil(
+    caches.open(CACHE_NAME).then((cache) => {
+      return cache.addAll(OFFLINE_SHELL_ASSETS).catch(() => {});
+    })
+  );
   self.skipWaiting();
 });
 
-// Activate event - clean old caches
+// Activate: Clean old caches and claim clients immediately
 self.addEventListener('activate', (event) => {
-  event.waitUntil(self.clients.claim());
+  event.waitUntil(
+    caches.keys().then((keys) => {
+      return Promise.all(
+        keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key))
+      );
+    }).then(() => self.clients.claim())
+  );
 });
 
-// Push event - handle incoming push notifications
+// Offline Fetch Handler: Network first with Cache fallback for app shell
+self.addEventListener('fetch', (event) => {
+  if (event.request.method !== 'GET') return;
+  if (event.request.url.includes('/api/')) return;
+
+  event.respondWith(
+    fetch(event.request)
+      .then((response) => {
+        if (response && response.status === 200) {
+          const clone = response.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
+        }
+        return response;
+      })
+      .catch(() => caches.match(event.request).then((cached) => cached || caches.match('/')))
+  );
+});
+
+// Message Event: Allows client to trigger local notifications even when internet is disconnected
+self.addEventListener('message', (event) => {
+  if (event.data && event.data.type === 'SHOW_OFFLINE_NOTIFICATION') {
+    const title = event.data.title || 'Fridge Expiry Alert';
+    const options = {
+      body: event.data.body || 'An item in your fridge is expiring today!',
+      icon: event.data.icon || '/favicon.ico',
+      badge: event.data.badge || '/favicon.ico',
+      tag: event.data.tag || 'offline-alert',
+      renotify: true,
+      vibrate: [200, 100, 200],
+      data: { url: event.data.url || '/' },
+      actions: [
+        { action: 'open', title: 'Open Fridge' },
+        { action: 'dismiss', title: 'Dismiss' },
+      ],
+    };
+    event.waitUntil(self.registration.showNotification(title, options));
+  }
+});
+
+// Push Event: Handles incoming background push notifications
 self.addEventListener('push', (event) => {
   let data = {
-    title: 'FridgeInventory',
-    body: 'You have an update from your fridge!',
+    title: 'Fridge Inventory Alert',
+    body: 'An item in your fridge is expiring soon!',
     icon: '/favicon.ico',
     badge: '/favicon.ico',
     url: '/',
@@ -3821,7 +4307,7 @@ self.addEventListener('push', (event) => {
   );
 });
 
-// Notification click event
+// Notification Click Event: Focus existing window or open a new one
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
 
@@ -3868,13 +4354,13 @@ def serve_ui():
 # ============================================================================
 
 if __name__ == "__main__":
-    server_port = int(os.getenv("PORT", 10000))
+    server_port = int(os.getenv("PORT", "10000"))
     server_host = os.getenv("HOST", "0.0.0.0")
 
     logger.info("=" * 70)
     logger.info("Starting FridgeInventory Production Server")
     logger.info(f"Binding strictly to http://{server_host}:{server_port}")
-    logger.info(f"Target Environment: Render / Production ASGI")
+    logger.info("Target Environment: Render / Production ASGI")
     logger.info("=" * 70)
 
     init_firestore()
