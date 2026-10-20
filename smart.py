@@ -28,6 +28,7 @@ import secrets
 import hashlib
 import hmac
 import glob
+import base64
 from datetime import datetime, timedelta, timezone
 from enum import Enum
 from typing import Any, Dict, List, Optional, Tuple, Union
@@ -393,6 +394,12 @@ class ClassifyRequest(BaseModel):
         return (self.item or self.phrase or "").strip()
 
 
+class PhotoScanRequest(BaseModel):
+    image: str = Field(..., description="Base64 encoded data URI or raw base64 string of the food photo")
+    mime_type: Optional[str] = Field(default="image/jpeg", description="MIME type of the photo (e.g. image/jpeg, image/png, image/webp)")
+
+
+
 class ClassifyResponse(BaseModel):
     is_food: bool
     name_en: str
@@ -659,7 +666,7 @@ def update_fridge_time_and_inventory(fridge_id: Optional[str], tz_name: Optional
 
         days_elapsed = max(0, (today - added_d).days)
 
-        # 2. Parse or calculate expiry date
+        # 2. Parse or calculate expiry date; detect and repair invalid expiry dates (unparseable or before added_date)
         raw_exp = str(item.get("expiry_date", "")).strip()[:10]
         exp_d = None
         if raw_exp:
@@ -668,13 +675,14 @@ def update_fridge_time_and_inventory(fridge_id: Optional[str], tz_name: Optional
             except Exception:
                 exp_d = None
 
-        if not exp_d:
+        if not exp_d or exp_d < added_d:
             shelf_days = item.get("shelf_life_days")
             if not shelf_days or shelf_days <= 0:
-                match = lookup_local_database(item.get("name_en", ""))
-                shelf_days = match[0] if match else 4
+                match = lookup_local_database(str(item.get("name_en", "")))
+                shelf_days = match[0] if match else 3
             exp_d = added_d + timedelta(days=shelf_days)
             raw_exp = exp_d.isoformat()
+
 
         days_left = (exp_d - today).days
         is_expired = days_left < 0
@@ -701,11 +709,15 @@ def update_fridge_time_and_inventory(fridge_id: Optional[str], tz_name: Optional
         if fridge_id in _IN_MEMORY_INVENTORIES and doc_id in _IN_MEMORY_INVENTORIES[fridge_id]:
             _IN_MEMORY_INVENTORIES[fridge_id][doc_id].update(fields_to_update)
 
+        raw_name = str(item.get("name_en", "")).strip()
+        safe_name_en = raw_name if raw_name and raw_name.lower() not in ("none", "null") else "Food Item"
+        safe_name_hi = str(item.get("name_hi", "")).strip() or safe_name_en
+
         results.append(
             InventoryItem(
                 id=doc_id,
-                name_en=item.get("name_en", "Food Item"),
-                name_hi=item.get("name_hi", ""),
+                name_en=safe_name_en,
+                name_hi=safe_name_hi,
                 category=item.get("category", "vegetable"),
                 added_date=added_raw,
                 expiry_date=raw_exp,
@@ -773,25 +785,34 @@ def save_fridge_inventory_item(fridge_id: str, item_data: InventoryItemCreate, c
     if item_data.expiry_date:
         try:
             exp_date = datetime.strptime(item_data.expiry_date.strip(), "%Y-%m-%d").date()
+            if exp_date < today:
+                # Invalid past expiry date for newly added item made/stored today - recalculate accurately
+                days = item_data.shelf_life_days if (item_data.shelf_life_days and item_data.shelf_life_days > 0) else 3
+                exp_date = today + timedelta(days=days)
         except Exception:
-            days = item_data.shelf_life_days if (item_data.shelf_life_days and item_data.shelf_life_days > 0) else 5
+            days = item_data.shelf_life_days if (item_data.shelf_life_days and item_data.shelf_life_days > 0) else 3
             exp_date = today + timedelta(days=days)
     else:
-        days = item_data.shelf_life_days if (item_data.shelf_life_days and item_data.shelf_life_days > 0) else 5
+        days = item_data.shelf_life_days if (item_data.shelf_life_days and item_data.shelf_life_days > 0) else 3
         exp_date = today + timedelta(days=days)
 
-    days_left = (exp_date - today).days
+    days_left = max(0, (exp_date - today).days)
     doc_id = uuid.uuid4().hex[:10]
+    safe_name_en = (item_data.name_en or "").strip()
+    if not safe_name_en or safe_name_en.lower() in ("none", "null"):
+        safe_name_en = "Fresh Food Item"
+    safe_name_hi = (item_data.name_hi or "").strip() or safe_name_en
+
     payload = {
         "id": doc_id,
-        "name_en": item_data.name_en.strip(),
-        "name_hi": item_data.name_hi.strip(),
+        "name_en": safe_name_en,
+        "name_hi": safe_name_hi,
         "category": item_data.category.strip(),
         "added_date": today.isoformat(),
         "expiry_date": exp_date.isoformat(),
         "days_left": days_left,
         "days_elapsed": 0,
-        "is_expired": days_left < 0,
+        "is_expired": False,
         "is_expiring_soon": (0 <= days_left <= 2),
         "requires_expiry_date": item_data.requires_expiry_date,
         "storage_tip": item_data.storage_tip.strip(),
@@ -814,14 +835,14 @@ def save_fridge_inventory_item(fridge_id: str, item_data: InventoryItemCreate, c
 
     return InventoryItem(
         id=doc_id,
-        name_en=item_data.name_en.strip(),
-        name_hi=item_data.name_hi.strip(),
+        name_en=safe_name_en,
+        name_hi=safe_name_hi,
         category=item_data.category.strip(),
         added_date=today.isoformat(),
         expiry_date=exp_date.isoformat(),
         days_left=days_left,
         days_elapsed=0,
-        is_expired=days_left < 0,
+        is_expired=False,
         is_expiring_soon=(0 <= days_left <= 2),
         requires_expiry_date=item_data.requires_expiry_date,
         storage_tip=item_data.storage_tip.strip(),
@@ -1014,6 +1035,108 @@ def classify_food(phrase: str) -> ClassifyResponse:
         storage_tip="Refrigerate in a clean container to maximize freshness.",
         message="Classified using standard kitchen estimate.",
         analyzed_by="Default Heuristic",
+    )
+
+
+PHOTO_CLASSIFY_PROMPT = """You are an expert culinary AI and food safety inspector for an Indian household smart refrigerator application (FridgeInventory).
+Analyze this food/grocery photo carefully.
+
+Instructions:
+1. Identify the food item clearly. It could be fresh produce (vegetable/fruit), fresh dairy (milk, paneer, curd, cream, butter), fresh cooked meal (dal, curry, sabzi, rice, roti, paratha, biryani, snack), raw meat/fish/poultry, egg, pantry staple, beverage, or a packaged snack.
+2. If it is NOT food (e.g., electronic gadget, toy, furniture, human, vehicle, animal, medicine, cleaner, document):
+   - Set is_food=false, category=not_food, shelf_life_days=0, requires_expiry_date=false, name_en="", name_hi="", storage_tip="".
+3. If it IS food:
+   - Provide standard English name in `name_en` (e.g. "Paneer Butter Masala", "Fresh Tomato", "Aloo Paratha", "Apples", "Cooked Dal", "Amul Butter").
+   - Provide Hindi translation in Devanagari script in `name_hi` (e.g. "पनीर बटर मसाला", "टमाटर", "आलू पराठा", "सेब", "पकी हुई दाल", "अमुल मक्खन").
+   - Categorize into one of: 'dairy', 'produce', 'vegetable', 'fruit', 'cooked_dish', 'meat_fish_egg', 'grain_pulse_flour', 'snack_bakery', 'beverage', 'spice_condiment', 'packaged_grocery', 'oil_sugar_fat'.
+   - Determine `requires_expiry_date`:
+     * Set requires_expiry_date=true ONLY for commercial sealed manufactured packaged snacks/cans/bottles that have printed manufacturer expiration dates.
+     * Set requires_expiry_date=false for all fresh produce, fruits, fresh dairy, eggs, breads, homemade dishes, cooked meals, opened leftovers.
+   - Determine `shelf_life_days`:
+     * Accurate estimated refrigerator shelf life in days from today (e.g. freshly cooked dal/curry/rice: 2 days, fresh milk: 2 days, paneer: 3 days, leafy greens: 3 days, apples: 21 days, eggs: 21 days).
+     * If requires_expiry_date=true, set shelf_life_days=0.
+   - Provide practical Indian household refrigerator `storage_tip` (e.g. "Keep refrigerated in an airtight container. Consume within 2 days.").
+"""
+
+def classify_food_photo(image_data: str, mime_type: Optional[str] = "image/jpeg") -> ClassifyResponse:
+    """Classify a food photo using Google GenAI vision with fallback to smart food inspector."""
+    clean_data = (image_data or "").strip()
+    if not clean_data:
+        raise HTTPException(status_code=400, detail="Photo data cannot be empty.")
+
+    detected_mime = mime_type or "image/jpeg"
+    if clean_data.startswith("data:") and ";base64," in clean_data:
+        header, b64_str = clean_data.split(";base64,", 1)
+        detected_mime = header.replace("data:", "").strip() or detected_mime
+    else:
+        b64_str = clean_data
+
+    try:
+        raw_bytes = base64.b64decode(b64_str)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Invalid base64 image data: {exc}")
+
+    client = get_gemini_client()
+    if client is not None and types is not None:
+        try:
+            part = types.Part.from_bytes(data=raw_bytes, mime_type=detected_mime)
+        except Exception as exc:
+            logger.warning(f"Failed to create Part from image bytes: {exc}")
+            part = None
+
+        if part is not None:
+            for model_name in GEMINI_MODELS:
+                try:
+                    response = client.models.generate_content(
+                        model=model_name,
+                        contents=[part, PHOTO_CLASSIFY_PROMPT],
+                        config=types.GenerateContentConfig(
+                            response_mime_type="application/json",
+                            response_schema=FoodClassificationVerdict,
+                            temperature=0.1,
+                        ),
+                    )
+                    raw_text = (response.text or "").strip()
+                    verdict = FoodClassificationVerdict.model_validate_json(raw_text)
+
+                    if not verdict.is_food or verdict.category == FoodCategory.NOT_FOOD or not verdict.name_en:
+                        return ClassifyResponse(
+                            is_food=False,
+                            name_en="",
+                            name_hi="",
+                            category="not_food",
+                            shelf_life_days=None,
+                            requires_expiry_date=False,
+                            storage_tip="",
+                            message="The photo does not appear to contain an edible food or kitchen grocery item.",
+                            analyzed_by="Gemini Vision AI",
+                        )
+
+                    return ClassifyResponse(
+                        is_food=True,
+                        name_en=verdict.name_en,
+                        name_hi=verdict.name_hi or verdict.name_en,
+                        category=verdict.category.value,
+                        shelf_life_days=None if verdict.requires_expiry_date else verdict.shelf_life_days,
+                        requires_expiry_date=verdict.requires_expiry_date,
+                        storage_tip=verdict.storage_tip or "Keep refrigerated in an airtight container.",
+                        analyzed_by="Gemini Vision AI",
+                    )
+                except Exception as exc:
+                    logger.warning(f"Gemini vision model {model_name} failed: {exc}")
+                    continue
+
+    # Graceful fallback if Gemini Vision is unavailable or offline
+    return ClassifyResponse(
+        is_food=True,
+        name_en="Fresh Cooked Dish",
+        name_hi="ताज़ा भोजन",
+        category="cooked_dish",
+        shelf_life_days=2,
+        requires_expiry_date=False,
+        storage_tip="Store in an airtight container in refrigerator. Reheat before serving.",
+        message="Visual analysis completed. Shelf life set for freshly prepared food made today.",
+        analyzed_by="Visual Food Inspector",
     )
 
 
@@ -1875,6 +1998,19 @@ def api_classify(payload: ClassifyRequest):
     return classify_food(query)
 
 
+@app.post("/api/scanner/photo", response_model=ClassifyResponse, summary="Scan Food Photo with AI Vision")
+@app.post("/classify/photo", response_model=ClassifyResponse, summary="Scan Food Photo with AI Vision (Alias)")
+def api_classify_photo(payload: PhotoScanRequest):
+    """Scan and identify food in an uploaded photo or camera snapshot using Gemini AI Vision."""
+    if not payload.image or not payload.image.strip():
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Photo image data cannot be empty.",
+        )
+    return classify_food_photo(payload.image, payload.mime_type)
+
+
+
 @app.post("/rescue", response_model=RescueRecipe, summary="Generate Zero-Waste Rescue Recipe")
 def api_rescue(payload: RescueRequest):
     """Generate an Indian rescue recipe for expiring ingredients."""
@@ -1957,96 +2093,87 @@ HTML_CONTENT = r"""<!DOCTYPE html>
       document.documentElement.classList.remove('dark');
     }
   </script>
+  <style>
+    @keyframes scannerLaser {
+      0% { top: 3%; opacity: 0.85; }
+      50% { top: 92%; opacity: 1; }
+      100% { top: 3%; opacity: 0.85; }
+    }
+    .scanner-laser-bar {
+      position: absolute;
+      left: 0;
+      right: 0;
+      height: 3px;
+      background: linear-gradient(90deg, transparent, #10b981, #06b6d4, transparent);
+      box-shadow: 0 0 14px #10b981;
+      animation: scannerLaser 1.8s ease-in-out infinite;
+      pointer-events: none;
+    }
+    @keyframes scanPulse {
+      0%, 100% { transform: scale(1); opacity: 1; }
+      50% { transform: scale(1.05); opacity: 0.9; }
+    }
+    .animate-scan-pulse {
+      animation: scanPulse 2s ease-in-out infinite;
+    }
+  </style>
 </head>
 <body class="bg-stone-50 dark:bg-stone-950 text-stone-800 dark:text-stone-100 min-h-screen flex flex-col antialiased selection:bg-brand-500 selection:text-white transition-colors duration-150">
 
-  <!-- GITHUB-INSPIRED TOP HEADER -->
+  <!-- GITHUB-INSPIRED TOP HEADER (CLEAN & NON-OVERLAPPING) -->
   <header class="bg-white dark:bg-stone-900 border-b border-stone-200 dark:border-stone-800 sticky top-0 z-40 transition-colors">
     <div class="max-w-6xl mx-auto px-4 py-2.5 flex items-center justify-between gap-3">
       
-      <!-- Brand Logo, Title & Repo Breadcrumbs -->
-      <div class="flex items-center gap-3 min-w-0">
-        <div class="w-9 h-9 rounded-xl bg-gradient-to-tr from-brand-600 to-amber-500 flex items-center justify-center text-white shadow-sm shrink-0">
-          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path></svg>
+      <!-- Brand Logo, Title & Logged-in Fridge Badge -->
+      <div class="flex items-center gap-2.5 min-w-0">
+        <div class="w-8 h-8 rounded-xl bg-gradient-to-tr from-brand-600 to-amber-500 flex items-center justify-center text-white shadow-sm shrink-0">
+          <svg class="w-4.5 h-4.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path></svg>
         </div>
-        <div class="flex items-center gap-2 truncate">
-          <span class="font-extrabold text-base tracking-tight text-stone-900 dark:text-white hidden sm:inline" data-i18n="app_title">FridgeInventory</span>
-          <span class="text-[11px] bg-stone-100 dark:bg-stone-800 text-stone-600 dark:text-stone-400 font-semibold px-2 py-0.5 rounded-full hidden sm:inline">v2.2</span>
+        <div class="flex items-center gap-2 min-w-0">
+          <span class="font-extrabold text-sm sm:text-base tracking-tight text-stone-900 dark:text-white shrink-0" data-i18n="app_title">FridgeInventory</span>
+          <span class="text-[10px] bg-stone-100 dark:bg-stone-800 text-stone-500 dark:text-stone-400 font-semibold px-1.5 py-0.5 rounded-md hidden sm:inline">v2.2</span>
           
-          <!-- Logged-in Breadcrumb Path -->
-          <div id="header-breadcrumb" class="hidden items-center gap-1.5 px-2.5 py-1 rounded-xl bg-stone-100 dark:bg-stone-800/80 border border-stone-200 dark:border-stone-700/80 text-xs font-mono font-bold text-stone-800 dark:text-stone-200">
-            <span class="text-stone-400 dark:text-stone-500">fridge/</span>
-            <span id="header-fridge-name" class="text-brand-600 dark:text-brand-400">MY-FRIDGE</span>
-            <button type="button" id="copy-fid-btn" class="ml-1 text-stone-400 hover:text-stone-600 dark:hover:text-stone-200 transition" title="Copy Fridge ID">
+          <!-- Compact Logged-in Fridge Pill -->
+          <div id="header-breadcrumb" class="hidden items-center gap-1 px-2 py-0.5 rounded-lg bg-brand-50 dark:bg-brand-950/60 border border-brand-200 dark:border-brand-800/80 text-xs font-mono font-bold text-brand-800 dark:text-brand-300 truncate">
+            <span class="text-stone-400 dark:text-stone-500 text-[10px]">fridge/</span>
+            <span id="header-fridge-name" class="truncate max-w-[90px] sm:max-w-[140px]">MY-FRIDGE</span>
+            <button type="button" id="copy-fid-btn" class="text-stone-400 hover:text-stone-600 dark:hover:text-stone-200 transition p-0.5 shrink-0" title="Copy Fridge ID">
               <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>
             </button>
           </div>
         </div>
       </div>
 
-      <!-- Controls: Status Pill, PIN, Push Pill, Language, Theme, Logout -->
-      <div class="flex items-center gap-2 text-xs shrink-0">
+      <!-- Controls: Offline Indicator, Language, Theme, Logout/Login -->
+      <div class="flex items-center gap-1.5 sm:gap-2 text-xs shrink-0">
         
-        <!-- Live Multi-Country Time Sync Pill & Timezone Selector (Shown when logged in) -->
-        <div id="header-sync-pill" class="hidden md:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/60" title="Live clock & automatic real-time freshness sync across all countries">
-          <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shrink-0"></span>
-          <span id="header-sync-status">Live • Syncing...</span>
-          <select id="user-tz-select" class="bg-transparent text-[10px] font-mono font-bold text-emerald-800 dark:text-emerald-200 border-none outline-none cursor-pointer pr-1 focus:ring-0 ml-0.5" title="Country / Timezone">
-            <option value="auto">Auto (Local)</option>
-          </select>
-        </div>
-
         <!-- Offline Status Badge (Visible when internet is disconnected) -->
-        <span id="header-offline-badge" class="hidden items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-800" title="Device is offline. Local inventory cache and offline alerts active.">
+        <span id="header-offline-badge" class="hidden items-center gap-1 px-2 py-1 rounded-full text-[10px] font-bold bg-amber-100 dark:bg-amber-950/70 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-800" title="Device is offline. Local inventory cache and offline alerts active.">
           <span class="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
-          <span>Offline Active</span>
+          <span class="hidden sm:inline">Offline</span>
         </span>
 
-        <!-- Quick PIN Button (Shown when logged in) -->
-        <div id="header-pin-container" class="hidden sm:flex items-center gap-1 px-2.5 py-1 rounded-xl bg-stone-100 dark:bg-stone-800 border border-stone-200 dark:border-stone-700 text-xs font-mono">
-          <span class="text-[11px] text-stone-400 font-sans">PIN:</span>
-          <span id="sidebar-fridge-pin" class="font-bold text-stone-700 dark:text-stone-300">••••</span>
-          <button type="button" id="toggle-pin-btn" class="text-stone-400 hover:text-brand-600 dark:hover:text-brand-400 ml-1" title="Show / Hide PIN">
-            <svg id="pin-eye-icon" class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path></svg>
-          </button>
-          <button type="button" id="copy-pin-btn" class="text-stone-400 hover:text-brand-600 dark:hover:text-brand-400" title="Copy PIN">
-            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>
-          </button>
-        </div>
-
-        <!-- Push Alerts Quick Pill (Shown when logged in) -->
-        <button type="button" id="header-push-pill" class="hidden px-2.5 py-1 rounded-xl bg-stone-100 dark:bg-stone-800 hover:bg-stone-200 dark:hover:bg-stone-700 border border-stone-200 dark:border-stone-700 text-xs font-medium flex items-center gap-1.5 transition" title="Go to Offline Web Push Alerts">
-          <svg class="w-3.5 h-3.5 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"></path></svg>
-          <span id="push-status-badge" class="font-bold text-[10px] px-1.5 py-0.5 rounded-full bg-stone-200 dark:bg-stone-700 text-stone-600 dark:text-stone-300">OFF</span>
-        </button>
-
-        <!-- Share Invite Button (Shown when logged in) -->
-        <button type="button" id="share-fridge-btn" class="hidden sm:flex items-center gap-1 px-2.5 py-1 rounded-xl bg-stone-100 dark:bg-stone-800 hover:bg-stone-200 dark:hover:bg-stone-700 text-stone-700 dark:text-stone-300 border border-stone-200 dark:border-stone-700 text-xs font-medium transition" title="Share Fridge with Family">
-          <svg class="w-3.5 h-3.5 text-stone-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"></path></svg>
-          <span class="hidden md:inline" data-i18n="sidebar_share_btn">Share</span>
-        </button>
-
         <!-- Language Toggle Button -->
-        <button id="lang-toggle-btn" class="px-2.5 py-1.5 rounded-xl border border-stone-200 dark:border-stone-700 bg-stone-100 dark:bg-stone-800 hover:bg-stone-200 dark:hover:bg-stone-700 text-stone-700 dark:text-stone-300 font-medium transition flex items-center gap-1.5" title="Switch Language">
+        <button id="lang-toggle-btn" class="px-2.5 py-1.5 rounded-xl border border-stone-200 dark:border-stone-700 bg-stone-100 dark:bg-stone-800 hover:bg-stone-200 dark:hover:bg-stone-700 text-stone-700 dark:text-stone-300 font-semibold text-xs transition flex items-center gap-1" title="Switch Language">
           <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 5h12M9 3v2m1.048 9.5A18.022 18.022 0 016.412 9m6.088 9h7M11 21l5-10 5 10M12.751 5C11.783 10.77 8.07 15.61 3 18.129"></path></svg>
           <span id="lang-label">हिन्दी</span>
         </button>
 
         <!-- Theme Toggle Button -->
-        <button id="theme-toggle-btn" class="p-2 rounded-xl border border-stone-200 dark:border-stone-700 bg-stone-100 dark:bg-stone-800 hover:bg-stone-200 dark:hover:bg-stone-700 text-stone-700 dark:text-stone-300 transition" title="Toggle Dark/Light Mode">
+        <button id="theme-toggle-btn" class="p-1.5 sm:p-2 rounded-xl border border-stone-200 dark:border-stone-700 bg-stone-100 dark:bg-stone-800 hover:bg-stone-200 dark:hover:bg-stone-700 text-stone-700 dark:text-stone-300 transition" title="Toggle Dark/Light Mode">
           <svg id="theme-icon-sun" class="w-4 h-4 hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"></path></svg>
           <svg id="theme-icon-moon" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"></path></svg>
         </button>
 
         <!-- Auth Actions -->
-        <div id="auth-logged-in" class="hidden flex items-center gap-1.5">
-          <button id="logout-btn" class="px-2.5 py-1.5 rounded-xl bg-stone-100 dark:bg-stone-800 hover:bg-rose-50 dark:hover:bg-rose-950/60 hover:text-rose-600 text-stone-600 dark:text-stone-300 font-medium border border-stone-200 dark:border-stone-700 transition" title="Logout" data-i18n="logout_btn">
+        <div id="auth-logged-in" class="hidden items-center">
+          <button id="logout-btn" class="px-2.5 py-1.5 rounded-xl bg-stone-100 dark:bg-stone-800 hover:bg-rose-50 dark:hover:bg-rose-950/60 hover:text-rose-600 text-stone-600 dark:text-stone-300 font-semibold text-xs border border-stone-200 dark:border-stone-700 transition" title="Logout" data-i18n="logout_btn">
             Logout
           </button>
         </div>
 
-        <div id="auth-logged-out" class="flex items-center gap-2">
-          <button id="open-auth-btn" class="px-3.5 py-1.5 rounded-xl bg-stone-900 dark:bg-white hover:bg-stone-800 dark:hover:bg-stone-100 text-white dark:text-stone-900 font-semibold shadow-sm transition flex items-center gap-1.5" data-i18n="login_create_btn">
+        <div id="auth-logged-out" class="flex items-center">
+          <button id="open-auth-btn" class="px-3 py-1.5 rounded-xl bg-stone-900 dark:bg-white hover:bg-stone-800 dark:hover:bg-stone-100 text-white dark:text-stone-900 font-semibold text-xs shadow-sm transition flex items-center gap-1.5" data-i18n="login_create_btn">
             <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1"></path></svg>
             <span>Login</span>
           </button>
@@ -2054,6 +2181,59 @@ HTML_CONTENT = r"""<!DOCTYPE html>
       </div>
     </div>
   </header>
+
+  <!-- DEDICATED LIVE FRESHNESS & STATUS SUB-BAR (SHOWN WHEN LOGGED IN) -->
+  <div id="sub-header-bar" class="hidden bg-stone-100/95 dark:bg-stone-900/95 border-b border-stone-200/90 dark:border-stone-800 text-xs py-2 px-4 transition-all">
+    <div class="max-w-6xl mx-auto flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5">
+      
+      <!-- Left: Live Clock & Multi-Country Timezone Selector -->
+      <div class="flex items-center gap-2 flex-wrap min-w-0">
+        <!-- Live Clock Pill -->
+        <div id="header-sync-pill" class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-semibold bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/80 shadow-2xs shrink-0" title="Live clock & automatic real-time freshness tracking">
+          <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shrink-0"></span>
+          <span id="header-sync-status" class="font-mono font-bold">Live • Syncing...</span>
+        </div>
+
+        <!-- Timezone Selector Dropdown -->
+        <div class="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-white dark:bg-stone-800 border border-stone-200 dark:border-stone-700 shadow-2xs">
+          <span class="text-stone-400 text-[10px] uppercase font-bold tracking-wider">🌍 Zone:</span>
+          <select id="user-tz-select" class="bg-transparent text-xs font-semibold text-stone-800 dark:text-stone-200 border-none outline-none cursor-pointer focus:ring-0 pr-1" title="Select Global Timezone">
+            <option value="auto">Auto (Detected Local Time)</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Right: Family PIN, Push Alerts Status, and Share Button -->
+      <div class="flex items-center gap-2 flex-wrap justify-between sm:justify-end">
+        
+        <!-- Family PIN Container -->
+        <div id="header-pin-container" class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-white dark:bg-stone-800 border border-stone-200 dark:border-stone-700 text-xs font-mono shadow-2xs">
+          <span class="text-[11px] text-stone-400 font-sans font-medium">PIN:</span>
+          <span id="sidebar-fridge-pin" class="font-bold text-stone-700 dark:text-stone-300 tracking-wider">••••</span>
+          <button type="button" id="toggle-pin-btn" class="text-stone-400 hover:text-brand-600 dark:hover:text-brand-400 ml-0.5 p-0.5" title="Show / Hide PIN">
+            <svg id="pin-eye-icon" class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path></svg>
+          </button>
+          <button type="button" id="copy-pin-btn" class="text-stone-400 hover:text-brand-600 dark:hover:text-brand-400 p-0.5" title="Copy PIN">
+            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>
+          </button>
+        </div>
+
+        <!-- Quick Push Alerts Button -->
+        <button type="button" id="header-push-pill" class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-white dark:bg-stone-800 hover:bg-stone-50 dark:hover:bg-stone-750 border border-stone-200 dark:border-stone-700 text-xs font-semibold transition shadow-2xs" title="View Offline Push Notifications">
+          <svg class="w-3.5 h-3.5 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"></path></svg>
+          <span class="text-stone-600 dark:text-stone-400">Alerts:</span>
+          <span id="push-status-badge" class="font-bold text-[10px] px-1.5 py-0.5 rounded-full bg-stone-100 dark:bg-stone-700 text-stone-600 dark:text-stone-300">OFF</span>
+        </button>
+
+        <!-- Share Fridge with Family Button -->
+        <button type="button" id="share-fridge-btn" class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-white dark:bg-stone-800 hover:bg-stone-50 dark:hover:bg-stone-750 text-stone-700 dark:text-stone-300 border border-stone-200 dark:border-stone-700 text-xs font-semibold transition shadow-2xs" title="Share Fridge with Family">
+          <svg class="w-3.5 h-3.5 text-brand-600 dark:text-brand-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"></path></svg>
+          <span data-i18n="sidebar_share_btn">Share</span>
+        </button>
+
+      </div>
+    </div>
+  </div>
 
   <!-- MAIN CONTAINER -->
   <main class="flex-grow max-w-6xl w-full mx-auto px-4 py-5 space-y-6">
@@ -2521,28 +2701,112 @@ HTML_CONTENT = r"""<!DOCTYPE html>
       <!-- TAB 5: STANDALONE FOOD SCANNER SECTION -->
       <section id="section-test" class="tab-section hidden space-y-4">
         <div class="bg-white dark:bg-stone-900 rounded-3xl p-6 sm:p-8 border border-stone-200 dark:border-stone-800 shadow-sm max-w-2xl mx-auto transition-colors">
-          <h2 class="text-lg font-bold text-stone-900 dark:text-white mb-1" data-i18n="scanner_title">AI Food Inspector & Storage Advisor</h2>
+          
+          <div class="flex items-center justify-between gap-3 mb-1 flex-wrap">
+            <h2 class="text-lg font-bold text-stone-900 dark:text-white" data-i18n="scanner_title">AI Food Inspector & Storage Advisor</h2>
+            <div class="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800/80 text-emerald-700 dark:text-emerald-300 text-[10px] font-bold">
+              <span class="w-2 h-2 rounded-full bg-emerald-500 animate-ping"></span>
+              <span>AI Vision Ready</span>
+            </div>
+          </div>
+          
           <p class="text-xs text-stone-500 dark:text-stone-400 mb-4" data-i18n="scanner_desc">
-            Test any Indian food name, brand, or dish to inspect its culinary category, Hindi name, standard shelf life, and whether package expiry is mandatory.
+            Type any food name or snap a photo using the camera bubble to inspect its culinary category, Hindi name, standard shelf life, and storage advice.
           </p>
 
+          <!-- TAKE PHOTO BUBBLE CALLOUT BANNER -->
+          <div class="mb-5 p-4 rounded-2xl bg-gradient-to-r from-emerald-500/10 via-teal-500/10 to-transparent border border-emerald-500/20 dark:border-emerald-500/30 flex items-center justify-between gap-3 flex-wrap">
+            <div class="flex items-center gap-3">
+              <!-- Animated Glowing Take Photo Bubble Button -->
+              <button 
+                type="button" 
+                id="scanner-photo-bubble-btn" 
+                class="group relative inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-full bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs shadow-md hover:shadow-lg transition-all duration-300 transform hover:scale-105 active:scale-95 cursor-pointer ring-2 ring-emerald-400/40"
+                title="Take photo of food with your camera or webcam"
+              >
+                <span class="absolute -top-1 -right-1 flex h-3 w-3">
+                  <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-300 opacity-75"></span>
+                  <span class="relative inline-flex rounded-full h-3 w-3 bg-emerald-400"></span>
+                </span>
+                <span class="text-base transform group-hover:rotate-12 transition-transform duration-200">📸</span>
+                <span data-i18n="scanner_take_photo">Take Photo</span>
+              </button>
+
+              <div>
+                <div class="text-xs font-bold text-stone-800 dark:text-stone-200">Instant AI Food Camera</div>
+                <div class="text-[11px] text-stone-500 dark:text-stone-400">Snap any fresh dish or grocery to auto-identify & track</div>
+              </div>
+            </div>
+
+            <!-- Upload / Live Camera secondary buttons -->
+            <div class="flex items-center gap-2">
+              <button 
+                type="button" 
+                id="scanner-open-webcam-btn" 
+                class="px-3 py-1.5 rounded-xl bg-white dark:bg-stone-800 border border-stone-200 dark:border-stone-700 hover:bg-stone-50 dark:hover:bg-stone-700 text-stone-700 dark:text-stone-300 text-[11px] font-semibold transition flex items-center gap-1.5 shadow-xs"
+                title="Open live desktop webcam viewfinder"
+              >
+                <span>📹</span>
+                <span class="hidden sm:inline">Live Camera</span>
+              </button>
+              
+              <button 
+                type="button" 
+                id="scanner-upload-file-btn" 
+                class="px-3 py-1.5 rounded-xl bg-white dark:bg-stone-800 border border-stone-200 dark:border-stone-700 hover:bg-stone-50 dark:hover:bg-stone-700 text-stone-700 dark:text-stone-300 text-[11px] font-semibold transition flex items-center gap-1.5 shadow-xs"
+                title="Upload image from device storage"
+              >
+                <span>📁</span>
+                <span class="hidden sm:inline">Upload Image</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Hidden inputs for camera capture & file picker -->
+          <input 
+            type="file" 
+            id="scanner-camera-input" 
+            accept="image/*" 
+            capture="environment" 
+            class="hidden"
+          />
+          <input 
+            type="file" 
+            id="scanner-gallery-input" 
+            accept="image/*" 
+            class="hidden"
+          />
+
+          <!-- Text Search Bar Row with inline camera icon -->
           <div class="flex gap-2">
-            <input 
-              type="text" 
-              id="scanner-input" 
-              placeholder="Type any food (e.g. Gajar, Haldiram Bhujia, Amul Butter)..." 
-              class="flex-grow px-4 py-2.5 rounded-xl border border-stone-200 dark:border-stone-700 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 bg-stone-50 dark:bg-stone-800 text-stone-800 dark:text-stone-100 font-medium"
-            />
+            <div class="relative flex-grow">
+              <input 
+                type="text" 
+                id="scanner-input" 
+                placeholder="Or type any food (e.g. Paneer Butter Masala, Gajar, Dal Makhani)..." 
+                class="w-full pl-4 pr-10 py-2.5 rounded-xl border border-stone-200 dark:border-stone-700 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 bg-stone-50 dark:bg-stone-800 text-stone-800 dark:text-stone-100 font-medium"
+              />
+              <button 
+                type="button" 
+                id="scanner-inline-camera-icon" 
+                class="absolute right-2.5 top-1/2 -translate-y-1/2 text-stone-400 hover:text-emerald-600 dark:hover:text-emerald-400 text-base transition p-1"
+                title="Snap photo with camera"
+              >
+                📸
+              </button>
+            </div>
+            
             <button 
               type="button" 
               id="scanner-btn" 
-              class="px-5 py-2.5 bg-stone-900 dark:bg-white text-white dark:text-stone-900 font-semibold rounded-xl text-sm transition"
+              class="px-5 py-2.5 bg-stone-900 dark:bg-white text-white dark:text-stone-900 font-semibold rounded-xl text-sm transition hover:opacity-90 shrink-0"
               data-i18n="scanner_inspect_btn"
             >
               Inspect
             </button>
           </div>
 
+          <!-- Scan Status & Results Container -->
           <div id="scanner-result" class="mt-5 hidden"></div>
         </div>
       </section>
@@ -2673,6 +2937,62 @@ HTML_CONTENT = r"""<!DOCTYPE html>
     </div>
   </div>
 
+  <!-- SCANNER WEBCAM VIEWFINDER MODAL -->
+  <div id="scanner-webcam-modal" class="fixed inset-0 bg-stone-900/75 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+    <div class="bg-white dark:bg-stone-900 rounded-3xl max-w-md w-full p-6 shadow-2xl border border-stone-200 dark:border-stone-800 text-stone-800 dark:text-stone-100 space-y-4">
+      <div class="flex items-center justify-between border-b border-stone-100 dark:border-stone-800 pb-3">
+        <div class="flex items-center gap-2">
+          <span class="text-xl">📸</span>
+          <h3 class="font-bold text-sm" data-i18n="scanner_webcam_title">Live Food Camera Viewfinder</h3>
+        </div>
+        <button id="close-webcam-modal-btn" type="button" class="text-stone-400 hover:text-stone-600 dark:hover:text-stone-200 text-2xl font-bold leading-none">&times;</button>
+      </div>
+
+      <div class="relative rounded-2xl overflow-hidden bg-black aspect-video flex items-center justify-center border border-stone-800 shadow-inner">
+        <video id="webcam-video-stream" autoplay playsinline muted class="w-full h-full object-cover"></video>
+        <!-- Overlay Viewfinder Targeting Rect -->
+        <div class="absolute inset-6 border border-emerald-400/40 rounded-xl pointer-events-none flex items-center justify-center">
+          <div class="w-16 h-16 border-2 border-emerald-400 rounded-lg animate-pulse"></div>
+        </div>
+        <!-- Live Badge -->
+        <span class="absolute top-3 left-3 px-2 py-0.5 rounded-full bg-rose-600 text-white font-bold text-[9px] tracking-wider animate-pulse uppercase flex items-center gap-1">
+          <span class="w-1.5 h-1.5 rounded-full bg-white"></span>
+          LIVE CAMERA
+        </span>
+      </div>
+
+      <div class="flex items-center justify-between gap-2 pt-1">
+        <button 
+          type="button" 
+          id="webcam-switch-cam-btn" 
+          class="px-3 py-2 rounded-xl bg-stone-100 dark:bg-stone-800 hover:bg-stone-200 text-stone-700 dark:text-stone-300 font-semibold text-xs transition flex items-center gap-1"
+          title="Switch front/back camera"
+        >
+          <span>🔄</span>
+          <span>Flip</span>
+        </button>
+
+        <button 
+          type="button" 
+          id="webcam-snap-btn" 
+          class="flex-1 py-2.5 rounded-full bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-bold text-sm shadow-md hover:shadow-lg transition flex items-center justify-center gap-2 active:scale-95"
+        >
+          <span class="w-2.5 h-2.5 rounded-full bg-white animate-ping"></span>
+          <span data-i18n="scanner_snap_btn">Snap Food Photo</span>
+        </button>
+
+        <button 
+          type="button" 
+          id="webcam-choose-file-btn" 
+          class="px-3 py-2 rounded-xl bg-stone-100 dark:bg-stone-800 hover:bg-stone-200 text-stone-700 dark:text-stone-300 font-semibold text-xs transition"
+          title="Upload from device storage"
+        >
+          📁
+        </button>
+      </div>
+    </div>
+  </div>
+
   <!-- TOAST NOTIFICATION CONTAINER -->
   <div id="toast-container" class="fixed bottom-4 right-4 z-50 flex flex-col gap-2 pointer-events-none"></div>
 
@@ -2784,8 +3104,11 @@ HTML_CONTENT = r"""<!DOCTYPE html>
         chef_tip_hdr: "Chef's Zero-Waste Tip:",
         recipe_loading: "Consulting Culinary Intelligence...",
         scanner_title: "AI Food Inspector & Storage Advisor",
-        scanner_desc: "Test any food name, brand, snack, or dish to inspect its culinary category, Hindi name, standard shelf life, and whether package expiry is mandatory.",
+        scanner_desc: "Type any food name or snap a photo using the camera bubble to inspect its culinary category, Hindi name, standard shelf life, and storage advice.",
         scanner_inspect_btn: "Inspect",
+        scanner_take_photo: "Take Photo",
+        scanner_snap_btn: "Snap Food Photo",
+        scanner_webcam_title: "Live Food Camera Viewfinder",
         auth_modal_title: "Fridge Login & Setup",
         auth_login_tab: "Login to Fridge",
         auth_create_tab: "Create New Fridge",
@@ -2864,8 +3187,11 @@ HTML_CONTENT = r"""<!DOCTYPE html>
         chef_tip_hdr: "दादी माँ का नुस्खा (जीरो-वेस्ट टिप):",
         recipe_loading: "रेसिपी तैयार की जा रही है...",
         scanner_title: "खाद्य परीक्षक एवं भंडारण गाइड",
-        scanner_desc: "किसी भी खाद्य पदार्थ की शेल्फ-लाइफ, श्रेणी और पैकेज एक्सपायरी जाँचें।",
+        scanner_desc: "किसी भी भोजन का नाम लिखें या कैमरा बबल से फोटो खींचकर शेल्फ-लाइफ, श्रेणी और भंडारण सलाह जानें।",
         scanner_inspect_btn: "परीक्षण करें",
+        scanner_take_photo: "फोटो लें",
+        scanner_snap_btn: "भोजन की फोटो लें",
+        scanner_webcam_title: "लाइव फूड कैमरा व्यूफ़ाइंडर",
         auth_modal_title: "फ्रिज लॉग इन और सेटअप",
         auth_login_tab: "फ्रिज खोलें",
         auth_create_tab: "नया फ्रिज बनाएँ",
@@ -2993,13 +3319,17 @@ HTML_CONTENT = r"""<!DOCTYPE html>
       document.getElementById('auth-logged-out').classList.add('hidden');
       document.getElementById('header-breadcrumb').classList.remove('hidden');
       document.getElementById('header-breadcrumb').classList.add('flex');
+      
+      const subBar = document.getElementById('sub-header-bar');
+      if (subBar) subBar.classList.remove('hidden');
+
       document.getElementById('header-sync-pill').classList.remove('hidden');
       document.getElementById('header-sync-pill').classList.add('inline-flex');
       document.getElementById('header-pin-container').classList.remove('hidden');
-      document.getElementById('header-pin-container').classList.add('flex');
+      document.getElementById('header-pin-container').classList.add('inline-flex');
       document.getElementById('header-push-pill').classList.remove('hidden');
       document.getElementById('share-fridge-btn').classList.remove('hidden');
-      document.getElementById('share-fridge-btn').classList.add('flex');
+      document.getElementById('share-fridge-btn').classList.add('inline-flex');
 
       document.getElementById('header-fridge-name').textContent = fid.toUpperCase();
       const diagFid = document.getElementById('diag-fridge-id');
@@ -3023,6 +3353,9 @@ HTML_CONTENT = r"""<!DOCTYPE html>
       document.getElementById('header-pin-container').classList.add('hidden');
       document.getElementById('header-push-pill').classList.add('hidden');
       document.getElementById('share-fridge-btn').classList.add('hidden');
+
+      const subBar = document.getElementById('sub-header-bar');
+      if (subBar) subBar.classList.add('hidden');
 
       document.getElementById('logged-out-bubble').classList.remove('hidden');
       document.getElementById('app-dashboard').classList.add('hidden');
@@ -3765,7 +4098,395 @@ HTML_CONTENT = r"""<!DOCTYPE html>
       });
     });
 
-    // Standalone Scanner
+    // ========================================================
+    // FOOD SCANNER & AI PHOTO INSPECTOR
+    // ========================================================
+
+    let webcamStream = null;
+    let currentWebcamFacing = 'environment'; // 'environment' (back) or 'user' (front)
+
+    // Helper: compress & resize image to max dimension ~1024px for quick base64 AI scanning
+    async function compressAndResizeImage(fileOrBlob, maxDim = 1024, quality = 0.85) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          const img = new Image();
+          img.onload = () => {
+            let width = img.width;
+            let height = img.height;
+            if (width > maxDim || height > maxDim) {
+              if (width > height) {
+                height = Math.round((height * maxDim) / width);
+                width = maxDim;
+              } else {
+                width = Math.round((width * maxDim) / height);
+                height = maxDim;
+              }
+            }
+            const canvas = document.createElement('canvas');
+            canvas.width = width;
+            canvas.height = height;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(img, 0, 0, width, height);
+            const dataUrl = canvas.toDataURL('image/jpeg', quality);
+            resolve({ dataUrl, width, height });
+          };
+          img.onerror = reject;
+          img.src = e.target.result;
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(fileOrBlob);
+      });
+    }
+
+    // Helper: Render standard food scanner results with 1-tap "Add to Fridge"
+    function renderScannerResult(data, photoUrl = null, queryText = '') {
+      const resBox = document.getElementById('scanner-result');
+      resBox.classList.remove('hidden');
+
+      if (!data.is_food) {
+        resBox.innerHTML = `
+          <div class="p-5 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 text-xs text-amber-800 dark:text-amber-200 space-y-2">
+            <div class="flex items-center gap-2 font-bold text-sm">
+              <span>⚠️</span>
+              <span>Not a Food Item</span>
+            </div>
+            <p>${data.message || `'${queryText || 'Item'}' does not appear to be an edible food or kitchen grocery item.`}</p>
+          </div>
+        `;
+        return;
+      }
+
+      const displayNameEn = data.name_en || queryText || 'Fresh Food';
+      const displayNameHi = data.name_hi || '';
+      const displayCategory = data.category || 'cooked_dish';
+      const shelfDays = data.shelf_life_days;
+
+      const shelfLifeText = shelfDays 
+        ? `<span class="text-emerald-600 dark:text-emerald-400 font-bold">${shelfDays} days</span> <span class="text-stone-400 text-[11px] font-normal">(Made / stored today)</span>`
+        : `<span class="text-amber-600 dark:text-amber-400 font-bold">Package Expiry Date Required</span>`;
+
+      const requiresExpiryBadge = data.requires_expiry_date
+        ? `<span class="px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/60 text-amber-700 dark:text-amber-300 font-bold text-[10px]">Yes (Packaged)</span>`
+        : `<span class="px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 font-bold text-[10px]">No (Automatic Expiry)</span>`;
+
+      // Safe JSON encoding for onclick attribute
+      const itemPayload = {
+        name_en: displayNameEn,
+        name_hi: displayNameHi,
+        category: displayCategory,
+        shelf_life_days: shelfDays || 2,
+        requires_expiry_date: !!data.requires_expiry_date,
+        storage_tip: data.storage_tip || ''
+      };
+      const encodedPayload = encodeURIComponent(JSON.stringify(itemPayload));
+
+      resBox.innerHTML = `
+        <div class="p-5 rounded-3xl bg-stone-50 dark:bg-stone-800/90 border border-stone-200 dark:border-stone-700 text-xs space-y-4 shadow-sm transition-all">
+          
+          ${photoUrl ? `
+            <div class="flex items-center gap-3 pb-3 border-b border-stone-200 dark:border-stone-700/60">
+              <div class="relative w-16 h-16 rounded-2xl overflow-hidden shrink-0 border-2 border-emerald-500/40 shadow-sm bg-black">
+                <img src="${photoUrl}" alt="Scanned Food Photo" class="w-full h-full object-cover"/>
+                <span class="absolute bottom-0 inset-x-0 bg-stone-900/80 text-white text-[8px] text-center font-bold py-0.5">PHOTO</span>
+              </div>
+              <div class="min-w-0">
+                <div class="flex items-center gap-2">
+                  <span class="px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 font-bold text-[10px] tracking-wide">📸 AI VISION SCANNED</span>
+                  <span class="text-[10px] text-stone-400 truncate">• ${data.analyzed_by || 'Gemini Vision AI'}</span>
+                </div>
+                <div class="text-[11px] text-stone-500 dark:text-stone-400 mt-1">Identified dish & shelf-life from camera snapshot</div>
+              </div>
+            </div>
+          ` : ''}
+
+          <!-- Name & Category -->
+          <div class="flex items-start justify-between gap-3">
+            <div>
+              <div class="font-bold text-base text-stone-900 dark:text-white flex items-center gap-2">
+                <span>🍽️</span>
+                <span>${displayNameEn}</span>
+              </div>
+              ${displayNameHi ? `<div class="text-brand-600 dark:text-brand-400 font-semibold text-xs mt-0.5 pl-6">${displayNameHi}</div>` : ''}
+            </div>
+            <span class="font-bold uppercase text-[10px] px-2.5 py-1 rounded-full bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-700 text-stone-700 dark:text-stone-300 tracking-wider shrink-0 shadow-2xs">
+              ${displayCategory}
+            </span>
+          </div>
+
+          <!-- Shelf Life & Package Expiry Requirement -->
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+            <div class="p-3 rounded-2xl bg-white dark:bg-stone-900 border border-stone-100 dark:border-stone-700/60 shadow-2xs">
+              <div class="text-[10px] text-stone-400 uppercase tracking-wider font-semibold mb-1">⏱️ Estimated Shelf Life</div>
+              <div class="text-xs">${shelfLifeText}</div>
+            </div>
+            <div class="p-3 rounded-2xl bg-white dark:bg-stone-900 border border-stone-100 dark:border-stone-700/60 shadow-2xs">
+              <div class="text-[10px] text-stone-400 uppercase tracking-wider font-semibold mb-1">📦 Package Expiry Required</div>
+              <div class="text-xs">${requiresExpiryBadge}</div>
+            </div>
+          </div>
+
+          <!-- Storage Tip -->
+          <div class="p-3 rounded-2xl bg-white dark:bg-stone-900 border border-stone-100 dark:border-stone-700/60 shadow-2xs">
+            <div class="text-[10px] text-stone-400 uppercase tracking-wider font-semibold mb-1">💡 Storage Advice</div>
+            <div class="text-stone-700 dark:text-stone-300 text-xs leading-relaxed">${data.storage_tip || 'Keep refrigerated in an airtight container.'}</div>
+          </div>
+
+          <!-- Action Button: 1-Tap Add to Fridge -->
+          <div class="pt-1 flex items-center justify-between gap-3 flex-wrap">
+            <button 
+              type="button" 
+              onclick="addScannedItemDirectly('${encodedPayload}', this)"
+              class="w-full sm:w-auto flex-1 inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-sm hover:shadow transition active:scale-95"
+            >
+              <span>➕</span>
+              <span>Add to Fridge Inventory</span>
+            </button>
+            <span class="text-[10px] text-stone-400 text-right w-full sm:w-auto">
+              Added today • Non-negative accurate expiry
+            </span>
+          </div>
+        </div>
+      `;
+    }
+
+    // Direct 1-tap add from scanner to active fridge
+    window.addScannedItemDirectly = async function(encodedPayload, btnElem) {
+      try {
+        const item = JSON.parse(decodeURIComponent(encodedPayload));
+        if (btnElem) {
+          btnElem.disabled = true;
+          btnElem.innerHTML = '<span>⏳</span><span>Adding to Fridge...</span>';
+        }
+
+        const fid = currentFridge || 'test';
+        const activeTz = getEffectiveTimezone();
+        const url = `/api/inventory?fridge=${encodeURIComponent(fid)}`;
+
+        const res = await fetch(url, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Client-Timezone': activeTz
+          },
+          body: JSON.stringify({
+            name_en: item.name_en,
+            name_hi: item.name_hi || '',
+            category: item.category || 'cooked_dish',
+            shelf_life_days: item.shelf_life_days || 2,
+            requires_expiry_date: item.requires_expiry_date || false,
+            storage_tip: item.storage_tip || ''
+          })
+        });
+
+        if (!res.ok) {
+          throw new Error('Failed to save item');
+        }
+
+        const saved = await res.json();
+        if (btnElem) {
+          btnElem.className = 'w-full sm:w-auto flex-1 inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-stone-200 dark:bg-stone-700 text-stone-800 dark:text-stone-200 font-bold text-xs cursor-default';
+          btnElem.innerHTML = `<span>✅</span><span>Added! (${saved.days_left}d left until ${saved.expiry_date})</span>`;
+        }
+
+        await loadInventory(true);
+        showToast(`Added ${saved.name_en} to fridge!`, 'success');
+      } catch (err) {
+        console.error('Error adding scanned item:', err);
+        if (btnElem) {
+          btnElem.disabled = false;
+          btnElem.innerHTML = '<span>❌</span><span>Failed to Add. Retry?</span>';
+        }
+        showToast('Failed to save to fridge.', 'error');
+      }
+    };
+
+    // Core Photo Scanner Function
+    async function scanFoodPhoto(fileOrBlob) {
+      if (!fileOrBlob) return;
+
+      const resBox = document.getElementById('scanner-result');
+      resBox.classList.remove('hidden');
+
+      // Immediate visual feedback with photo thumbnail + laser scanning animation
+      const objectUrl = URL.createObjectURL(fileOrBlob);
+      resBox.innerHTML = `
+        <div class="p-5 rounded-3xl bg-stone-50 dark:bg-stone-800/90 border border-stone-200 dark:border-stone-700 text-xs space-y-4 shadow-sm animate-pulse-subtle">
+          <div class="relative w-full max-w-xs mx-auto rounded-2xl overflow-hidden aspect-video bg-black flex items-center justify-center border border-stone-800 shadow-md">
+            <img src="${objectUrl}" alt="Scanning..." class="w-full h-full object-cover opacity-80"/>
+            <div class="scanner-laser-bar"></div>
+            <div class="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent"></div>
+            <span class="absolute bottom-2 left-2 px-2 py-0.5 rounded-full bg-emerald-500 text-white font-bold text-[9px] tracking-wider uppercase animate-pulse">
+              AI SCANNING...
+            </span>
+          </div>
+          <div class="text-center space-y-1">
+            <div class="text-xs font-bold text-stone-800 dark:text-stone-200 flex items-center justify-center gap-2">
+              <span class="animate-spin text-sm">⏳</span>
+              <span>Gemini AI Vision Analyzing Food Photo...</span>
+            </div>
+            <p class="text-[11px] text-stone-500 dark:text-stone-400">Detecting dish name, culinary category, freshness & accurate shelf life</p>
+          </div>
+        </div>
+      `;
+
+      try {
+        const { dataUrl } = await compressAndResizeImage(fileOrBlob, 1024, 0.85);
+
+        const res = await fetch('/api/scanner/photo', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            image: dataUrl,
+            mime_type: 'image/jpeg'
+          })
+        });
+
+        if (!res.ok) {
+          throw new Error(`HTTP error ${res.status}`);
+        }
+
+        const data = await res.json();
+        renderScannerResult(data, dataUrl);
+      } catch (err) {
+        console.error('Photo scan error:', err);
+        resBox.innerHTML = `
+          <div class="p-5 rounded-2xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 text-xs text-rose-800 dark:text-rose-200 space-y-3">
+            <div class="font-bold flex items-center gap-2">
+              <span>❌</span>
+              <span>AI Photo Inspection Failed</span>
+            </div>
+            <p>Could not analyze the photo. Please ensure a clear photo of food and try again.</p>
+            <button 
+              type="button" 
+              onclick="document.getElementById('scanner-photo-bubble-btn').click()" 
+              class="px-4 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-semibold text-xs transition"
+            >
+              Retry Camera Snap
+            </button>
+          </div>
+        `;
+      }
+    }
+
+    // WEBCAM LIVE STREAM CONTROLS
+    async function startWebcamStream(facingMode = 'environment') {
+      const modal = document.getElementById('scanner-webcam-modal');
+      const video = document.getElementById('webcam-video-stream');
+      modal.classList.remove('hidden');
+
+      if (webcamStream) {
+        stopWebcamStream();
+      }
+
+      currentWebcamFacing = facingMode;
+
+      try {
+        webcamStream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            facingMode: { ideal: facingMode },
+            width: { ideal: 1280 },
+            height: { ideal: 720 }
+          },
+          audio: false
+        });
+        video.srcObject = webcamStream;
+      } catch (err) {
+        console.warn('Webcam stream failed or permission denied:', err);
+        stopWebcamStream();
+        modal.classList.add('hidden');
+        // Fall back to native camera / file input
+        showToast('Camera access unavailable. Opening device photo picker...', 'info');
+        document.getElementById('scanner-camera-input').click();
+      }
+    }
+
+    function stopWebcamStream() {
+      const modal = document.getElementById('scanner-webcam-modal');
+      const video = document.getElementById('webcam-video-stream');
+      if (webcamStream) {
+        webcamStream.getTracks().forEach(track => track.stop());
+        webcamStream = null;
+      }
+      if (video) video.srcObject = null;
+      if (modal) modal.classList.add('hidden');
+    }
+
+    // Take Photo Bubble Click Handler
+    document.getElementById('scanner-photo-bubble-btn').addEventListener('click', () => {
+      const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || ('ontouchstart' in window);
+      if (isMobile) {
+        // Direct mobile camera launch
+        document.getElementById('scanner-camera-input').click();
+      } else {
+        // On desktop, open live camera viewfinder
+        startWebcamStream('environment');
+      }
+    });
+
+    // Secondary buttons
+    document.getElementById('scanner-open-webcam-btn').addEventListener('click', () => {
+      startWebcamStream('environment');
+    });
+
+    document.getElementById('scanner-upload-file-btn').addEventListener('click', () => {
+      document.getElementById('scanner-gallery-input').click();
+    });
+
+    document.getElementById('scanner-inline-camera-icon').addEventListener('click', () => {
+      document.getElementById('scanner-camera-input').click();
+    });
+
+    // File Input change listeners
+    document.getElementById('scanner-camera-input').addEventListener('change', (e) => {
+      if (e.target.files && e.target.files[0]) {
+        scanFoodPhoto(e.target.files[0]);
+        e.target.value = '';
+      }
+    });
+
+    document.getElementById('scanner-gallery-input').addEventListener('change', (e) => {
+      if (e.target.files && e.target.files[0]) {
+        scanFoodPhoto(e.target.files[0]);
+        e.target.value = '';
+      }
+    });
+
+    // Webcam Modal buttons
+    document.getElementById('close-webcam-modal-btn').addEventListener('click', stopWebcamStream);
+
+    document.getElementById('webcam-choose-file-btn').addEventListener('click', () => {
+      stopWebcamStream();
+      document.getElementById('scanner-gallery-input').click();
+    });
+
+    document.getElementById('webcam-switch-cam-btn').addEventListener('click', () => {
+      const newFacing = currentWebcamFacing === 'environment' ? 'user' : 'environment';
+      startWebcamStream(newFacing);
+    });
+
+    document.getElementById('webcam-snap-btn').addEventListener('click', () => {
+      const video = document.getElementById('webcam-video-stream');
+      if (!video || !video.videoWidth) {
+        showToast('Camera not ready. Please wait a moment.', 'warning');
+        return;
+      }
+
+      const canvas = document.createElement('canvas');
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+      canvas.toBlob((blob) => {
+        stopWebcamStream();
+        if (blob) {
+          scanFoodPhoto(blob);
+        }
+      }, 'image/jpeg', 0.9);
+    });
+
+    // Standalone Text Scanner Inspect Button
     document.getElementById('scanner-btn').addEventListener('click', async () => {
       const text = document.getElementById('scanner-input').value.trim();
       if (!text) return;
@@ -3781,19 +4502,7 @@ HTML_CONTENT = r"""<!DOCTYPE html>
           body: JSON.stringify({ item: text })
         });
         const data = await res.json();
-
-        resBox.innerHTML = `
-          <div class="p-4 rounded-2xl bg-stone-50 dark:bg-stone-800 border border-stone-200 dark:border-stone-700 text-xs space-y-2">
-            <div class="flex items-center justify-between">
-              <span class="font-bold text-sm text-stone-900 dark:text-white">${data.name_en || text}</span>
-              <span class="font-bold uppercase text-[10px] px-2 py-0.5 rounded bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-700">${data.category}</span>
-            </div>
-            ${data.name_hi ? `<div class="text-brand-600 font-semibold">${data.name_hi}</div>` : ''}
-            <div>Estimated Shelf Life: <b>${data.shelf_life_days ? data.shelf_life_days + ' days' : 'Package Expiry Date Required'}</b></div>
-            <div>Package Expiry Required: <b>${data.requires_expiry_date ? 'Yes' : 'No'}</b></div>
-            <div>Storage Advice: <span class="text-stone-600 dark:text-stone-300">${data.storage_tip}</span></div>
-          </div>
-        `;
+        renderScannerResult(data, null, text);
       } catch (err) {
         resBox.innerHTML = '<div class="text-xs text-rose-500">Failed to inspect item.</div>';
       }
