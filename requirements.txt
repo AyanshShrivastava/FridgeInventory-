@@ -3,3 +3,5 @@ uvicorn
 pydantic
 google-genai
 firebase-admin
+pywebpush
+cryptography

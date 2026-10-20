@@ -9,3 +9,9 @@ services:
         sync: false
       - key: FIREBASE_CREDENTIALS_JSON
         sync: false
+      - key: VAPID_PUBLIC_KEY
+        sync: false
+      - key: VAPID_PRIVATE_KEY
+        sync: false
+      - key: VAPID_SUBJECT
+        sync: false
