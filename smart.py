@@ -480,10 +480,13 @@ class ClassifyResponse(BaseModel):
     requires_expiry_date: bool = False
     storage_tip: str = ""
     message: Optional[str] = None
+    message_hi: Optional[str] = None
     analyzed_by: str = "Gemini AI"
     items: List[dict] = Field(default_factory=list)
     auto_added: List[InventoryItem] = Field(default_factory=list)
     needs_expiry: List[dict] = Field(default_factory=list)
+    scanner_failed: bool = False
+    manual_confirmation_required: bool = False
 
 
 class AuthLoginRequest(BaseModel):
@@ -615,6 +618,36 @@ def get_current_fridge_id(request: Request) -> Optional[str]:
     """Retrieve verified fridge_id from current active session."""
     sess = get_current_session_data(request)
     return sess.get("fridge_id") if sess else None
+
+
+def require_authenticated_fridge(request: Request, requested_fridge_id: Optional[str] = None) -> str:
+    """
+    Enforces strict fridge authorization:
+    - Verifies that a cryptographically signed session cookie or valid Authorization / X-Fridge-Session
+      token exists and belongs to an active, unexpired fridge session.
+    - If a fridge ID is passed in the URL (query parameter) or request body, ensures it strictly and
+      case-sensitively matches the authenticated session's fridge ID.
+    - NEVER treats knowing or passing a fridge ID alone as proof of permission.
+    - Raises HTTP 401 Unauthorized if no valid session is present.
+    - Raises HTTP 403 Forbidden if the requested fridge ID does not match the authenticated session.
+    """
+    sess = get_current_session_data(request)
+    if not sess or not sess.get("fridge_id"):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required. Please log in with your Fridge ID and PIN to access or manage this fridge.",
+            headers={"WWW-Authenticate": "Cookie"},
+        )
+    auth_fid = str(sess["fridge_id"]).strip()
+    if requested_fridge_id:
+        req_clean = str(requested_fridge_id).strip()
+        # Strictly case-sensitive fridge identification
+        if req_clean and req_clean != auth_fid:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Access denied. Your active session is authorized for fridge '{auth_fid}', not '{req_clean}'.",
+            )
+    return auth_fid
 
 
 def update_fridge_time_and_inventory(fridge_id: Optional[str], tz_name: Optional[str] = None) -> List[InventoryItem]:
@@ -1219,16 +1252,19 @@ def classify_food(phrase: str) -> ClassifyResponse:
             analyzed_by="Food Knowledge Base",
         )
 
+    # If item is not in verified database and Gemini failed: request manual confirmation
     return ClassifyResponse(
         is_food=True,
         name_en=clean_phrase.title(),
         name_hi=clean_phrase,
-        category="vegetable",
-        shelf_life_days=4,
-        requires_expiry_date=False,
-        storage_tip="Refrigerate in a clean container to maximize freshness.",
-        message="Classified using standard kitchen estimate.",
-        analyzed_by="Default Heuristic",
+        category="cooked_dish",
+        shelf_life_days=None,
+        requires_expiry_date=True,
+        storage_tip="Store refrigerated in a clean container.",
+        message=f"'{clean_phrase.title()}' requires shelf-life confirmation.",
+        message_hi=f"'{clean_phrase}' के लिए शेल्फ-लाइफ की पुष्टि आवश्यक है।",
+        analyzed_by="Manual Confirmation Required",
+        manual_confirmation_required=True,
     )
 
 
@@ -1409,56 +1445,25 @@ def classify_food_photo(
                     logger.warning(f"Gemini vision model {model_name} failed: {exc}")
                     continue
 
-    # Graceful fallback if Gemini Vision is unavailable or offline
-    fallback_items = [
-        FoodItemVerdict(
-            name_en="Fresh Cooked Dish",
-            name_hi="ताज़ा भोजन",
-            category=FoodCategory.COOKED_DISH,
-            shelf_life_days=2,
-            requires_expiry_date=False,
-            storage_tip="Store in an airtight container in refrigerator. Reheat before serving.",
-        )
-    ]
-    auto_added_fb: List[InventoryItem] = []
-    if fridge_id:
-        try:
-            fb = fallback_items[0]
-            item_create = InventoryItemCreate(
-                name_en=fb.name_en,
-                name_hi=fb.name_hi,
-                category=fb.category.value,
-                shelf_life_days=fb.shelf_life_days,
-                requires_expiry_date=False,
-                expiry_date=None,
-                storage_tip=fb.storage_tip,
-            )
-            saved = save_fridge_inventory_item(fridge_id, item_create, client_tz=client_tz)
-            auto_added_fb.append(saved)
-        except Exception as save_err:
-            logger.warning(f"Fallback auto-add item failed: {save_err}")
-
-    fb_item = fallback_items[0]
+    # When Gemini cannot identify the food or all configured models fail:
+    # NEVER silently present a generic classification as if the food was identified correctly.
+    logger.warning("Gemini Vision was unable to identify food in the photo or all vision models were unreachable.")
     return ClassifyResponse(
-        is_food=True,
-        name_en=fb_item.name_en,
-        name_hi=fb_item.name_hi,
-        category=fb_item.category.value,
-        shelf_life_days=fb_item.shelf_life_days,
+        is_food=False,
+        name_en="",
+        name_hi="",
+        category="not_food",
+        shelf_life_days=None,
         requires_expiry_date=False,
-        storage_tip=fb_item.storage_tip,
-        message="Visual analysis completed. Fresh food auto-added to your fridge inventory." if auto_added_fb else "Visual analysis completed.",
-        analyzed_by="Visual Food Inspector",
-        items=[{
-            "name_en": fb_item.name_en,
-            "name_hi": fb_item.name_hi,
-            "category": fb_item.category.value,
-            "shelf_life_days": fb_item.shelf_life_days,
-            "requires_expiry_date": False,
-            "storage_tip": fb_item.storage_tip,
-        }],
-        auto_added=auto_added_fb,
+        storage_tip="",
+        message="AI could not identify food in this photo or AI vision models were unreachable. Please retake the photo clearly or enter item details manually.",
+        message_hi="AI इस फ़ोटो में भोजन की पहचान नहीं कर सका या मॉडल अनुपलब्ध हैं। कृपया साफ़ फ़ोटो लें या मैन्युअल रूप से दर्ज करें।",
+        analyzed_by="Gemini Vision AI",
+        items=[],
+        auto_added=[],
         needs_expiry=[],
+        scanner_failed=True,
+        manual_confirmation_required=True,
     )
 
 
@@ -1869,14 +1874,12 @@ def api_process_command(payload: CommandRequest, request: Request, fridge: Optio
     if not raw_cmd:
         raise HTTPException(status_code=400, detail="Command cannot be empty.")
 
-    fid = get_current_fridge_id(request) or (fridge.strip() if fridge else None)
-    inv = get_fridge_inventory(fid) if fid else []
+    fid = require_authenticated_fridge(request, requested_fridge_id=fridge)
+    inv = get_fridge_inventory(fid)
     cmd_lower = raw_cmd.lower()
 
     # 1. Clear check
     if any(p in cmd_lower for p in CLEAR_PHRASES):
-        if not fid:
-            raise HTTPException(status_code=401, detail="Please login to your fridge to manage items.")
         for item in inv:
             remove_fridge_inventory_item(fid, item.id)
         return {
@@ -2105,6 +2108,7 @@ def api_auth_me(request: Request):
             "authenticated": True,
             "fridge_id": fid,
             "fridge_name": fid,
+            "token": sess.get("token", ""),
             "pin": sess.get("pin", ""),
             "timezone": active_tz,
             "timezone_code": tz_code,
@@ -2221,6 +2225,7 @@ def api_auth_login(payload: AuthLoginRequest, request: Request, response: Respon
     return {
         "ok": True,
         "fridge_id": fid,
+        "token": token,
         "pin": pin,
         "timezone": client_tz or "UTC",
         "timezone_code": tz_code,
@@ -2322,6 +2327,7 @@ def api_auth_create(payload: AuthCreateRequest, request: Request, response: Resp
     return {
         "ok": True,
         "fridge_id": fid,
+        "token": token,
         "pin": pin,
         "timezone": client_tz or "UTC",
         "timezone_code": tz_code,
@@ -2395,9 +2401,7 @@ def api_push_vapid_key():
 @app.post("/api/push/subscribe", summary="Subscribe to Push Notifications")
 def api_push_subscribe(payload: PushSubscribeRequest, request: Request):
     """Register a browser push subscription for the current fridge."""
-    fid = get_current_fridge_id(request)
-    if not fid:
-        raise HTTPException(status_code=401, detail="Login to your fridge to enable notifications.")
+    fid = require_authenticated_fridge(request)
     if not payload.subscription or not payload.subscription.get("endpoint"):
         raise HTTPException(status_code=400, detail="Invalid push subscription object.")
 
@@ -2415,9 +2419,7 @@ def api_push_unsubscribe(payload: PushSubscribeRequest, request: Request):
 @app.post("/api/push/test", summary="Send a Test Push Notification")
 def api_push_test(request: Request):
     """Send a test notification to all subscribed devices for the current fridge."""
-    fid = get_current_fridge_id(request)
-    if not fid:
-        raise HTTPException(status_code=401, detail="Login to your fridge first.")
+    fid = require_authenticated_fridge(request)
 
     subs = _get_push_subscriptions_for_fridge(fid)
     if not subs:
@@ -2439,9 +2441,7 @@ def api_push_test(request: Request):
 @app.post("/api/push/check-expiry", summary="Check expiry and send push alerts")
 def api_push_check_expiry(request: Request):
     """Manually trigger expiry check and send push notifications for items expiring soon."""
-    fid = get_current_fridge_id(request)
-    if not fid:
-        raise HTTPException(status_code=401, detail="Login to your fridge first.")
+    fid = require_authenticated_fridge(request)
 
     client_tz = request.headers.get("X-Client-Timezone")
     items = update_fridge_time_and_inventory(fid, tz_name=client_tz)
@@ -2595,7 +2595,14 @@ def api_classify_photo(payload: PhotoScanRequest, request: Request, fridge: Opti
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="Photo image data cannot be empty.",
         )
-    fid = get_current_fridge_id(request) or (payload.fridge_id.strip() if payload.fridge_id else None) or (fridge.strip() if fridge else None)
+    target_fid = (payload.fridge_id or fridge or "").strip()
+    fid = None
+    if target_fid:
+        # Deliberate authorization check: knowing an ID alone is never proof of permission!
+        fid = require_authenticated_fridge(request, requested_fridge_id=target_fid)
+    else:
+        fid = get_current_fridge_id(request)
+
     client_tz = payload.timezone or request.headers.get("X-Client-Timezone")
     return classify_food_photo(payload.image, payload.mime_type, fridge_id=fid, client_tz=client_tz)
 
@@ -2631,9 +2638,8 @@ def api_rescue(payload: RescueRequest):
 @app.get("/api/inventory", response_model=List[InventoryItem], summary="Get All Inventory Items")
 def api_get_inventory(request: Request, fridge: Optional[str] = None):
     """Retrieve all tracked items for the active fridge, dynamically syncing freshness with local timezone."""
-    fid = get_current_fridge_id(request) or (fridge.strip() if fridge else None)
-    if not fid:
-        return []
+    # Deliberate authorization check: strictly requires valid session matching requested fridge
+    fid = require_authenticated_fridge(request, requested_fridge_id=fridge)
     client_tz = request.headers.get("X-Client-Timezone")
     return get_fridge_inventory(fid, tz_name=client_tz)
 
@@ -2641,9 +2647,8 @@ def api_get_inventory(request: Request, fridge: Optional[str] = None):
 @app.post("/api/inventory", response_model=InventoryItem, summary="Add Item to Inventory")
 def api_add_inventory(item: InventoryItemCreate, request: Request, fridge: Optional[str] = None):
     """Add a verified food item into the active fridge inventory."""
-    fid = get_current_fridge_id(request) or (fridge.strip() if fridge else None)
-    if not fid:
-        raise HTTPException(status_code=401, detail="Please login to your fridge to add items.")
+    # Deliberate authorization check: strictly requires valid session matching requested fridge
+    fid = require_authenticated_fridge(request, requested_fridge_id=fridge)
     client_tz = request.headers.get("X-Client-Timezone")
     return save_fridge_inventory_item(fid, item, client_tz=client_tz)
 
@@ -2651,9 +2656,8 @@ def api_add_inventory(item: InventoryItemCreate, request: Request, fridge: Optio
 @app.delete("/api/inventory/{item_id}", summary="Delete / Consume Inventory Item")
 def api_delete_inventory(item_id: str, request: Request, fridge: Optional[str] = None):
     """Remove an item from the active fridge inventory."""
-    fid = get_current_fridge_id(request) or (fridge.strip() if fridge else None)
-    if not fid:
-        raise HTTPException(status_code=401, detail="Please login to your fridge to delete items.")
+    # Deliberate authorization check: strictly requires valid session matching requested fridge
+    fid = require_authenticated_fridge(request, requested_fridge_id=fridge)
     removed = remove_fridge_inventory_item(fid, item_id)
     if not removed:
         raise HTTPException(status_code=404, detail=f"Item {item_id} not found.")
@@ -2670,6 +2674,12 @@ HTML_CONTENT = r"""<!DOCTYPE html>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>FridgeInventory - Smart Food Inventory & Zero-Waste Kitchen</title>
+  <!-- Progressive Web App / Mobile Optimization -->
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="FridgeInventory">
+  <meta name="theme-color" content="#10b981">
+  <link rel="manifest" href="/manifest.json">
   <!-- Tailwind CSS CDN -->
   <script src="https://cdn.tailwindcss.com"></script>
   <!-- Google Fonts: Inter, Poppins, Noto Sans Devanagari -->
@@ -2826,6 +2836,13 @@ HTML_CONTENT = r"""<!DOCTYPE html>
           <span class="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
           <span class="hidden sm:inline">Offline</span>
         </span>
+
+        <!-- Add to Home Screen Button -->
+        <button id="pwa-install-btn" type="button" onclick="openHomeScreenModal()" class="px-2.5 py-1.5 rounded-xl bg-gradient-to-r from-emerald-500/10 to-teal-500/10 hover:from-emerald-500/20 hover:to-teal-500/20 text-emerald-700 dark:text-emerald-300 font-semibold text-xs border border-emerald-500/30 transition flex items-center gap-1.5 shadow-2xs" title="Add to Home Screen / Install App">
+          <svg class="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z"/></svg>
+          <span class="hidden sm:inline" data-i18n="pwa_install_btn">Add to Home Screen</span>
+          <span class="inline sm:hidden" data-i18n="pwa_install_btn_short">Install</span>
+        </button>
 
         <!-- Language Toggle Button -->
         <button id="lang-toggle-btn" class="px-2.5 py-1.5 rounded-xl border border-stone-200 dark:border-stone-700 bg-stone-100 dark:bg-stone-800 hover:bg-stone-200 dark:hover:bg-stone-700 text-stone-700 dark:text-stone-300 font-semibold text-xs transition flex items-center gap-1" title="Switch Language">
@@ -3721,12 +3738,54 @@ HTML_CONTENT = r"""<!DOCTYPE html>
       </div>
 
       <div class="mt-4 space-y-4">
-        <div class="p-3.5 bg-stone-50 dark:bg-stone-800 rounded-2xl border border-stone-200 dark:border-stone-700 flex items-center justify-between">
+        <!-- Display View (when item was identified by AI) -->
+        <div id="modal-item-display" class="p-3.5 bg-stone-50 dark:bg-stone-800 rounded-2xl border border-stone-200 dark:border-stone-700 flex items-center justify-between">
           <div>
             <h4 id="modal-name-en" class="font-bold text-base leading-tight"></h4>
             <div id="modal-name-hi" class="text-xs font-semibold text-brand-600 dark:text-brand-400"></div>
           </div>
           <span id="modal-category-badge" class="text-[11px] font-bold uppercase px-2.5 py-1 rounded-md bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-700 text-stone-700 dark:text-stone-300"></span>
+        </div>
+
+        <!-- Editable Input View (when manual confirmation or manual entry is needed) -->
+        <div id="modal-item-edit-fields" class="hidden space-y-3 p-3.5 bg-amber-50/60 dark:bg-amber-950/30 rounded-2xl border border-amber-200/80 dark:border-amber-800/60">
+          <div>
+            <label class="block text-xs font-bold text-stone-700 dark:text-stone-200 mb-1" data-i18n="modal_name_label">Food Item Name (खाद्य सामग्री का नाम):</label>
+            <input 
+              type="text" 
+              id="modal-name-input" 
+              placeholder="e.g. Paneer, Milk, Fresh Tomatoes" 
+              class="w-full px-3.5 py-2 rounded-xl border border-stone-300 dark:border-stone-700 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 bg-white dark:bg-stone-900 text-stone-900 dark:text-stone-100 font-semibold"
+            />
+          </div>
+          <div class="grid grid-cols-2 gap-2">
+            <div>
+              <label class="block text-[11px] font-bold text-stone-600 dark:text-stone-300 mb-1" data-i18n="modal_cat_label">Category (श्रेणी):</label>
+              <select 
+                id="modal-category-select" 
+                class="w-full px-2.5 py-2 rounded-xl border border-stone-300 dark:border-stone-700 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-brand-500 bg-white dark:bg-stone-900 text-stone-800 dark:text-stone-200 cursor-pointer"
+              >
+                <option value="vegetable">Vegetable / सब्ज़ी</option>
+                <option value="fruit">Fruit / फल</option>
+                <option value="dairy">Dairy / डेयरी</option>
+                <option value="cooked_dish">Cooked Dish / भोजन</option>
+                <option value="snack_bakery">Snack & Bakery / स्नैक</option>
+                <option value="beverage">Drink / पेय पदार्थ</option>
+                <option value="grain_pulse_flour">Grains / अनाज व दालें</option>
+                <option value="meat_fish_egg">Eggs & Meat / अंडा व मीट</option>
+                <option value="spice_condiment">Spices / मसाले</option>
+              </select>
+            </div>
+            <div>
+              <label class="block text-[11px] font-bold text-stone-600 dark:text-stone-300 mb-1">Hindi Name (वैकल्पिक):</label>
+              <input 
+                type="text" 
+                id="modal-name-hi-input" 
+                placeholder="उदा: पनीर, दूध" 
+                class="w-full px-2.5 py-2 rounded-xl border border-stone-300 dark:border-stone-700 text-xs focus:outline-none focus:ring-2 focus:ring-brand-500 bg-white dark:bg-stone-900 text-stone-900 dark:text-stone-100"
+              />
+            </div>
+          </div>
         </div>
 
         <div id="modal-packaged-alert" class="p-3 bg-amber-50 dark:bg-amber-950/40 rounded-xl border border-amber-300 dark:border-amber-800 text-xs text-amber-900 dark:text-amber-200 hidden">
@@ -3817,6 +3876,119 @@ HTML_CONTENT = r"""<!DOCTYPE html>
     </div>
   </div>
 
+    <!-- ADD TO HOME SCREEN / PWA INSTALL GUIDE MODAL -->
+  <div id="home-screen-modal" class="fixed inset-0 bg-stone-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+    <div class="bg-white dark:bg-stone-900 rounded-3xl max-w-lg w-full p-6 sm:p-7 shadow-2xl border border-stone-200 dark:border-stone-800 text-stone-800 dark:text-stone-100 space-y-5 animate-scale-in">
+      
+      <!-- Modal Header -->
+      <div class="flex items-center justify-between border-b border-stone-100 dark:border-stone-800 pb-3.5">
+        <div class="flex items-center gap-2.5">
+          <div class="w-9 h-9 rounded-xl bg-gradient-to-tr from-brand-500 to-amber-500 text-white flex items-center justify-center shadow-sm">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z"/></svg>
+          </div>
+          <div>
+            <h3 class="font-bold text-sm sm:text-base leading-tight" data-i18n="pwa_modal_title">Add to Home Screen</h3>
+            <p class="text-[11px] text-stone-500 dark:text-stone-400" data-i18n="pwa_modal_subtitle">1-tap app launch with offline alerts</p>
+          </div>
+        </div>
+        <button id="close-pwa-modal-btn" type="button" class="text-stone-400 hover:text-stone-600 dark:hover:text-stone-200 text-2xl font-bold leading-none">&times;</button>
+      </div>
+
+      <!-- Platform Switcher Tabs -->
+      <div class="flex items-center p-1 rounded-2xl bg-stone-100 dark:bg-stone-800 border border-stone-200 dark:border-stone-700 text-xs font-semibold">
+        <button type="button" id="pwa-tab-ios" onclick="switchPwaTab('ios')" class="flex-1 py-1.5 rounded-xl transition text-center bg-white dark:bg-stone-900 text-brand-600 dark:text-brand-400 shadow-xs">
+          🍏 iPhone / iPad
+        </button>
+        <button type="button" id="pwa-tab-android" onclick="switchPwaTab('android')" class="flex-1 py-1.5 rounded-xl transition text-center text-stone-600 dark:text-stone-400 hover:text-stone-900 dark:hover:text-stone-100">
+          🤖 Android
+        </button>
+        <button type="button" id="pwa-tab-desktop" onclick="switchPwaTab('desktop')" class="flex-1 py-1.5 rounded-xl transition text-center text-stone-600 dark:text-stone-400 hover:text-stone-900 dark:hover:text-stone-100">
+          💻 Computer
+        </button>
+      </div>
+
+      <!-- Tab 1: iOS Safari Steps -->
+      <div id="pwa-content-ios" class="space-y-3 text-xs">
+        <div class="p-3.5 rounded-2xl bg-stone-50 dark:bg-stone-800/60 border border-stone-200 dark:border-stone-700/80 flex items-start gap-3">
+          <span class="w-6 h-6 rounded-full bg-brand-500 text-white font-bold text-xs flex items-center justify-center shrink-0">1</span>
+          <div>
+            <div class="font-bold text-stone-900 dark:text-stone-100" data-i18n="pwa_ios_step1_title">Tap the Share Button in Safari</div>
+            <p class="text-stone-500 dark:text-stone-400 text-[11px] mt-0.5" data-i18n="pwa_ios_step1_desc">At the bottom of your iPhone screen (or top on iPad), tap the Share icon (<span class="font-mono text-brand-600 font-bold">⎋ / Share</span>).</p>
+          </div>
+        </div>
+        <div class="p-3.5 rounded-2xl bg-stone-50 dark:bg-stone-800/60 border border-stone-200 dark:border-stone-700/80 flex items-start gap-3">
+          <span class="w-6 h-6 rounded-full bg-brand-500 text-white font-bold text-xs flex items-center justify-center shrink-0">2</span>
+          <div>
+            <div class="font-bold text-stone-900 dark:text-stone-100" data-i18n="pwa_ios_step2_title">Select "Add to Home Screen"</div>
+            <p class="text-stone-500 dark:text-stone-400 text-[11px] mt-0.5" data-i18n="pwa_ios_step2_desc">Scroll down the sharing sheet options and tap <span class="font-semibold text-stone-800 dark:text-stone-200">"Add to Home Screen" ([+] icon)</span>.</p>
+          </div>
+        </div>
+        <div class="p-3.5 rounded-2xl bg-stone-50 dark:bg-stone-800/60 border border-stone-200 dark:border-stone-700/80 flex items-start gap-3">
+          <span class="w-6 h-6 rounded-full bg-brand-500 text-white font-bold text-xs flex items-center justify-center shrink-0">3</span>
+          <div>
+            <div class="font-bold text-stone-900 dark:text-stone-100" data-i18n="pwa_ios_step3_title">Tap "Add" in the Top Right</div>
+            <p class="text-stone-500 dark:text-stone-400 text-[11px] mt-0.5" data-i18n="pwa_ios_step3_desc">Tap Add to confirm. FridgeInventory will appear right on your iPhone home screen!</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tab 2: Android Chrome Steps -->
+      <div id="pwa-content-android" class="space-y-3 text-xs hidden">
+        <div class="p-3.5 rounded-2xl bg-stone-50 dark:bg-stone-800/60 border border-stone-200 dark:border-stone-700/80 flex items-start gap-3">
+          <span class="w-6 h-6 rounded-full bg-emerald-500 text-white font-bold text-xs flex items-center justify-center shrink-0">1</span>
+          <div>
+            <div class="font-bold text-stone-900 dark:text-stone-100" data-i18n="pwa_android_step1_title">Tap the Chrome Menu (⋮)</div>
+            <p class="text-stone-500 dark:text-stone-400 text-[11px] mt-0.5" data-i18n="pwa_android_step1_desc">In Chrome or Samsung Internet, tap the 3 vertical dots in the top-right corner.</p>
+          </div>
+        </div>
+        <div class="p-3.5 rounded-2xl bg-stone-50 dark:bg-stone-800/60 border border-stone-200 dark:border-stone-700/80 flex items-start gap-3">
+          <span class="w-6 h-6 rounded-full bg-emerald-500 text-white font-bold text-xs flex items-center justify-center shrink-0">2</span>
+          <div>
+            <div class="font-bold text-stone-900 dark:text-stone-100" data-i18n="pwa_android_step2_title">Tap "Install App" or "Add to Home screen"</div>
+            <p class="text-stone-500 dark:text-stone-400 text-[11px] mt-0.5" data-i18n="pwa_android_step2_desc">Select <span class="font-semibold text-stone-800 dark:text-stone-200">"Install app"</span> or <span class="font-semibold text-stone-800 dark:text-stone-200">"Add to Home screen"</span>.</p>
+          </div>
+        </div>
+        <div class="p-3.5 rounded-2xl bg-stone-50 dark:bg-stone-800/60 border border-stone-200 dark:border-stone-700/80 flex items-start gap-3">
+          <span class="w-6 h-6 rounded-full bg-emerald-500 text-white font-bold text-xs flex items-center justify-center shrink-0">3</span>
+          <div>
+            <div class="font-bold text-stone-900 dark:text-stone-100" data-i18n="pwa_android_step3_title">Confirm Installation</div>
+            <p class="text-stone-500 dark:text-stone-400 text-[11px] mt-0.5" data-i18n="pwa_android_step3_desc">Click "Install". The app will be installed to your home screen with offline push support!</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tab 3: Desktop Steps -->
+      <div id="pwa-content-desktop" class="space-y-3 text-xs hidden">
+        <div class="p-3.5 rounded-2xl bg-stone-50 dark:bg-stone-800/60 border border-stone-200 dark:border-stone-700/80 flex items-start gap-3">
+          <span class="w-6 h-6 rounded-full bg-cyan-600 text-white font-bold text-xs flex items-center justify-center shrink-0">1</span>
+          <div>
+            <div class="font-bold text-stone-900 dark:text-stone-100" data-i18n="pwa_desk_step1_title">Click the Install Icon in the URL Bar</div>
+            <p class="text-stone-500 dark:text-stone-400 text-[11px] mt-0.5" data-i18n="pwa_desk_step1_desc">In Chrome, Edge, or Brave, click the desktop install icon (⊕ or 💻) on the right side of the address bar.</p>
+          </div>
+        </div>
+        <div class="p-3.5 rounded-2xl bg-stone-50 dark:bg-stone-800/60 border border-stone-200 dark:border-stone-700/80 flex items-start gap-3">
+          <span class="w-6 h-6 rounded-full bg-cyan-600 text-white font-bold text-xs flex items-center justify-center shrink-0">2</span>
+          <div>
+            <div class="font-bold text-stone-900 dark:text-stone-100" data-i18n="pwa_desk_step2_title">Confirm "Install"</div>
+            <p class="text-stone-500 dark:text-stone-400 text-[11px] mt-0.5" data-i18n="pwa_desk_step2_desc">Click Install to run FridgeInventory in its own distraction-free standalone desktop window.</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Native Install Button (if deferred prompt is available) -->
+      <div id="pwa-native-prompt-container" class="hidden">
+        <button type="button" id="pwa-trigger-install-btn" class="w-full py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-bold text-xs shadow-md transition flex items-center justify-center gap-2">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+          <span data-i18n="pwa_trigger_btn">Click Here to Install Now</span>
+        </button>
+      </div>
+
+      <button type="button" id="pwa-dismiss-btn" class="w-full py-2.5 rounded-xl border border-stone-200 dark:border-stone-700 text-stone-700 dark:text-stone-300 font-semibold text-xs hover:bg-stone-50 dark:hover:bg-stone-800 transition" data-i18n="pwa_close_btn">
+        Got It, Thanks!
+      </button>
+    </div>
+  </div>
+
   <!-- TOAST NOTIFICATION CONTAINER -->
   <div id="toast-container" class="fixed bottom-4 right-4 z-50 flex flex-col gap-2 pointer-events-none"></div>
 
@@ -3864,7 +4036,7 @@ HTML_CONTENT = r"""<!DOCTYPE html>
       }
     }
 
-    // Bilingual Text Dictionary
+    // Comprehensive Bilingual Text Dictionary (English & Hindi)
     const i18n = {
       en: {
         app_title: "FridgeInventory",
@@ -3892,7 +4064,7 @@ HTML_CONTENT = r"""<!DOCTYPE html>
         stat_fresh: "Fresh (3+ Days)",
         stat_urgent: "Expiring Soon",
         stat_expired: "Expired",
-        cmd_heading: "Smart Voice & Text Control",
+        cmd_heading: "Smart Voice & Text Control Center",
         cmd_sub: "Tell it what you brought or consumed. Example: 'brought 2kg palak', 'i ate lays', 'used milk', 'clear all'.",
         cmd_placeholder: "Type or speak (e.g. 'bought 2kg palak', 'i ate lays', 'used milk')...",
         cmd_btn: "Process Command",
@@ -3929,7 +4101,7 @@ HTML_CONTENT = r"""<!DOCTYPE html>
         recipe_loading: "Consulting Culinary Intelligence...",
         scanner_title: "AI Food Inspector & Storage Advisor",
         scanner_desc: "Type any food name or snap a photo using the camera bubble to inspect its culinary category, Hindi name, standard shelf life, and storage advice.",
-        scanner_inspect_btn: "Inspect",
+        scanner_inspect_btn: "Inspect Food",
         scanner_take_photo: "Take Photo",
         scanner_snap_btn: "Snap Food Photo",
         scanner_webcam_title: "Live Food Camera Viewfinder",
@@ -3940,16 +4112,40 @@ HTML_CONTENT = r"""<!DOCTYPE html>
         auth_pin_label: "Family PIN:",
         auth_login_submit: "Open Fridge",
         auth_create_fid_label: "Choose Fridge ID:",
-        auth_create_pin_label: "Set Family PIN (min 4 digits):",
+        auth_create_pin_label: "Set Family PIN (min 4 characters):",
         auth_create_submit: "Create & Save Fridge",
         modal_confirm_title: "Confirm Fridge Entry",
+        modal_name_label: "Food Item Name:",
+        modal_cat_label: "Category:",
         modal_packaged_warn: "Printed Expiry Date Required",
         modal_packaged_desc: "Packaged snack or frozen item detected. Please check and enter the printed label date.",
         modal_tip_label: "Kitchen Storage Tip:",
         modal_cancel: "Cancel",
         modal_save: "Save to Fridge",
         cmd_photo_btn: "Add by Photo",
-        chip_photo_snap: "📷 Snap Food Photo"
+        chip_photo_snap: "📷 Snap Food Photo",
+        pwa_install_btn: "Add to Home Screen",
+        pwa_install_btn_short: "Install",
+        pwa_modal_title: "Add to Home Screen",
+        pwa_modal_subtitle: "1-tap app launch with offline alerts",
+        pwa_ios_step1_title: "Tap the Share Button in Safari",
+        pwa_ios_step1_desc: "At the bottom of your iPhone screen (or top on iPad), tap the Share icon (⎋ / Share).",
+        pwa_ios_step2_title: "Select 'Add to Home Screen'",
+        pwa_ios_step2_desc: "Scroll down the sharing sheet options and tap 'Add to Home Screen' ([+] icon).",
+        pwa_ios_step3_title: "Tap 'Add' in the Top Right",
+        pwa_ios_step3_desc: "Tap Add to confirm. FridgeInventory will appear right on your iPhone home screen!",
+        pwa_android_step1_title: "Tap the Chrome Menu (⋮)",
+        pwa_android_step1_desc: "In Chrome or Samsung Internet, tap the 3 vertical dots in the top-right corner.",
+        pwa_android_step2_title: "Tap 'Install App' or 'Add to Home screen'",
+        pwa_android_step2_desc: "Select 'Install app' or 'Add to Home screen'.",
+        pwa_android_step3_title: "Confirm Installation",
+        pwa_android_step3_desc: "Click 'Install'. The app will be installed to your home screen with offline push support!",
+        pwa_desk_step1_title: "Click the Install Icon in the URL Bar",
+        pwa_desk_step1_desc: "In Chrome, Edge, or Brave, click the desktop install icon (⊕ or 💻) on the right side of the address bar.",
+        pwa_desk_step2_title: "Confirm 'Install'",
+        pwa_desk_step2_desc: "Click Install to run FridgeInventory in its own distraction-free standalone desktop window.",
+        pwa_trigger_btn: "Click Here to Install Now",
+        pwa_close_btn: "Got It, Thanks!"
       },
       hi: {
         app_title: "FridgeInventory",
@@ -3977,7 +4173,7 @@ HTML_CONTENT = r"""<!DOCTYPE html>
         stat_fresh: "ताज़ा (3+ दिन)",
         stat_urgent: "जल्द समाप्त",
         stat_expired: "समय समाप्त",
-        cmd_heading: "स्मार्ट आवाज़ और टेक्स्ट नियंत्रण",
+        cmd_heading: "स्मार्ट आवाज़ और टेक्स्ट कमांड सेंटर",
         cmd_sub: "बताएं क्या लाए या खाया। जैसे: '2 किलो पालक लाया', 'i ate lays', 'दूध इस्तेमाल किया', 'सब खत्म'।",
         cmd_placeholder: "टाइप करें या बोलें (जैसे: '2 किलो पालक लाया', 'i ate lays', 'दूध पिया')...",
         cmd_btn: "कमांड चलाएँ",
@@ -4027,14 +4223,40 @@ HTML_CONTENT = r"""<!DOCTYPE html>
         auth_pin_label: "फैमिली PIN:",
         auth_login_submit: "फ्रिज खोलें",
         auth_create_fid_label: "फ्रिज ID चुनें:",
-        auth_create_pin_label: "फैमिली PIN सेट करें (कम से कम 4 अंक):",
+        auth_create_pin_label: "फैमिली PIN सेट करें (कम से कम 4 अक्षर/अंक):",
         auth_create_submit: "फ्रिज बनाएँ और जोड़ें",
         modal_confirm_title: "सामान की पुष्टि करें",
+        modal_name_label: "खाद्य सामग्री का नाम:",
+        modal_cat_label: "श्रेणी:",
         modal_packaged_warn: "पैकेट की एक्सपायरी आवश्यक है",
         modal_packaged_desc: "पैकेज्ड स्नैक या फ्रोजन सामान। कृपया पैकेट पर छपी एक्सपायरी तारीख दर्ज करें।",
         modal_tip_label: "रसोई भंडारण सुझाव:",
         modal_cancel: "रद्द करें",
-        modal_save: "फ्रिज में सेव करें"
+        modal_save: "फ्रिज में सेव करें",
+        cmd_photo_btn: "फोटो से जोड़ें",
+        chip_photo_snap: "📷 भोजन की फोटो लें",
+        pwa_install_btn: "होम स्क्रीन पर जोड़ें",
+        pwa_install_btn_short: "इंस्टॉल",
+        pwa_modal_title: "होम स्क्रीन पर जोड़ें",
+        pwa_modal_subtitle: "नेटिव ऐप की तरह 1-टैप लॉन्च और ऑफ़लाइन अलर्ट",
+        pwa_ios_step1_title: "सफ़ारी (Safari) में शेयर बटन दबाएँ",
+        pwa_ios_step1_desc: "अपने iPhone के नीचे (या iPad के ऊपर), शेयर आइकन (⎋ / Share) पर टैप करें।",
+        pwa_ios_step2_title: "'होम स्क्रीन पर जोड़ें' चुनें",
+        pwa_ios_step2_desc: "नीचे स्क्रॉल करें और 'Add to Home Screen' ([+] चिह्न) पर टैप करें।",
+        pwa_ios_step3_title: "ऊपर दाएँ 'जोड़ें' (Add) पर टैप करें",
+        pwa_ios_step3_desc: "'Add' पर टैप करें। FridgeInventory अब आपके iPhone की होम स्क्रीन पर आ जाएगा!",
+        pwa_android_step1_title: "क्रोम के 3 डॉट्स मेनू (⋮) पर टैप करें",
+        pwa_android_step1_desc: "Chrome या Samsung Internet में ऊपर दाएँ कोने में 3 डॉट्स पर टैप करें।",
+        pwa_android_step2_title: "'ऐप इंस्टॉल करें' या 'होम स्क्रीन पर जोड़ें' चुनें",
+        pwa_android_step2_desc: "'Install app' या 'Add to Home screen' विकल्प पर टैप करें।",
+        pwa_android_step3_title: "इंस्टॉलेशन की पुष्टि करें",
+        pwa_android_step3_desc: "'Install' पर क्लिक करें। ऐप आपकी होम स्क्रीन और ऐप ड्रॉअर में जुड़ जाएगा!",
+        pwa_desk_step1_title: "ब्राउज़र एड्रेस बार में इंस्टॉल आइकन दबाएँ",
+        pwa_desk_step1_desc: "Chrome या Edge में एड्रेस बार के दाईं ओर स्थित इंस्टॉल चिह्न (⊕ या 💻) पर क्लिक करें।",
+        pwa_desk_step2_title: "'Install' पर क्लिक करें",
+        pwa_desk_step2_desc: "FridgeInventory बिना किसी रुकावट के एक स्वतंत्र ऐप विंडो में खुल जाएगा।",
+        pwa_trigger_btn: "अभी इंस्टॉल करने के लिए यहाँ क्लिक करें",
+        pwa_close_btn: "समझ गया, धन्यवाद!"
       }
     };
 
@@ -4049,10 +4271,18 @@ HTML_CONTENT = r"""<!DOCTYPE html>
         if (texts[key]) el.textContent = texts[key];
       });
 
+      document.querySelectorAll('[data-i18n-placeholder]').forEach(el => {
+        const key = el.getAttribute('data-i18n-placeholder');
+        if (texts[key]) el.placeholder = texts[key];
+      });
+
       const cmdInput = document.getElementById('cmd-input');
-      if (cmdInput) cmdInput.placeholder = texts.cmd_placeholder;
+      if (cmdInput && texts.cmd_placeholder) cmdInput.placeholder = texts.cmd_placeholder;
       const langLabel = document.getElementById('lang-label');
       if (langLabel) langLabel.textContent = texts.lang_btn;
+
+      renderInventory();
+      updateStats();
 
       if (typeof latestRecipe !== 'undefined' && latestRecipe) {
         const rCont = document.getElementById('recipe-container');
@@ -4066,6 +4296,116 @@ HTML_CONTENT = r"""<!DOCTYPE html>
       applyLanguage(currentLang === 'en' ? 'hi' : 'en');
       renderInventory();
     });
+
+        // PWA & Add to Home Screen Handlers
+    let deferredInstallPrompt = null;
+    window.addEventListener('beforeinstallprompt', (e) => {
+      e.preventDefault();
+      deferredInstallPrompt = e;
+      const promptContainer = document.getElementById('pwa-native-prompt-container');
+      if (promptContainer) promptContainer.classList.remove('hidden');
+    });
+
+    function openHomeScreenModal() {
+      const modal = document.getElementById('home-screen-modal');
+      if (modal) modal.classList.remove('hidden');
+      const ua = navigator.userAgent || '';
+      if (/iPhone|iPad|iPod/i.test(ua)) {
+        switchPwaTab('ios');
+      } else if (/Android/i.test(ua)) {
+        switchPwaTab('android');
+      } else {
+        switchPwaTab('desktop');
+      }
+    }
+
+    function switchPwaTab(platform) {
+      const tabs = ['ios', 'android', 'desktop'];
+      tabs.forEach(p => {
+        const btn = document.getElementById(`pwa-tab-${p}`);
+        const content = document.getElementById(`pwa-content-${p}`);
+        if (p === platform) {
+          if (btn) {
+            btn.className = 'flex-1 py-1.5 rounded-xl transition text-center bg-white dark:bg-stone-900 text-brand-600 dark:text-brand-400 shadow-xs font-bold';
+          }
+          if (content) content.classList.remove('hidden');
+        } else {
+          if (btn) {
+            btn.className = 'flex-1 py-1.5 rounded-xl transition text-center text-stone-600 dark:text-stone-400 hover:text-stone-900 dark:hover:text-stone-100 font-semibold';
+          }
+          if (content) content.classList.add('hidden');
+        }
+      });
+    }
+
+    document.getElementById('close-pwa-modal-btn')?.addEventListener('click', () => {
+      document.getElementById('home-screen-modal')?.classList.add('hidden');
+    });
+    document.getElementById('pwa-dismiss-btn')?.addEventListener('click', () => {
+      document.getElementById('home-screen-modal')?.classList.add('hidden');
+    });
+    document.getElementById('pwa-trigger-install-btn')?.addEventListener('click', async () => {
+      if (deferredInstallPrompt) {
+        deferredInstallPrompt.prompt();
+        const { outcome } = await deferredInstallPrompt.userChoice;
+        if (outcome === 'accepted') {
+          showToast('FridgeInventory installed successfully!', 'success', 'ऐप सफलतापूर्वक इंस्टॉल किया गया!');
+        }
+        deferredInstallPrompt = null;
+        document.getElementById('home-screen-modal')?.classList.add('hidden');
+      }
+    });
+
+    // Manual Food Entry Modal Handler
+    function openManualEntryModal(prefillName = '', defaultCategory = 'vegetable') {
+      const modal = document.getElementById('classify-modal');
+      const modalItemDisplay = document.getElementById('modal-item-display');
+      const modalItemEdit = document.getElementById('modal-item-edit-fields');
+      const modalDateInput = document.getElementById('modal-date-input');
+      const modalDateHelp = document.getElementById('modal-date-help');
+      const modalPackagedAlert = document.getElementById('modal-packaged-alert');
+      const modalStorageTip = document.getElementById('modal-storage-tip');
+      const modalQueuePill = document.getElementById('modal-queue-pill');
+
+      if (modalQueuePill) modalQueuePill.classList.add('hidden');
+      if (modalPackagedAlert) modalPackagedAlert.classList.add('hidden');
+
+      if (modalItemDisplay) modalItemDisplay.classList.add('hidden');
+      if (modalItemEdit) modalItemEdit.classList.remove('hidden');
+
+      const nameInput = document.getElementById('modal-name-input');
+      if (nameInput) {
+        nameInput.value = prefillName;
+        setTimeout(() => nameInput.focus(), 150);
+      }
+      const catSelect = document.getElementById('modal-category-select');
+      if (catSelect) catSelect.value = defaultCategory;
+
+      const defaultDate = new Date();
+      defaultDate.setDate(defaultDate.getDate() + 3);
+      if (modalDateInput) modalDateInput.value = defaultDate.toISOString().split('T')[0];
+      if (modalDateHelp) {
+        modalDateHelp.textContent = currentLang === 'hi' 
+          ? 'अनुमानित 3 दिन की शेल्फ लाइफ सेट की गई है। आप अपनी इच्छानुसार तारीख बदल सकते हैं।'
+          : 'Default 3 days shelf life set. You can customize the date.';
+      }
+      if (modalStorageTip) {
+        modalStorageTip.textContent = currentLang === 'hi'
+          ? 'ताज़ा रखने के लिए साफ़ और एयरटाइट डिब्बे में फ्रिज में रखें।'
+          : 'Keep refrigerated in an airtight container for maximum freshness.';
+      }
+
+      pendingModalItem = {
+        is_manual: true,
+        name_en: prefillName || 'Fresh Food Item',
+        name_hi: '',
+        category: defaultCategory,
+        shelf_life_days: 3,
+        requires_expiry_date: false
+      };
+
+      if (modal) modal.classList.remove('hidden');
+    }
 
     // Theme Management
     function initTheme() {
@@ -4089,15 +4429,16 @@ HTML_CONTENT = r"""<!DOCTYPE html>
 
     document.getElementById('theme-toggle-btn').addEventListener('click', toggleTheme);
 
-    // Toast Notifications
-    function showToast(message, type = 'info') {
+    // Toast Notifications (Bilingual English & Hindi)
+    function showToast(message, type = 'info', messageHi = null) {
+      const finalMsg = (currentLang === 'hi' && messageHi) ? messageHi : message;
       const el = document.createElement('div');
       el.className = `pointer-events-auto px-4 py-2.5 rounded-xl shadow-lg text-xs font-semibold flex items-center gap-2 transition-all transform translate-y-2 opacity-0 ${
         type === 'success' ? 'bg-leaf-600 text-white' :
         type === 'error' ? 'bg-rose-600 text-white' :
         type === 'warning' ? 'bg-brand-600 text-white' : 'bg-stone-800 text-white'
       }`;
-      el.textContent = message;
+      el.textContent = finalMsg;
       document.getElementById('toast-container').appendChild(el);
       requestAnimationFrame(() => el.classList.remove('translate-y-2', 'opacity-0'));
       setTimeout(() => {
@@ -4132,7 +4473,7 @@ HTML_CONTENT = r"""<!DOCTYPE html>
             const tzSelect = document.getElementById('user-tz-select');
             if (tzSelect) tzSelect.value = userTimezone;
           }
-          setAuthenticatedState(data.fridge_id, data.pin);
+          setAuthenticatedState(data.fridge_id, data.pin, data.token || '');
           updateLiveClock();
         } else {
           setLoggedOutState();
@@ -4142,8 +4483,11 @@ HTML_CONTENT = r"""<!DOCTYPE html>
       }
     }
 
-    function setAuthenticatedState(fid, pin) {
+    function setAuthenticatedState(fid, pin, token = '') {
       currentFridge = fid;
+      if (token) {
+        try { localStorage.setItem('fi_token', token); } catch(e){}
+      }
       if (pin) currentFridgePin = pin;
       else if (!currentFridgePin) currentFridgePin = localStorage.getItem('fi_last_pin_' + fid) || '';
       if (fid && currentFridgePin) {
@@ -4180,6 +4524,7 @@ HTML_CONTENT = r"""<!DOCTYPE html>
     function setLoggedOutState() {
       currentFridge = null;
       currentFridgePin = '';
+      try { localStorage.removeItem('fi_token'); } catch(e){}
       pinRevealed = false;
       document.getElementById('auth-logged-in').classList.add('hidden');
       document.getElementById('auth-logged-out').classList.remove('hidden');
@@ -4352,9 +4697,9 @@ HTML_CONTENT = r"""<!DOCTYPE html>
         const data = await res.json();
         if (!res.ok) throw new Error(data.detail || 'Login failed');
         authModal.classList.add('hidden');
-        setAuthenticatedState(data.fridge_id, pin);
+        setAuthenticatedState(data.fridge_id, pin, data.token || '');
         updateLiveClock();
-        showToast(data.message || 'Login successful!', 'success');
+        showToast(data.message || 'Login successful!', 'success', 'लॉग इन सफल!');
       } catch (err) {
         showToast(err.message, 'error');
       }
@@ -4387,9 +4732,9 @@ HTML_CONTENT = r"""<!DOCTYPE html>
         const data = await res.json();
         if (!res.ok) throw new Error(data.detail || 'Fridge creation failed');
         authModal.classList.add('hidden');
-        setAuthenticatedState(data.fridge_id, pin);
+        setAuthenticatedState(data.fridge_id, pin, data.token || '');
         updateLiveClock();
-        showToast(data.message, 'success');
+        showToast(data.message, 'success', 'नया फ्रिज सफलतापूर्वक बनाया गया!');
       } catch (err) {
         showToast(err.message, 'error');
       }
@@ -4397,14 +4742,24 @@ HTML_CONTENT = r"""<!DOCTYPE html>
 
     document.getElementById('logout-btn').addEventListener('click', handleLogout);
 
-    // Load Inventory Items with Offline Caching & Timezone Sync
+    // Load Inventory Items with Strict Authorization & Offline Caching
     async function loadInventory(silent = false) {
+      if (!currentFridge) return;
       const activeTz = getEffectiveTimezone();
+      const sessionToken = localStorage.getItem('fi_token') || '';
       try {
-        const url = currentFridge ? `/api/inventory?fridge=${encodeURIComponent(currentFridge)}` : '/api/inventory';
+        const url = `/api/inventory?fridge=${encodeURIComponent(currentFridge)}`;
         const res = await fetch(url, {
-          headers: { 'X-Client-Timezone': activeTz }
+          headers: { 
+            'X-Client-Timezone': activeTz,
+            ...(sessionToken ? { 'X-Fridge-Session': sessionToken } : {})
+          }
         });
+        if (res.status === 401 || res.status === 403) {
+          setLoggedOutState();
+          showToast('Session unauthorized or expired. Please log in.', 'error', 'सत्र अनधिकृत या समाप्त। कृपया लॉग इन करें।');
+          return;
+        }
         if (!res.ok) throw new Error('Failed to load inventory');
         inventory = await res.json();
         // Save to offline cache for disconnected access
@@ -4554,8 +4909,8 @@ HTML_CONTENT = r"""<!DOCTYPE html>
 
           <div class="mt-3 text-[11px] text-stone-500 dark:text-stone-400 space-y-1.5">
             <div class="flex items-center justify-between">
-              <span>Added: <b class="text-stone-700 dark:text-stone-300 font-medium">${item.added_date}</b> (${elapsedText})</span>
-              <span>Expires: <b class="text-stone-700 dark:text-stone-300 font-medium">${item.expiry_date}</b></span>
+              <span>${currentLang === 'hi' ? 'जोड़ा गया:' : 'Added:'} <b class="text-stone-700 dark:text-stone-300 font-medium">${item.added_date}</b> (${elapsedText})</span>
+              <span>${currentLang === 'hi' ? 'समाप्त होगा:' : 'Expires:'} <b class="text-stone-700 dark:text-stone-300 font-medium">${item.expiry_date}</b></span>
             </div>
             ${item.storage_tip ? `<div class="text-stone-600 dark:text-stone-300 bg-stone-50 dark:bg-stone-800/80 p-2 rounded-xl border border-stone-100 dark:border-stone-700/80">${item.storage_tip}</div>` : ''}
           </div>
@@ -4582,8 +4937,19 @@ HTML_CONTENT = r"""<!DOCTYPE html>
 
     async function deleteItem(id) {
       try {
+        const sessionToken = localStorage.getItem('fi_token') || '';
         const url = currentFridge ? `/api/inventory/${id}?fridge=${encodeURIComponent(currentFridge)}` : `/api/inventory/${id}`;
-        const res = await fetch(url, { method: 'DELETE' });
+        const res = await fetch(url, { 
+          method: 'DELETE',
+          headers: {
+            ...(sessionToken ? { 'X-Fridge-Session': sessionToken } : {})
+          }
+        });
+        if (res.status === 401 || res.status === 403) {
+          setLoggedOutState();
+          showToast('Session unauthorized. Please log in.', 'error', 'सत्र अनधिकृत। कृपया लॉग इन करें।');
+          return;
+        }
         if (!res.ok) throw new Error('Delete failed');
         inventory = inventory.filter(i => i.id !== id);
         try { localStorage.setItem('fi_cached_inventory', JSON.stringify(inventory)); } catch(e){}
@@ -4612,6 +4978,12 @@ HTML_CONTENT = r"""<!DOCTYPE html>
 
     function openModalWithClassification(result, currentIdx = 0, totalCount = 0) {
       pendingModalItem = result;
+
+      const modalItemDisplay = document.getElementById('modal-item-display');
+      const modalItemEdit = document.getElementById('modal-item-edit-fields');
+      if (modalItemDisplay) modalItemDisplay.classList.remove('hidden');
+      if (modalItemEdit) modalItemEdit.classList.add('hidden');
+
       modalNameEn.textContent = result.name_en;
       modalNameHi.textContent = result.name_hi;
       modalCatBadge.textContent = result.category.replace(/_/g, ' ');
@@ -4687,7 +5059,25 @@ HTML_CONTENT = r"""<!DOCTYPE html>
 
     document.getElementById('modal-confirm-btn').addEventListener('click', async () => {
       if (!pendingModalItem) return;
+
+      if (pendingModalItem.is_manual) {
+        const manualName = (document.getElementById('modal-name-input')?.value || '').trim();
+        const manualHi = (document.getElementById('modal-name-hi-input')?.value || '').trim();
+        const manualCat = document.getElementById('modal-category-select')?.value || 'cooked_dish';
+        if (!manualName) {
+          showToast('Please enter food item name.', 'warning', 'कृपया खाद्य सामग्री का नाम लिखें।');
+          return;
+        }
+        pendingModalItem.name_en = manualName;
+        pendingModalItem.name_hi = manualHi || manualName;
+        pendingModalItem.category = manualCat;
+      }
+
       const expiry = modalDateInput.value;
+      if (!expiry) {
+        showToast('Please select a valid expiry date.', 'error', 'कृपया एक वैध समाप्ति तारीख चुनें।');
+        return;
+      }
 
       try {
         const payload = {
@@ -4700,12 +5090,14 @@ HTML_CONTENT = r"""<!DOCTYPE html>
           storage_tip: pendingModalItem.storage_tip
         };
 
+        const sessionToken = localStorage.getItem('fi_token') || '';
         const url = currentFridge ? `/api/inventory?fridge=${encodeURIComponent(currentFridge)}` : '/api/inventory';
         const res = await fetch(url, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
             'X-Client-Timezone': getEffectiveTimezone(),
+            ...(sessionToken ? { 'X-Fridge-Session': sessionToken } : {})
           },
           body: JSON.stringify(payload)
         });
@@ -4792,15 +5184,22 @@ HTML_CONTENT = r"""<!DOCTYPE html>
       cmdSubmitBtn.innerHTML = '<span>Processing...</span>';
 
       try {
+        const sessionToken = localStorage.getItem('fi_token') || '';
         const url = currentFridge ? `/api/command?fridge=${encodeURIComponent(currentFridge)}` : '/api/command';
         const res = await fetch(url, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
             'X-Client-Timezone': getEffectiveTimezone(),
+            ...(sessionToken ? { 'X-Fridge-Session': sessionToken } : {})
           },
           body: JSON.stringify({ command: text })
         });
+        if (res.status === 401 || res.status === 403) {
+          setLoggedOutState();
+          showToast('Session unauthorized or expired. Please log in.', 'error', 'सत्र अनधिकृत या समाप्त। कृपया लॉग इन करें।');
+          return;
+        }
 
         if (!res.ok) {
           const errData = await res.json();
@@ -5389,14 +5788,44 @@ HTML_CONTENT = r"""<!DOCTYPE html>
       const resBox = document.getElementById('scanner-result');
       resBox.classList.remove('hidden');
 
-      if (!data.is_food) {
+      // OBVIOUS SCANNER FAILURE / UNRECOGNIZED CARD
+      if (!data.is_food || data.scanner_failed) {
         resBox.innerHTML = `
-          <div class="p-5 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 text-xs text-amber-800 dark:text-amber-200 space-y-2">
-            <div class="flex items-center gap-2 font-bold text-sm">
-              <svg class="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
-              <span>Not a Food Item</span>
+          <div class="p-6 rounded-3xl bg-amber-50/90 dark:bg-amber-950/40 border-2 border-amber-300 dark:border-amber-700/80 text-xs text-amber-900 dark:text-amber-100 space-y-4 shadow-md transition-all">
+            <div class="flex items-start gap-3">
+              <div class="w-10 h-10 rounded-2xl bg-amber-200 dark:bg-amber-900/80 text-amber-800 dark:text-amber-200 flex items-center justify-center shrink-0 shadow-sm">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
+              </div>
+              <div class="flex-1 min-w-0">
+                <h4 class="font-bold text-sm text-amber-900 dark:text-amber-200">${currentLang === 'hi' ? 'भोजन की पहचान नहीं हो सकी' : 'Could Not Identify Food in Photo'}</h4>
+                <p class="mt-1 text-stone-600 dark:text-stone-300 text-xs leading-relaxed">
+                  ${currentLang === 'hi' 
+                    ? (data.message_hi || data.message || 'AI इस फ़ोटो में किसी खाद्य सामग्री को स्पष्ट रूप से नहीं पहचान सका, या AI विज़न मॉडल अस्थायी रूप से अनुपलब्ध हैं। कृपया साफ़ रोशनी में फ़ोटो लें या मैन्युअल रूप से आइटम दर्ज करें।') 
+                    : (data.message || 'Gemini AI was unable to detect recognizable food in this photo, or all vision models were unreachable. Please retake the photo clearly or enter item details manually.')}
+                </p>
+              </div>
             </div>
-            <p>${data.message || `'${queryText || 'Item'}' does not appear to be an edible food or kitchen grocery item.`}</p>
+
+            ${photoUrl ? `
+              <div class="flex items-center gap-3 p-2.5 rounded-2xl bg-white/70 dark:bg-stone-900/60 border border-amber-200/60 dark:border-amber-800/40">
+                <img src="${photoUrl}" class="w-14 h-14 rounded-xl object-cover border border-amber-300/40 shrink-0"/>
+                <div class="text-[11px] text-stone-500 dark:text-stone-400">
+                  <span class="font-semibold text-stone-700 dark:text-stone-300">${currentLang === 'hi' ? 'अपलोड की गई फ़ोटो' : 'Captured Photo'}</span><br/>
+                  ${currentLang === 'hi' ? 'कोई फ़र्ज़ी सामान नहीं जोड़ा गया — कृपया मैन्युअल पुष्टि करें।' : 'Zero generic items were auto-added. Please enter details manually.'}
+                </div>
+              </div>
+            ` : ''}
+
+            <div class="flex flex-col sm:flex-row items-center gap-2 pt-1">
+              <button type="button" onclick="openManualEntryModal()" class="w-full sm:flex-1 py-2.5 px-4 rounded-xl bg-gradient-to-r from-amber-500 to-brand-600 hover:from-amber-600 hover:to-brand-700 text-white font-bold text-xs shadow transition flex items-center justify-center gap-1.5">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
+                <span>${currentLang === 'hi' ? 'मैन्युअल रूप से नाम व तारीख जोड़ें' : 'Enter Item Manually'}</span>
+              </button>
+              <button type="button" onclick="openCommandPhotoCapture()" class="w-full sm:w-auto py-2.5 px-4 rounded-xl bg-stone-200 dark:bg-stone-800 hover:bg-stone-300 dark:hover:bg-stone-700 text-stone-800 dark:text-stone-200 font-semibold text-xs transition flex items-center justify-center gap-1.5">
+                <svg class="w-4 h-4 text-stone-600 dark:text-stone-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+                <span>${currentLang === 'hi' ? 'दोबारा फ़ोटो लें' : 'Retake Photo'}</span>
+              </button>
+            </div>
           </div>
         `;
         return;
@@ -5697,11 +6126,13 @@ HTML_CONTENT = r"""<!DOCTYPE html>
         const activeTz = getEffectiveTimezone();
         const fid = currentFridge || '';
 
+        const sessionToken = localStorage.getItem('fi_token') || '';
         const res = await fetch('/api/scanner/photo', {
           method: 'POST',
           headers: { 
             'Content-Type': 'application/json',
-            'X-Client-Timezone': activeTz
+            'X-Client-Timezone': activeTz,
+            ...(sessionToken ? { 'X-Fridge-Session': sessionToken } : {})
           },
           body: JSON.stringify({
             image: dataUrl,
@@ -5717,6 +6148,29 @@ HTML_CONTENT = r"""<!DOCTYPE html>
 
         const data = await res.json();
         renderScannerResult(data, dataUrl);
+
+        // Make scanner failure obvious: never auto-add fake food or pretend success
+        if (!data.is_food || data.scanner_failed) {
+          if (invStatus) {
+            invStatus.innerHTML = `
+              <div class="flex items-center justify-between gap-3 text-xs p-3 rounded-2xl bg-amber-50 dark:bg-amber-950/60 border border-amber-300 dark:border-amber-700">
+                <div class="flex items-center gap-2">
+                  <span class="text-base">⚠️</span>
+                  <div>
+                    <span class="font-bold text-amber-900 dark:text-amber-200">${currentLang === 'hi' ? 'भोजन नहीं पहचाना जा सका' : 'Food Not Recognized'}</span>
+                    <div class="text-[11px] text-stone-600 dark:text-stone-300">${currentLang === 'hi' ? 'मैन्युअल रूप से नाम दर्ज करें या दोबारा फ़ोटो लें' : 'Enter details manually or retake photo'}</div>
+                  </div>
+                </div>
+                <div class="flex items-center gap-1.5 shrink-0">
+                  <button type="button" onclick="openManualEntryModal()" class="px-3 py-1.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs shadow-xs transition">${currentLang === 'hi' ? 'मैन्युअल जोड़ें' : 'Enter Manually'}</button>
+                  <button type="button" onclick="openCommandPhotoCapture()" class="px-2.5 py-1.5 rounded-xl bg-stone-200 dark:bg-stone-700 text-stone-700 dark:text-stone-200 font-semibold text-xs transition">${currentLang === 'hi' ? 'फ़ोटो लें' : 'Retake'}</button>
+                </div>
+              </div>
+            `;
+          }
+          showToast('Could not identify food. Please enter manually or retake photo.', 'warning', 'भोजन की पहचान नहीं हो सकी — कृपया मैन्युअल रूप से दर्ज करें');
+          return;
+        }
 
         // 1. Fresh items without printed expiry date were automatically persisted to DB and returned in auto_added
         if (data.auto_added && data.auto_added.length > 0) {
@@ -6539,6 +6993,32 @@ self.addEventListener('notificationclick', (event) => {
   );
 });
 """
+
+
+@app.get("/manifest.json", summary="PWA Web App Manifest")
+def serve_manifest():
+    """Serve progressive web app manifest for Add to Home Screen."""
+    manifest = {
+        "name": "FridgeInventory - Smart Kitchen & Expiry Tracker",
+        "short_name": "FridgeInventory",
+        "description": "Smart Household Food Inventory, Expiry Tracking & Zero-Waste Recipe Generator",
+        "start_url": "/",
+        "display": "standalone",
+        "background_color": "#1c1917",
+        "theme_color": "#10b981",
+        "icons": [
+            {
+                "src": "/favicon.ico",
+                "sizes": "64x64 32x32 24x24 16x16",
+                "type": "image/x-icon"
+            }
+        ]
+    }
+    return Response(
+        content=json.dumps(manifest),
+        media_type="application/manifest+json",
+        headers={"Cache-Control": "public, max-age=86400"}
+    )
 
 
 @app.get("/sw.js", summary="Service Worker for Push Notifications")
