@@ -92,7 +92,8 @@ _load_env_file()
 # 1. COMMAND PARSING CONSTANTS & SECURITY CONFIGURATION
 # ============================================================================
 
-FRIDGE_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{2,29}$")
+FRIDGE_RE = re.compile(r"^[a-zA-Z0-9]{3,30}$")
+PIN_RE = re.compile(r"^[a-zA-Z0-9]{4,30}$")
 PIN_ITERATIONS = 200_000
 SESSION_COOKIE_NAME = "fi_session_v2"
 SESSION_DAYS = 30
@@ -376,6 +377,21 @@ class FoodCategory(str, Enum):
     NOT_FOOD = "not_food"
 
 
+class FoodItemVerdict(BaseModel):
+    name_en: str = Field(default="", description="Clean, standardized English food name (e.g. 'Fresh Tomato', 'Lays Chips', 'Paneer Curry', 'Banana').")
+    name_hi: str = Field(default="", description="Clean Hindi name in Devanagari script (e.g. 'ताज़ा टमाटर', 'लेज़ चिप्स', 'पनीर करी', 'केला').")
+    category: FoodCategory = Field(default=FoodCategory.COOKED_DISH, description="Culinary category.")
+    shelf_life_days: int = Field(default=2, description="Estimated shelf life days for fresh items/produce/cooked food. Set to 0 if packaged item requiring printed expiry date.")
+    requires_expiry_date: bool = Field(default=False, description="Set to true ONLY for manufactured, packaged goods, sealed commercial snacks/drinks/cans that have printed expiry dates. Set to false for fresh produce, fruits, fresh milk, vegetables, cooked meals, dishes made before.")
+    storage_tip: str = Field(default="", description="Practical household refrigerator storage advice.")
+
+
+class MultiFoodClassificationVerdict(BaseModel):
+    is_food: bool = Field(default=True, description="True if photo contains at least one food, grocery, produce, or kitchen item.")
+    items: List[FoodItemVerdict] = Field(default_factory=list, description="List of all distinct food items recognized in the photo.")
+    message: str = Field(default="", description="Brief description of what was identified.")
+
+
 class FoodClassificationVerdict(BaseModel):
     is_food: bool = Field(description="True if this is an edible kitchen food, drink, grocery, produce, or cooked dish.")
     corrected_item: str = Field(default="", description="The item the user meant, spelled correctly in English.")
@@ -398,19 +414,8 @@ class ClassifyRequest(BaseModel):
 class PhotoScanRequest(BaseModel):
     image: str = Field(..., description="Base64 encoded data URI or raw base64 string of the food photo")
     mime_type: Optional[str] = Field(default="image/jpeg", description="MIME type of the photo (e.g. image/jpeg, image/png, image/webp)")
-
-
-
-class ClassifyResponse(BaseModel):
-    is_food: bool
-    name_en: str
-    name_hi: str
-    category: str
-    shelf_life_days: Optional[int]
-    requires_expiry_date: bool
-    storage_tip: str = ""
-    message: Optional[str] = None
-    analyzed_by: str = "Gemini AI"
+    fridge_id: Optional[str] = Field(default=None, description="Active fridge ID to auto-add fresh items to")
+    timezone: Optional[str] = Field(default=None, description="Client timezone for freshness calculation")
 
 
 class CommandRequest(BaseModel):
@@ -458,6 +463,21 @@ class InventoryItem(BaseModel):
     requires_expiry_date: bool
     storage_tip: str
     last_synced_at: Optional[str] = None
+
+
+class ClassifyResponse(BaseModel):
+    is_food: bool
+    name_en: str = ""
+    name_hi: str = ""
+    category: str = "cooked_dish"
+    shelf_life_days: Optional[int] = None
+    requires_expiry_date: bool = False
+    storage_tip: str = ""
+    message: Optional[str] = None
+    analyzed_by: str = "Gemini AI"
+    items: List[dict] = Field(default_factory=list)
+    auto_added: List[InventoryItem] = Field(default_factory=list)
+    needs_expiry: List[dict] = Field(default_factory=list)
 
 
 class AuthLoginRequest(BaseModel):
@@ -1210,24 +1230,34 @@ PHOTO_CLASSIFY_PROMPT = """You are an expert culinary AI and food safety inspect
 Analyze this food/grocery photo carefully.
 
 Instructions:
-1. Identify the food item clearly. It could be fresh produce (vegetable/fruit), fresh dairy (milk, paneer, curd, cream, butter), fresh cooked meal (dal, curry, sabzi, rice, roti, paratha, biryani, snack), raw meat/fish/poultry, egg, pantry staple, beverage, or a packaged snack.
-2. If it is NOT food (e.g., electronic gadget, toy, furniture, human, vehicle, animal, medicine, cleaner, document):
-   - Set is_food=false, category=not_food, shelf_life_days=0, requires_expiry_date=false, name_en="", name_hi="", storage_tip="".
+1. Identify all distinct food items, produce, groceries, cooked dishes, snacks, or beverages present in the photo.
+2. If the photo does NOT contain food (e.g., electronic gadget, toy, furniture, human, animal, medicine, cleaner, document):
+   - Set is_food=false, items=[], message="The photo does not appear to contain an edible food or kitchen grocery item."
 3. If it IS food:
-   - Provide standard English name in `name_en` (e.g. "Paneer Butter Masala", "Fresh Tomato", "Aloo Paratha", "Apples", "Cooked Dal", "Amul Butter").
-   - Provide Hindi translation in Devanagari script in `name_hi` (e.g. "पनीर बटर मसाला", "टमाटर", "आलू पराठा", "सेब", "पकी हुई दाल", "अमुल मक्खन").
-   - Categorize into one of: 'dairy', 'produce', 'vegetable', 'fruit', 'cooked_dish', 'meat_fish_egg', 'grain_pulse_flour', 'snack_bakery', 'beverage', 'spice_condiment', 'packaged_grocery', 'oil_sugar_fat'.
-   - Determine `requires_expiry_date`:
-     * Set requires_expiry_date=true ONLY for commercial sealed manufactured packaged snacks/cans/bottles that have printed manufacturer expiration dates.
-     * Set requires_expiry_date=false for all fresh produce, fruits, fresh dairy, eggs, breads, homemade dishes, cooked meals, opened leftovers.
-   - Determine `shelf_life_days`:
-     * Accurate estimated refrigerator shelf life in days from today (e.g. freshly cooked dal/curry/rice: 2 days, fresh milk: 2 days, paneer: 3 days, leafy greens: 3 days, apples: 21 days, eggs: 21 days).
-     * If requires_expiry_date=true, set shelf_life_days=0.
-   - Provide practical Indian household refrigerator `storage_tip` (e.g. "Keep refrigerated in an airtight container. Consume within 2 days.").
+   - Set is_food=true.
+   - For EACH food item detected:
+     * Provide standard English name in `name_en` (e.g. "Paneer Butter Masala", "Fresh Tomato", "Aloo Paratha", "Apples", "Cooked Dal", "Lays Chips", "Amul Butter").
+     * Provide Hindi translation in Devanagari script in `name_hi` (e.g. "पनीर बटर मसाला", "टमाटर", "आलू पराठा", "सेब", "पकी हुई दाल", "लेज़ चिप्स", "अमुल मक्खन").
+     * Categorize into one of: 'dairy', 'produce', 'vegetable', 'fruit', 'cooked_dish', 'meat_fish_egg', 'grain_pulse_flour', 'snack_bakery', 'beverage', 'spice_condiment', 'packaged_grocery', 'oil_sugar_fat'.
+     * Determine `requires_expiry_date`:
+       - Set requires_expiry_date=true ONLY for commercial sealed manufactured packaged snacks/cans/bottles that have printed manufacturer expiration dates.
+       - Set requires_expiry_date=false for all fresh produce, fruits, fresh vegetables, fresh dairy, eggs, breads, homemade dishes, cooked meals, opened leftovers.
+     * Determine `shelf_life_days`:
+       - If requires_expiry_date=false: Accurate estimated refrigerator shelf life in days from today (e.g. freshly cooked dal/curry/rice: 2 days, fresh milk: 2 days, paneer: 3 days, leafy greens: 3 days, apples: 21 days, eggs: 21 days).
+       - If requires_expiry_date=true: Set shelf_life_days=0.
+     * Provide practical Indian household refrigerator `storage_tip` (e.g. "Keep refrigerated in an airtight container. Consume within 2 days.").
 """
 
-def classify_food_photo(image_data: str, mime_type: Optional[str] = "image/jpeg") -> ClassifyResponse:
-    """Classify a food photo using Google GenAI vision with fallback to smart food inspector."""
+def classify_food_photo(
+    image_data: str,
+    mime_type: Optional[str] = "image/jpeg",
+    fridge_id: Optional[str] = None,
+    client_tz: Optional[str] = None,
+) -> ClassifyResponse:
+    """Classify a food photo using Google GenAI vision with fallback to smart food inspector.
+    Fresh food items without printed expiry dates are automatically added to the active fridge.
+    Packaged snacks or items requiring printed expiry dates are queued for date confirmation.
+    """
     clean_data = (image_data or "").strip()
     if not clean_data:
         raise HTTPException(status_code=400, detail="Photo data cannot be empty.")
@@ -1260,14 +1290,34 @@ def classify_food_photo(image_data: str, mime_type: Optional[str] = "image/jpeg"
                         contents=[part, PHOTO_CLASSIFY_PROMPT],
                         config=types.GenerateContentConfig(
                             response_mime_type="application/json",
-                            response_schema=FoodClassificationVerdict,
+                            response_schema=MultiFoodClassificationVerdict,
                             temperature=0.1,
                         ),
                     )
                     raw_text = (response.text or "").strip()
-                    verdict = FoodClassificationVerdict.model_validate_json(raw_text)
+                    verdict = MultiFoodClassificationVerdict.model_validate_json(raw_text)
 
-                    if not verdict.is_food or verdict.category == FoodCategory.NOT_FOOD or not verdict.name_en:
+                    if not verdict.is_food or not verdict.items:
+                        return ClassifyResponse(
+                            is_food=False,
+                            name_en="",
+                            name_hi="",
+                            category="not_food",
+                            shelf_life_days=None,
+                            requires_expiry_date=False,
+                            storage_tip="",
+                            message=verdict.message or "The photo does not appear to contain an edible food or kitchen grocery item.",
+                            analyzed_by="Gemini Vision AI",
+                            items=[],
+                            auto_added=[],
+                            needs_expiry=[],
+                        )
+
+                    valid_items = [
+                        it for it in verdict.items
+                        if it.name_en and it.category != FoodCategory.NOT_FOOD
+                    ]
+                    if not valid_items:
                         return ClassifyResponse(
                             is_food=False,
                             name_en="",
@@ -1278,33 +1328,131 @@ def classify_food_photo(image_data: str, mime_type: Optional[str] = "image/jpeg"
                             storage_tip="",
                             message="The photo does not appear to contain an edible food or kitchen grocery item.",
                             analyzed_by="Gemini Vision AI",
+                            items=[],
+                            auto_added=[],
+                            needs_expiry=[],
                         )
+
+                    auto_added: List[InventoryItem] = []
+                    needs_expiry: List[dict] = []
+                    all_items_dicts: List[dict] = []
+
+                    for it in valid_items:
+                        cat_str = it.category.value if hasattr(it.category, "value") else str(it.category)
+                        item_dict = {
+                            "name_en": it.name_en,
+                            "name_hi": it.name_hi or it.name_en,
+                            "category": cat_str,
+                            "shelf_life_days": it.shelf_life_days if not it.requires_expiry_date else None,
+                            "requires_expiry_date": it.requires_expiry_date,
+                            "storage_tip": it.storage_tip or "Store refrigerated.",
+                        }
+                        all_items_dicts.append(item_dict)
+
+                        if not it.requires_expiry_date:
+                            # Fresh items without printed expiry date are auto-added!
+                            if fridge_id:
+                                try:
+                                    item_create = InventoryItemCreate(
+                                        name_en=it.name_en,
+                                        name_hi=it.name_hi or it.name_en,
+                                        category=cat_str,
+                                        shelf_life_days=it.shelf_life_days if it.shelf_life_days > 0 else 2,
+                                        requires_expiry_date=False,
+                                        expiry_date=None,
+                                        storage_tip=it.storage_tip or "Keep refrigerated in an airtight container.",
+                                    )
+                                    saved = save_fridge_inventory_item(fridge_id, item_create, client_tz=client_tz)
+                                    auto_added.append(saved)
+                                except Exception as save_err:
+                                    logger.error(f"Failed to auto-add fresh item {it.name_en}: {save_err}")
+                                    needs_expiry.append(item_dict)
+                            else:
+                                needs_expiry.append(item_dict)
+                        else:
+                            # Packaged items requiring printed expiry date
+                            needs_expiry.append(item_dict)
+
+                    primary = valid_items[0]
+                    cat_primary = primary.category.value if hasattr(primary.category, "value") else str(primary.category)
+
+                    if auto_added and needs_expiry:
+                        msg = f"Auto-added {len(auto_added)} fresh item(s) to fridge. {len(needs_expiry)} item(s) require package expiry date."
+                    elif auto_added:
+                        msg = f"Successfully analyzed photo and auto-added {len(auto_added)} fresh item(s) to your fridge!"
+                    elif needs_expiry:
+                        msg = f"Analyzed {len(needs_expiry)} item(s). Please verify the printed expiry dates."
+                    else:
+                        msg = "Visual analysis complete."
 
                     return ClassifyResponse(
                         is_food=True,
-                        name_en=verdict.name_en,
-                        name_hi=verdict.name_hi or verdict.name_en,
-                        category=verdict.category.value,
-                        shelf_life_days=None if verdict.requires_expiry_date else verdict.shelf_life_days,
-                        requires_expiry_date=verdict.requires_expiry_date,
-                        storage_tip=verdict.storage_tip or "Keep refrigerated in an airtight container.",
+                        name_en=primary.name_en,
+                        name_hi=primary.name_hi or primary.name_en,
+                        category=cat_primary,
+                        shelf_life_days=None if primary.requires_expiry_date else primary.shelf_life_days,
+                        requires_expiry_date=primary.requires_expiry_date,
+                        storage_tip=primary.storage_tip or "Keep refrigerated in an airtight container.",
                         analyzed_by="Gemini Vision AI",
+                        items=all_items_dicts,
+                        auto_added=auto_added,
+                        needs_expiry=needs_expiry,
+                        message=msg,
                     )
                 except Exception as exc:
                     logger.warning(f"Gemini vision model {model_name} failed: {exc}")
                     continue
 
     # Graceful fallback if Gemini Vision is unavailable or offline
+    fallback_items = [
+        FoodItemVerdict(
+            name_en="Fresh Cooked Dish",
+            name_hi="ताज़ा भोजन",
+            category=FoodCategory.COOKED_DISH,
+            shelf_life_days=2,
+            requires_expiry_date=False,
+            storage_tip="Store in an airtight container in refrigerator. Reheat before serving.",
+        )
+    ]
+    auto_added_fb: List[InventoryItem] = []
+    if fridge_id:
+        try:
+            fb = fallback_items[0]
+            item_create = InventoryItemCreate(
+                name_en=fb.name_en,
+                name_hi=fb.name_hi,
+                category=fb.category.value,
+                shelf_life_days=fb.shelf_life_days,
+                requires_expiry_date=False,
+                expiry_date=None,
+                storage_tip=fb.storage_tip,
+            )
+            saved = save_fridge_inventory_item(fridge_id, item_create, client_tz=client_tz)
+            auto_added_fb.append(saved)
+        except Exception as save_err:
+            logger.warning(f"Fallback auto-add item failed: {save_err}")
+
+    fb_item = fallback_items[0]
     return ClassifyResponse(
         is_food=True,
-        name_en="Fresh Cooked Dish",
-        name_hi="ताज़ा भोजन",
-        category="cooked_dish",
-        shelf_life_days=2,
+        name_en=fb_item.name_en,
+        name_hi=fb_item.name_hi,
+        category=fb_item.category.value,
+        shelf_life_days=fb_item.shelf_life_days,
         requires_expiry_date=False,
-        storage_tip="Store in an airtight container in refrigerator. Reheat before serving.",
-        message="Visual analysis completed. Shelf life set for freshly prepared food made today.",
+        storage_tip=fb_item.storage_tip,
+        message="Visual analysis completed. Fresh food auto-added to your fridge inventory." if auto_added_fb else "Visual analysis completed.",
         analyzed_by="Visual Food Inspector",
+        items=[{
+            "name_en": fb_item.name_en,
+            "name_hi": fb_item.name_hi,
+            "category": fb_item.category.value,
+            "shelf_life_days": fb_item.shelf_life_days,
+            "requires_expiry_date": False,
+            "storage_tip": fb_item.storage_tip,
+        }],
+        auto_added=auto_added_fb,
+        needs_expiry=[],
     )
 
 
@@ -1657,7 +1805,7 @@ def api_process_command(payload: CommandRequest, request: Request, fridge: Optio
     if not raw_cmd:
         raise HTTPException(status_code=400, detail="Command cannot be empty.")
 
-    fid = get_current_fridge_id(request) or (fridge.strip().lower() if fridge else None)
+    fid = get_current_fridge_id(request) or (fridge.strip() if fridge else None)
     inv = get_fridge_inventory(fid) if fid else []
     cmd_lower = raw_cmd.lower()
 
@@ -1910,11 +2058,21 @@ def api_auth_me(request: Request):
 @app.post("/api/auth/login", summary="Login to existing family fridge")
 def api_auth_login(payload: AuthLoginRequest, request: Request, response: Response):
     """Authenticate with Fridge ID and PIN; sets 30-day cryptographically signed cookie."""
-    fid = payload.fridge_id.strip().lower()
+    fid = payload.fridge_id.strip()
     pin = payload.pin.strip()
 
     if not fid or not pin:
         raise HTTPException(status_code=400, detail="Fridge ID and PIN are required.")
+    if not FRIDGE_RE.fullmatch(fid):
+        raise HTTPException(
+            status_code=422,
+            detail="Fridge ID must be 3-30 characters long with letters (a-z, A-Z) and numbers (0-9) only (case-sensitive).",
+        )
+    if not PIN_RE.fullmatch(pin):
+        raise HTTPException(
+            status_code=422,
+            detail="Family PIN must be 4-30 characters long with letters (a-z, A-Z) and numbers (0-9) only (case-sensitive).",
+        )
 
     db, _ = init_firestore()
     authenticated = False
@@ -2012,7 +2170,7 @@ def api_auth_login(payload: AuthLoginRequest, request: Request, response: Respon
 @app.post("/api/auth/create", summary="Create a new family fridge")
 def api_auth_create(payload: AuthCreateRequest, request: Request, response: Response):
     """Creates a new fridge entry with a hashed family PIN and sets signed session cookie."""
-    fid = payload.fridge_id.strip().lower()
+    fid = payload.fridge_id.strip()
     pin = payload.pin.strip()
 
     if not fid or not pin:
@@ -2020,10 +2178,13 @@ def api_auth_create(payload: AuthCreateRequest, request: Request, response: Resp
     if not FRIDGE_RE.fullmatch(fid):
         raise HTTPException(
             status_code=422,
-            detail="Fridge ID must be 3-30 lowercase characters (letters, numbers, hyphens, underscores). Example: 'sharma-kitchen'.",
+            detail="Fridge ID must be 3-30 alphanumeric characters (letters a-z, A-Z and numbers 0-9 only, case-sensitive). No symbols, hyphens, or spaces allowed.",
         )
-    if len(pin) < 4:
-        raise HTTPException(status_code=422, detail="PIN must be at least 4 digits long for security.")
+    if not PIN_RE.fullmatch(pin):
+        raise HTTPException(
+            status_code=422,
+            detail="Family PIN must be 4-30 alphanumeric characters (letters a-z, A-Z and numbers 0-9 only, case-sensitive). No symbols or spaces allowed.",
+        )
 
     db, _ = init_firestore()
     salt = secrets.token_hex(16)
@@ -2360,14 +2521,19 @@ def api_classify(payload: ClassifyRequest):
 
 @app.post("/api/scanner/photo", response_model=ClassifyResponse, summary="Scan Food Photo with AI Vision")
 @app.post("/classify/photo", response_model=ClassifyResponse, summary="Scan Food Photo with AI Vision (Alias)")
-def api_classify_photo(payload: PhotoScanRequest):
-    """Scan and identify food in an uploaded photo or camera snapshot using Gemini AI Vision."""
+def api_classify_photo(payload: PhotoScanRequest, request: Request, fridge: Optional[str] = None):
+    """Scan and identify food in an uploaded photo or camera snapshot using Gemini AI Vision.
+    Fresh food items without printed expiry dates are automatically added to the active fridge inventory.
+    Packaged snacks or items requiring printed expiry dates are returned in needs_expiry for user confirmation.
+    """
     if not payload.image or not payload.image.strip():
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="Photo image data cannot be empty.",
         )
-    return classify_food_photo(payload.image, payload.mime_type)
+    fid = get_current_fridge_id(request) or (payload.fridge_id.strip() if payload.fridge_id else None) or (fridge.strip() if fridge else None)
+    client_tz = payload.timezone or request.headers.get("X-Client-Timezone")
+    return classify_food_photo(payload.image, payload.mime_type, fridge_id=fid, client_tz=client_tz)
 
 
 
@@ -2401,7 +2567,7 @@ def api_rescue(payload: RescueRequest):
 @app.get("/api/inventory", response_model=List[InventoryItem], summary="Get All Inventory Items")
 def api_get_inventory(request: Request, fridge: Optional[str] = None):
     """Retrieve all tracked items for the active fridge, dynamically syncing freshness with local timezone."""
-    fid = get_current_fridge_id(request) or (fridge.strip().lower() if fridge else None)
+    fid = get_current_fridge_id(request) or (fridge.strip() if fridge else None)
     if not fid:
         return []
     client_tz = request.headers.get("X-Client-Timezone")
@@ -2411,7 +2577,7 @@ def api_get_inventory(request: Request, fridge: Optional[str] = None):
 @app.post("/api/inventory", response_model=InventoryItem, summary="Add Item to Inventory")
 def api_add_inventory(item: InventoryItemCreate, request: Request, fridge: Optional[str] = None):
     """Add a verified food item into the active fridge inventory."""
-    fid = get_current_fridge_id(request) or (fridge.strip().lower() if fridge else None)
+    fid = get_current_fridge_id(request) or (fridge.strip() if fridge else None)
     if not fid:
         raise HTTPException(status_code=401, detail="Please login to your fridge to add items.")
     client_tz = request.headers.get("X-Client-Timezone")
@@ -2421,7 +2587,7 @@ def api_add_inventory(item: InventoryItemCreate, request: Request, fridge: Optio
 @app.delete("/api/inventory/{item_id}", summary="Delete / Consume Inventory Item")
 def api_delete_inventory(item_id: str, request: Request, fridge: Optional[str] = None):
     """Remove an item from the active fridge inventory."""
-    fid = get_current_fridge_id(request) or (fridge.strip().lower() if fridge else None)
+    fid = get_current_fridge_id(request) or (fridge.strip() if fridge else None)
     if not fid:
         raise HTTPException(status_code=401, detail="Please login to your fridge to delete items.")
     removed = remove_fridge_inventory_item(fid, item_id)
@@ -3317,24 +3483,44 @@ HTML_CONTENT = r"""<!DOCTYPE html>
       <!-- FORM: LOGIN -->
       <form id="login-form" class="mt-4 space-y-3.5">
         <div>
-          <label class="block text-xs font-semibold mb-1" data-i18n="auth_fid_label">Fridge ID:</label>
+          <div class="flex items-center justify-between mb-1">
+            <label class="block text-xs font-semibold" data-i18n="auth_fid_label">Fridge ID:</label>
+            <span class="text-[10px] text-amber-600 dark:text-amber-400 font-semibold px-1.5 py-0.5 rounded bg-amber-50 dark:bg-amber-950/60 border border-amber-200/60 dark:border-amber-800/60">Case-Sensitive</span>
+          </div>
           <input 
             type="text" 
             id="login-fid" 
-            placeholder="e.g. sharma-kitchen or my-fridge" 
-            class="w-full px-4 py-2.5 rounded-xl border border-stone-200 dark:border-stone-700 bg-stone-50 dark:bg-stone-800 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+            placeholder="e.g. SharmaKitchen or test (3-30 letters/numbers)" 
+            pattern="[a-zA-Z0-9]{3,30}"
+            class="w-full px-4 py-2.5 rounded-xl border border-stone-200 dark:border-stone-700 bg-stone-50 dark:bg-stone-800 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 font-mono"
             required
           />
+          <div class="text-[10px] text-stone-400 dark:text-stone-500 mt-1">Letters (a-z, A-Z) and numbers (0-9) only. No symbols or spaces.</div>
         </div>
         <div>
-          <label class="block text-xs font-semibold mb-1" data-i18n="auth_pin_label">Family PIN:</label>
-          <input 
-            type="password" 
-            id="login-pin" 
-            placeholder="Enter fridge PIN..." 
-            class="w-full px-4 py-2.5 rounded-xl border border-stone-200 dark:border-stone-700 bg-stone-50 dark:bg-stone-800 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
-            required
-          />
+          <div class="flex items-center justify-between mb-1">
+            <label class="block text-xs font-semibold" data-i18n="auth_pin_label">Family PIN / Password:</label>
+            <span class="text-[10px] text-amber-600 dark:text-amber-400 font-semibold px-1.5 py-0.5 rounded bg-amber-50 dark:bg-amber-950/60 border border-amber-200/60 dark:border-amber-800/60">Case-Sensitive</span>
+          </div>
+          <div class="relative">
+            <input 
+              type="password" 
+              id="login-pin" 
+              placeholder="Enter fridge PIN (e.g. Secret123)..." 
+              pattern="[a-zA-Z0-9]{4,30}"
+              class="w-full pl-4 pr-10 py-2.5 rounded-xl border border-stone-200 dark:border-stone-700 bg-stone-50 dark:bg-stone-800 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 font-mono"
+              required
+            />
+            <button 
+              type="button" 
+              id="toggle-login-pin-btn" 
+              class="absolute right-2.5 top-1/2 -translate-y-1/2 p-1.5 rounded-lg text-stone-400 hover:text-stone-600 dark:hover:text-stone-200 hover:bg-stone-100 dark:hover:bg-stone-700 transition"
+              title="Show / Hide PIN"
+            >
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
+            </button>
+          </div>
+          <div class="text-[10px] text-stone-400 dark:text-stone-500 mt-1">Letters and numbers only. Exact casing verified (test != Test).</div>
         </div>
         <button type="submit" class="w-full py-2.5 bg-brand-600 hover:bg-brand-700 text-white font-semibold rounded-xl text-sm shadow transition" data-i18n="auth_login_submit">
           Open Fridge
@@ -3344,24 +3530,44 @@ HTML_CONTENT = r"""<!DOCTYPE html>
       <!-- FORM: CREATE NEW FRIDGE -->
       <form id="create-form" class="mt-4 space-y-3.5 hidden">
         <div>
-          <label class="block text-xs font-semibold mb-1" data-i18n="auth_create_fid_label">Choose Fridge ID:</label>
+          <div class="flex items-center justify-between mb-1">
+            <label class="block text-xs font-semibold" data-i18n="auth_create_fid_label">Choose Fridge ID:</label>
+            <span class="text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold px-1.5 py-0.5 rounded bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200/60 dark:border-emerald-800/60">Letters & Numbers</span>
+          </div>
           <input 
             type="text" 
             id="create-fid" 
-            placeholder="e.g. gupta-home (3-30 letters/numbers)" 
-            class="w-full px-4 py-2.5 rounded-xl border border-stone-200 dark:border-stone-700 bg-stone-50 dark:bg-stone-800 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+            placeholder="e.g. SharmaKitchen or MyFridge24 (3-30 chars)" 
+            pattern="[a-zA-Z0-9]{3,30}"
+            class="w-full px-4 py-2.5 rounded-xl border border-stone-200 dark:border-stone-700 bg-stone-50 dark:bg-stone-800 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 font-mono"
             required
           />
+          <div class="text-[10px] text-stone-400 dark:text-stone-500 mt-1">Case-sensitive: saved exactly as typed. Allowed: a-z, A-Z, 0-9.</div>
         </div>
         <div>
-          <label class="block text-xs font-semibold mb-1" data-i18n="auth_create_pin_label">Set Family PIN (min 4 digits):</label>
-          <input 
-            type="password" 
-            id="create-pin" 
-            placeholder="e.g. 5678" 
-            class="w-full px-4 py-2.5 rounded-xl border border-stone-200 dark:border-stone-700 bg-stone-50 dark:bg-stone-800 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
-            required
-          />
+          <div class="flex items-center justify-between mb-1">
+            <label class="block text-xs font-semibold" data-i18n="auth_create_pin_label">Set Family PIN / Password:</label>
+            <span class="text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold px-1.5 py-0.5 rounded bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200/60 dark:border-emerald-800/60">Min 4 Alphanumeric</span>
+          </div>
+          <div class="relative">
+            <input 
+              type="password" 
+              id="create-pin" 
+              placeholder="e.g. SecretPin42 (letters & numbers only)" 
+              pattern="[a-zA-Z0-9]{4,30}"
+              class="w-full pl-4 pr-10 py-2.5 rounded-xl border border-stone-200 dark:border-stone-700 bg-stone-50 dark:bg-stone-800 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 font-mono"
+              required
+            />
+            <button 
+              type="button" 
+              id="toggle-create-pin-btn" 
+              class="absolute right-2.5 top-1/2 -translate-y-1/2 p-1.5 rounded-lg text-stone-400 hover:text-stone-600 dark:hover:text-stone-200 hover:bg-stone-100 dark:hover:bg-stone-700 transition"
+              title="Show / Hide PIN"
+            >
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
+            </button>
+          </div>
+          <div class="text-[10px] text-stone-400 dark:text-stone-500 mt-1">Letters (a-z, A-Z) and numbers (0-9) only. Strictly case-sensitive.</div>
         </div>
         <button type="submit" class="w-full py-2.5 bg-leaf-600 hover:bg-leaf-700 text-white font-semibold rounded-xl text-sm shadow transition" data-i18n="auth_create_submit">
           Create & Save Fridge
@@ -3816,7 +4022,7 @@ HTML_CONTENT = r"""<!DOCTYPE html>
       document.getElementById('share-fridge-btn').classList.remove('hidden');
       document.getElementById('share-fridge-btn').classList.add('inline-flex');
 
-      document.getElementById('header-fridge-name').textContent = fid.toUpperCase();
+      document.getElementById('header-fridge-name').textContent = fid;
       const diagFid = document.getElementById('diag-fridge-id');
       if (diagFid) diagFid.textContent = fid;
 
@@ -3946,10 +4152,49 @@ HTML_CONTENT = r"""<!DOCTYPE html>
       loginForm.classList.add('hidden');
     });
 
+    // PIN Visibility Eye Toggles
+    const toggleLoginPinBtn = document.getElementById('toggle-login-pin-btn');
+    if (toggleLoginPinBtn) {
+      toggleLoginPinBtn.addEventListener('click', () => {
+        const pinInput = document.getElementById('login-pin');
+        if (pinInput.type === 'password') {
+          pinInput.type = 'text';
+          toggleLoginPinBtn.innerHTML = '<svg class="w-4 h-4 text-brand-600 dark:text-brand-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l18 18"/></svg>';
+        } else {
+          pinInput.type = 'password';
+          toggleLoginPinBtn.innerHTML = '<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>';
+        }
+      });
+    }
+
+    const toggleCreatePinBtn = document.getElementById('toggle-create-pin-btn');
+    if (toggleCreatePinBtn) {
+      toggleCreatePinBtn.addEventListener('click', () => {
+        const pinInput = document.getElementById('create-pin');
+        if (pinInput.type === 'password') {
+          pinInput.type = 'text';
+          toggleCreatePinBtn.innerHTML = '<svg class="w-4 h-4 text-emerald-600 dark:text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l18 18"/></svg>';
+        } else {
+          pinInput.type = 'password';
+          toggleCreatePinBtn.innerHTML = '<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>';
+        }
+      });
+    }
+
     loginForm.addEventListener('submit', async (e) => {
       e.preventDefault();
-      const fid = document.getElementById('login-fid').value.trim().toLowerCase();
+      const fid = document.getElementById('login-fid').value.trim();
       const pin = document.getElementById('login-pin').value.trim();
+
+      if (!/^[a-zA-Z0-9]{3,30}$/.test(fid)) {
+        showToast('Fridge ID must be 3-30 characters with letters (a-z, A-Z) and numbers (0-9) only (case-sensitive).', 'error');
+        return;
+      }
+      if (!/^[a-zA-Z0-9]{4,30}$/.test(pin)) {
+        showToast('PIN must be 4-30 characters with letters (a-z, A-Z) and numbers (0-9) only (case-sensitive).', 'error');
+        return;
+      }
+
       const activeTz = getEffectiveTimezone();
       try {
         const res = await fetch('/api/auth/login', {
@@ -3973,8 +4218,18 @@ HTML_CONTENT = r"""<!DOCTYPE html>
 
     createForm.addEventListener('submit', async (e) => {
       e.preventDefault();
-      const fid = document.getElementById('create-fid').value.trim().toLowerCase();
+      const fid = document.getElementById('create-fid').value.trim();
       const pin = document.getElementById('create-pin').value.trim();
+
+      if (!/^[a-zA-Z0-9]{3,30}$/.test(fid)) {
+        showToast('Fridge ID must be 3-30 characters with letters (a-z, A-Z) and numbers (0-9) only (case-sensitive).', 'error');
+        return;
+      }
+      if (!/^[a-zA-Z0-9]{4,30}$/.test(pin)) {
+        showToast('PIN must be 4-30 characters with letters (a-z, A-Z) and numbers (0-9) only (case-sensitive).', 'error');
+        return;
+      }
+
       const activeTz = getEffectiveTimezone();
       try {
         const res = await fetch('/api/auth/create', {
@@ -4814,6 +5069,87 @@ HTML_CONTENT = r"""<!DOCTYPE html>
         return;
       }
 
+      // MULTI-ITEM SCAN RESULTS SUMMARY (Auto-added fresh + Packaged modal prompt)
+      if ((data.auto_added && data.auto_added.length > 0) || (data.needs_expiry && data.needs_expiry.length > 0)) {
+        const autoAddedCount = data.auto_added ? data.auto_added.length : 0;
+        const needsExpiryCount = data.needs_expiry ? data.needs_expiry.length : 0;
+        const totalItemsCount = autoAddedCount + needsExpiryCount;
+
+        resBox.innerHTML = `
+          <div class="p-5 rounded-3xl bg-stone-50 dark:bg-stone-800/90 border border-stone-200 dark:border-stone-700 text-xs space-y-4 shadow-sm transition-all">
+            ${photoUrl ? `
+              <div class="flex items-center gap-3 pb-3 border-b border-stone-200 dark:border-stone-700/60">
+                <div class="relative w-16 h-16 rounded-2xl overflow-hidden shrink-0 border-2 border-emerald-500/40 shadow-sm bg-black">
+                  <img src="${photoUrl}" alt="Scanned Food Photo" class="w-full h-full object-cover"/>
+                  <span class="absolute bottom-0 inset-x-0 bg-stone-900/80 text-white text-[8px] text-center font-bold py-0.5">PHOTO</span>
+                </div>
+                <div class="min-w-0 flex-1">
+                  <div class="flex items-center gap-2 flex-wrap">
+                    <span class="px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 font-bold text-[10px] tracking-wide flex items-center gap-1">
+                      <svg class="w-3 h-3 text-emerald-600 dark:text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+                      <span>AI MULTI-FOOD SCAN</span>
+                    </span>
+                    <span class="text-[10px] text-stone-400">• ${data.analyzed_by || 'Gemini Vision AI'}</span>
+                  </div>
+                  <div class="text-[11px] text-stone-600 dark:text-stone-300 font-semibold mt-1">
+                    AI identified ${totalItemsCount} food item${totalItemsCount > 1 ? 's' : ''} in photo
+                  </div>
+                </div>
+              </div>
+            ` : ''}
+
+            ${autoAddedCount > 0 ? `
+              <div class="p-3.5 rounded-2xl bg-emerald-50/80 dark:bg-emerald-950/40 border border-emerald-200/80 dark:border-emerald-800/60 space-y-2">
+                <div class="flex items-center justify-between text-xs font-bold text-emerald-800 dark:text-emerald-200">
+                  <div class="flex items-center gap-1.5">
+                    <svg class="w-4 h-4 text-emerald-600 dark:text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                    <span>Automatically Added Fresh (No Expiry Needed)</span>
+                  </div>
+                  <span class="px-2 py-0.5 rounded-full bg-emerald-200/60 dark:bg-emerald-900/80 text-emerald-800 dark:text-emerald-200 text-[10px] font-bold">${autoAddedCount} added</span>
+                </div>
+                <div class="divide-y divide-emerald-100 dark:divide-emerald-900/40 text-[11px]">
+                  ${data.auto_added.map(item => `
+                    <div class="py-1.5 flex items-center justify-between">
+                      <div class="flex items-center gap-2">
+                        <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                        <span class="font-semibold text-stone-800 dark:text-stone-200">${item.name_en}</span>
+                        ${item.name_hi ? `<span class="text-[10px] text-brand-600 dark:text-brand-400">(${item.name_hi})</span>` : ''}
+                      </div>
+                      <span class="text-stone-500 dark:text-stone-400 text-[10px] font-medium">${item.days_left || item.shelf_life_days || 2}d estimated freshness</span>
+                    </div>
+                  `).join('')}
+                </div>
+              </div>
+            ` : ''}
+
+            ${needsExpiryCount > 0 ? `
+              <div class="p-3.5 rounded-2xl bg-amber-50/80 dark:bg-amber-950/40 border border-amber-200/80 dark:border-amber-800/60 space-y-2">
+                <div class="flex items-center justify-between text-xs font-bold text-amber-800 dark:text-amber-200">
+                  <div class="flex items-center gap-1.5">
+                    <svg class="w-4 h-4 text-amber-600 dark:text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                    <span>Packaged Items (Modal Prompt Opened)</span>
+                  </div>
+                  <span class="px-2 py-0.5 rounded-full bg-amber-200/60 dark:bg-amber-900/80 text-amber-800 dark:text-amber-200 text-[10px] font-bold">${needsExpiryCount} queued</span>
+                </div>
+                <div class="divide-y divide-amber-100 dark:divide-amber-900/40 text-[11px]">
+                  ${data.needs_expiry.map(item => `
+                    <div class="py-1.5 flex items-center justify-between">
+                      <div class="flex items-center gap-2">
+                        <span class="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
+                        <span class="font-semibold text-stone-800 dark:text-stone-200">${item.name_en}</span>
+                        ${item.name_hi ? `<span class="text-[10px] text-brand-600 dark:text-brand-400">(${item.name_hi})</span>` : ''}
+                      </div>
+                      <span class="text-amber-700 dark:text-amber-300 text-[10px] font-medium">Printed expiry date required</span>
+                    </div>
+                  `).join('')}
+                </div>
+              </div>
+            ` : ''}
+          </div>
+        `;
+        return;
+      }
+
       const displayNameEn = data.name_en || queryText || 'Fresh Food';
       const displayNameHi = data.name_hi || '';
       const displayCategory = data.category || 'cooked_dish';
@@ -5002,12 +5338,20 @@ HTML_CONTENT = r"""<!DOCTYPE html>
       try {
         const { dataUrl } = await compressAndResizeImage(fileOrBlob, 1024, 0.85);
 
+        const activeTz = getEffectiveTimezone();
+        const fid = currentFridge || '';
+
         const res = await fetch('/api/scanner/photo', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 
+            'Content-Type': 'application/json',
+            'X-Client-Timezone': activeTz
+          },
           body: JSON.stringify({
             image: dataUrl,
-            mime_type: 'image/jpeg'
+            mime_type: 'image/jpeg',
+            fridge_id: fid,
+            timezone: activeTz
           })
         });
 
@@ -5017,6 +5361,33 @@ HTML_CONTENT = r"""<!DOCTYPE html>
 
         const data = await res.json();
         renderScannerResult(data, dataUrl);
+
+        // 1. Fresh items without printed expiry date were automatically persisted to DB and returned in auto_added
+        if (data.auto_added && data.auto_added.length > 0) {
+          data.auto_added.forEach(item => inventory.unshift(item));
+          try { localStorage.setItem('fi_cached_inventory', JSON.stringify(inventory)); } catch(e){}
+          renderInventory();
+          updateStats();
+          const freshNames = data.auto_added.map(i => i.name_en).join(', ');
+          showToast(`Auto-added fresh item(s) to fridge: ${freshNames}`, 'success');
+        }
+
+        // 2. Packaged items or items requiring printed expiry date open modal sequentially one-by-one
+        const needsExpiry = data.needs_expiry || (data.requires_expiry_date ? [data] : []);
+        if (needsExpiry.length > 0) {
+          modalQueue = [...needsExpiry];
+          modalQueueTotal = needsExpiry.length;
+          modalQueueIndex = 1;
+          const firstItem = modalQueue.shift();
+          openModalWithClassification(firstItem, 1, modalQueueTotal);
+          if (data.auto_added && data.auto_added.length > 0) {
+            showToast(`Setting printed expiry date for ${firstItem.name_en}...`, 'info');
+          } else {
+            showToast(`Please enter printed expiry date for ${firstItem.name_en}`, 'info');
+          }
+        } else if (data.auto_added && data.auto_added.length > 0) {
+          showToast(`All ${data.auto_added.length} item(s) automatically added with computed shelf life!`, 'success');
+        }
       } catch (err) {
         console.error('Photo scan error:', err);
         resBox.innerHTML = `
