@@ -3023,11 +3023,11 @@ HTML_CONTENT = r"""<!DOCTYPE html>
         <div id="header-pin-container" class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-white dark:bg-stone-800 border border-stone-200 dark:border-stone-700 text-xs font-mono shadow-2xs">
           <span class="text-[11px] text-stone-400 font-sans font-medium">PIN:</span>
           <span id="sidebar-fridge-pin" class="font-bold text-stone-700 dark:text-stone-300 tracking-wider">••••</span>
-          <button type="button" id="toggle-pin-btn" class="text-stone-400 hover:text-brand-600 dark:hover:text-brand-400 ml-0.5 p-0.5 cursor-pointer" title="Show / Hide PIN">
-            <svg id="pin-eye-icon" class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path></svg>
+          <button type="button" id="toggle-pin-btn" class="text-stone-400 hover:text-brand-600 dark:hover:text-brand-400 ml-0.5 p-0.5 cursor-pointer select-none" title="Show / Hide PIN" aria-label="Show or hide PIN">
+            <svg id="pin-eye-icon" class="w-3.5 h-3.5 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path></svg>
           </button>
-          <button type="button" id="copy-pin-btn" class="text-stone-400 hover:text-brand-600 dark:hover:text-brand-400 p-0.5 cursor-pointer" title="Copy PIN">
-            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>
+          <button type="button" id="copy-pin-btn" class="text-stone-400 hover:text-brand-600 dark:hover:text-brand-400 p-0.5 cursor-pointer select-none" title="Copy PIN" aria-label="Copy PIN">
+            <svg class="w-3 h-3 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>
           </button>
         </div>
 
@@ -3783,10 +3783,12 @@ HTML_CONTENT = r"""<!DOCTYPE html>
             <button 
               type="button" 
               id="toggle-login-pin-btn" 
-              class="absolute right-2.5 top-1/2 -translate-y-1/2 p-1.5 rounded-lg text-stone-400 hover:text-stone-600 dark:hover:text-stone-200 hover:bg-stone-100 dark:hover:bg-stone-700 transition"
+              tabindex="-1"
+              class="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-lg text-stone-400 hover:text-stone-600 dark:hover:text-stone-200 hover:bg-stone-100 dark:hover:bg-stone-700 transition cursor-pointer select-none"
               title="Show / Hide PIN"
+              aria-label="Toggle password visibility"
             >
-              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
+              <svg class="w-4 h-4 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
             </button>
           </div>
           <div class="text-[10px] text-stone-400 dark:text-stone-500 mt-1">Letters and numbers only. Exact casing verified (test doesn't equal Test).</div>
@@ -3830,10 +3832,12 @@ HTML_CONTENT = r"""<!DOCTYPE html>
             <button 
               type="button" 
               id="toggle-create-pin-btn" 
-              class="absolute right-2.5 top-1/2 -translate-y-1/2 p-1.5 rounded-lg text-stone-400 hover:text-stone-600 dark:hover:text-stone-200 hover:bg-stone-100 dark:hover:bg-stone-700 transition"
+              tabindex="-1"
+              class="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-lg text-stone-400 hover:text-stone-600 dark:hover:text-stone-200 hover:bg-stone-100 dark:hover:bg-stone-700 transition cursor-pointer select-none"
               title="Show / Hide PIN"
+              aria-label="Toggle password visibility"
             >
-              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
+              <svg class="w-4 h-4 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
             </button>
           </div>
           <div class="text-[10px] text-stone-400 dark:text-stone-500 mt-1">Letters (a-z, A-Z) and numbers (0-9) only. Strictly case-sensitive.</div>
@@ -4758,6 +4762,7 @@ HTML_CONTENT = r"""<!DOCTYPE html>
     function updateSidebarPinDisplay() {
       const pinEl = document.getElementById('sidebar-fridge-pin');
       const eyeIcon = document.getElementById('pin-eye-icon');
+      const toggleBtn = document.getElementById('toggle-pin-btn');
       if (!pinEl) return;
       const effectivePin = currentFridgePin || (currentFridge ? localStorage.getItem('fi_last_pin_' + currentFridge) : '') || '';
       if (!effectivePin) {
@@ -4765,6 +4770,7 @@ HTML_CONTENT = r"""<!DOCTYPE html>
         if (eyeIcon) {
           eyeIcon.innerHTML = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path>';
         }
+        if (toggleBtn) toggleBtn.setAttribute('title', 'Show PIN');
         return;
       }
       if (pinRevealed) {
@@ -4772,32 +4778,93 @@ HTML_CONTENT = r"""<!DOCTYPE html>
         if (eyeIcon) {
           eyeIcon.innerHTML = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l18 18"></path>';
         }
+        if (toggleBtn) toggleBtn.setAttribute('title', 'Hide PIN');
       } else {
         pinEl.textContent = '•'.repeat(Math.max(4, effectivePin.length));
         if (eyeIcon) {
           eyeIcon.innerHTML = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path>';
         }
+        if (toggleBtn) toggleBtn.setAttribute('title', 'Show PIN');
       }
     }
+    window.updateSidebarPinDisplay = updateSidebarPinDisplay;
 
-    document.getElementById('toggle-pin-btn')?.addEventListener('click', () => {
-      if (!currentFridgePin && currentFridge) {
-        try { currentFridgePin = localStorage.getItem('fi_last_pin_' + currentFridge) || ''; } catch(e){}
+    let _lastPinToggleTime = 0;
+    function handleToggleSidebarPin(e) {
+      if (e) {
+        if (typeof e.preventDefault === 'function') e.preventDefault();
+        if (typeof e.stopPropagation === 'function') e.stopPropagation();
+      }
+      const now = Date.now();
+      if (now - _lastPinToggleTime < 250) return;
+      _lastPinToggleTime = now;
+
+      let effectivePin = currentFridgePin || (currentFridge ? localStorage.getItem('fi_last_pin_' + currentFridge) : '') || '';
+      if (!effectivePin && currentFridge) {
+        const entered = prompt(
+          currentLang === 'hi'
+            ? 'परिवार PIN देखें: कृपया इस डिवाइस पर पिन दिखाने और सुरक्षित रखने के लिए अपना फ़ैमिली PIN दर्ज करें:'
+            : 'View PIN: Please enter your family PIN to reveal and remember it on this device:'
+        );
+        if (entered && entered.trim()) {
+          effectivePin = entered.trim();
+          currentFridgePin = effectivePin;
+          try { localStorage.setItem('fi_last_pin_' + currentFridge, effectivePin); } catch(e){}
+          pinRevealed = true;
+          updateSidebarPinDisplay();
+          showToast(currentLang === 'hi' ? 'पिन सहेजा गया और दिखाया गया!' : 'PIN saved and revealed!', 'success');
+          return;
+        } else {
+          return;
+        }
       }
       pinRevealed = !pinRevealed;
       updateSidebarPinDisplay();
-    });
+    }
+    window.handleToggleSidebarPin = handleToggleSidebarPin;
 
-    document.getElementById('copy-pin-btn')?.addEventListener('click', () => {
-      const pinToCopy = currentFridgePin || (currentFridge ? localStorage.getItem('fi_last_pin_' + currentFridge) : '') || '';
-      if (pinToCopy) {
-        navigator.clipboard.writeText(pinToCopy).then(() => {
+    let _lastPinCopyTime = 0;
+    function handleCopySidebarPin(e) {
+      if (e) {
+        if (typeof e.preventDefault === 'function') e.preventDefault();
+        if (typeof e.stopPropagation === 'function') e.stopPropagation();
+      }
+      const now = Date.now();
+      if (now - _lastPinCopyTime < 250) return;
+      _lastPinCopyTime = now;
+
+      let effectivePin = currentFridgePin || (currentFridge ? localStorage.getItem('fi_last_pin_' + currentFridge) : '') || '';
+      if (!effectivePin && currentFridge) {
+        const entered = prompt(
+          currentLang === 'hi'
+            ? 'पिन कॉपी करें: कृपया अपना फ़ैमिली PIN दर्ज करें:'
+            : 'Copy PIN: Please enter your family PIN to copy and remember it on this device:'
+        );
+        if (entered && entered.trim()) {
+          effectivePin = entered.trim();
+          currentFridgePin = effectivePin;
+          try { localStorage.setItem('fi_last_pin_' + currentFridge, effectivePin); } catch(e){}
+          updateSidebarPinDisplay();
+        }
+      }
+      if (effectivePin) {
+        navigator.clipboard.writeText(effectivePin).then(() => {
           showToast(currentLang === 'hi' ? 'पिन कॉपी किया गया!' : 'PIN copied to clipboard!', 'success');
         });
       } else {
         showToast(currentLang === 'hi' ? 'कोई पिन उपलब्ध नहीं' : 'No PIN available', 'warning');
       }
-    });
+    }
+    window.handleCopySidebarPin = handleCopySidebarPin;
+
+    const togglePinBtnEl = document.getElementById('toggle-pin-btn');
+    if (togglePinBtnEl) {
+      togglePinBtnEl.addEventListener('click', handleToggleSidebarPin);
+    }
+    const copyPinBtnEl = document.getElementById('copy-pin-btn');
+    if (copyPinBtnEl) {
+      copyPinBtnEl.addEventListener('click', handleCopySidebarPin);
+    }
 
     document.getElementById('copy-fid-btn')?.addEventListener('click', () => {
       if (currentFridge) {
@@ -4866,32 +4933,51 @@ HTML_CONTENT = r"""<!DOCTYPE html>
       loginForm.classList.add('hidden');
     });
 
-    // PIN Visibility Eye Toggles
+    // PIN / Password Input Visibility Eye Toggles
+    let _lastInputToggleTime = 0;
+    function toggleInputPasswordVisibility(inputId, btnEl) {
+      const now = Date.now();
+      if (now - _lastInputToggleTime < 200) return;
+      _lastInputToggleTime = now;
+
+      const pinInput = document.getElementById(inputId);
+      if (!pinInput) return;
+      const isPass = (pinInput.getAttribute('type') || pinInput.type) === 'password';
+      const newType = isPass ? 'text' : 'password';
+      pinInput.setAttribute('type', newType);
+      pinInput.type = newType;
+
+      if (btnEl) {
+        if (isPass) {
+          btnEl.innerHTML = '<svg class="w-4 h-4 text-brand-600 dark:text-brand-400 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l18 18"/></svg>';
+          btnEl.setAttribute('title', 'Hide PIN');
+        } else {
+          btnEl.innerHTML = '<svg class="w-4 h-4 text-stone-400 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>';
+          btnEl.setAttribute('title', 'Show PIN');
+        }
+      }
+    }
+    window.toggleInputPasswordVisibility = toggleInputPasswordVisibility;
+
     const toggleLoginPinBtn = document.getElementById('toggle-login-pin-btn');
     if (toggleLoginPinBtn) {
-      toggleLoginPinBtn.addEventListener('click', () => {
-        const pinInput = document.getElementById('login-pin');
-        if (pinInput.type === 'password') {
-          pinInput.type = 'text';
-          toggleLoginPinBtn.innerHTML = '<svg class="w-4 h-4 text-brand-600 dark:text-brand-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l18 18"/></svg>';
-        } else {
-          pinInput.type = 'password';
-          toggleLoginPinBtn.innerHTML = '<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>';
+      toggleLoginPinBtn.addEventListener('click', (e) => {
+        if (e) {
+          e.preventDefault();
+          e.stopPropagation();
         }
+        toggleInputPasswordVisibility('login-pin', toggleLoginPinBtn);
       });
     }
 
     const toggleCreatePinBtn = document.getElementById('toggle-create-pin-btn');
     if (toggleCreatePinBtn) {
-      toggleCreatePinBtn.addEventListener('click', () => {
-        const pinInput = document.getElementById('create-pin');
-        if (pinInput.type === 'password') {
-          pinInput.type = 'text';
-          toggleCreatePinBtn.innerHTML = '<svg class="w-4 h-4 text-emerald-600 dark:text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l18 18"/></svg>';
-        } else {
-          pinInput.type = 'password';
-          toggleCreatePinBtn.innerHTML = '<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>';
+      toggleCreatePinBtn.addEventListener('click', (e) => {
+        if (e) {
+          e.preventDefault();
+          e.stopPropagation();
         }
+        toggleInputPasswordVisibility('create-pin', toggleCreatePinBtn);
       });
     }
 
