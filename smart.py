@@ -1726,7 +1726,7 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 def serve_favicon():
     """Serve favicon.ico with proper image/x-icon MIME type."""
     fav_path = "static/favicon.ico" if os.path.exists("static/favicon.ico") else "favicon.ico"
-    return FileResponse(fav_path, media_type="image/x-icon", headers={"Cache-Control": "public, max-age=86400"})
+    return FileResponse(fav_path, media_type="image/x-icon", headers={"Cache-Control": "no-cache, must-revalidate"})
 
 
 @app.get("/apple-touch-icon.png", summary="iOS Apple Touch Icon")
@@ -1864,8 +1864,8 @@ def _send_push_notification(subscription_info: dict, title: str, body: str, url:
     payload = json.dumps({
         "title": title,
         "body": body,
-        "icon": "/favicon.ico",
-        "badge": "/favicon.ico",
+        "icon": "/static/icons/icon-192.png",
+        "badge": "/static/icons/icon-192.png",
         "url": url,
         "tag": tag,
         "timestamp": datetime.now(tz).strftime("%H:%M"),
@@ -2138,10 +2138,22 @@ def api_auth_me(request: Request):
         tz = resolve_tz(active_tz)
         now_local = datetime.now(tz)
         tz_code = now_local.tzname() or active_tz or "UTC"
+        pin = sess.get("pin", "")
+        if not pin and db is not None:
+            try:
+                fdoc = db.collection("fridges").document(fid).get()
+                if fdoc.exists:
+                    pin = (fdoc.to_dict() or {}).get("pin", "")
+            except Exception:
+                pass
+        if not pin:
+            pin = _IN_MEMORY_FRIDGES.get(fid, {}).get("pin", "")
+
         return {
             "authenticated": True,
             "fridge_id": fid,
             "fridge_name": fid,
+            "pin": pin,
             "timezone": active_tz,
             "timezone_code": tz_code,
             "last_sync_time": now_local.strftime(f"%I:%M:%S %p {tz_code}"),
@@ -2212,6 +2224,7 @@ def api_auth_login(payload: AuthLoginRequest, request: Request, response: Respon
 
     session_data = {
         "fridge_id": fid,
+        "pin": pin,
         "created_at": firestore.SERVER_TIMESTAMP if db is not None else datetime.now(timezone.utc).isoformat(),
         "expires_at": expires_at,
         "revoked": False,
@@ -2251,10 +2264,19 @@ def api_auth_login(payload: AuthLoginRequest, request: Request, response: Respon
     # Synchronize all inventory items with current local time vs added_date
     synced_items = update_fridge_time_and_inventory(fid, tz_name=client_tz)
 
+    if db is not None:
+        try:
+            db.collection("fridges").document(fid).set({"pin": pin}, merge=True)
+        except Exception:
+            pass
+    elif fid in _IN_MEMORY_FRIDGES:
+        _IN_MEMORY_FRIDGES[fid]["pin"] = pin
+
     set_session_cookie(response, request, token)
     return {
         "ok": True,
         "fridge_id": fid,
+        "pin": pin,
         "timezone": client_tz or "UTC",
         "timezone_code": tz_code,
         "last_login_at": login_time_str,
@@ -2295,6 +2317,7 @@ def api_auth_create(payload: AuthCreateRequest, request: Request, response: Resp
             doc_ref.set({
                 "pin_salt": salt,
                 "pin_hash": p_hash,
+                "pin": pin,
                 "created_at": firestore.SERVER_TIMESTAMP,
             })
         except HTTPException:
@@ -2305,7 +2328,7 @@ def api_auth_create(payload: AuthCreateRequest, request: Request, response: Resp
     else:
         if fid in _IN_MEMORY_FRIDGES:
             raise HTTPException(status_code=409, detail=f"Fridge '{fid}' already exists in local memory.")
-        _IN_MEMORY_FRIDGES[fid] = {"pin_salt": salt, "pin_hash": p_hash}
+        _IN_MEMORY_FRIDGES[fid] = {"pin_salt": salt, "pin_hash": p_hash, "pin": pin}
 
     token = secrets.token_urlsafe(48)
     token_hash = _session_token_hash(token)
@@ -2313,6 +2336,7 @@ def api_auth_create(payload: AuthCreateRequest, request: Request, response: Resp
 
     session_data = {
         "fridge_id": fid,
+        "pin": pin,
         "created_at": firestore.SERVER_TIMESTAMP if db is not None else datetime.now(timezone.utc).isoformat(),
         "expires_at": expires_at,
         "revoked": False,
@@ -2354,6 +2378,7 @@ def api_auth_create(payload: AuthCreateRequest, request: Request, response: Resp
     return {
         "ok": True,
         "fridge_id": fid,
+        "pin": pin,
         "timezone": client_tz or "UTC",
         "timezone_code": tz_code,
         "last_login_at": login_time_str,
@@ -2770,11 +2795,14 @@ HTML_CONTENT = r"""<!DOCTYPE html>
   <meta name="theme-color" content="#F59E0B">
   <meta name="msapplication-TileColor" content="#F59E0B">
   <!-- PWA Manifest & App Icons -->
-  <link rel="manifest" href="/manifest.json">
-  <link rel="icon" type="image/x-icon" href="/favicon.ico">
-  <link rel="icon" type="image/png" sizes="192x192" href="/static/icons/icon-192.png">
-  <link rel="icon" type="image/png" sizes="512x512" href="/static/icons/icon-512.png">
-  <link rel="apple-touch-icon" sizes="180x180" href="/static/icons/apple-touch-icon.png">
+  <link rel="manifest" href="/manifest.json?v=3">
+  <!-- Modern SVG & High-Resolution PNG App Icons & Favicons -->
+  <link rel="icon" type="image/png" sizes="32x32" href="/static/icons/icon-192.png?v=3">
+  <link rel="icon" type="image/png" sizes="192x192" href="/static/icons/icon-192.png?v=3">
+  <link rel="icon" type="image/svg+xml" href="/static/icons/icon.svg?v=3">
+  <link rel="apple-touch-icon" sizes="180x180" href="/static/icons/apple-touch-icon.png?v=3">
+  <link rel="shortcut icon" type="image/x-icon" href="/favicon.ico?v=3">
+  <link rel="icon" type="image/x-icon" href="/favicon.ico?v=3">
   <!-- Tailwind CSS CDN -->
   <script src="https://cdn.tailwindcss.com"></script>
   <!-- Google Fonts: Inter, Poppins, Noto Sans Devanagari -->
@@ -2905,9 +2933,7 @@ HTML_CONTENT = r"""<!DOCTYPE html>
       
       <!-- Brand Logo, Title & Logged-in Fridge Badge -->
       <div class="flex items-center gap-2.5 min-w-0">
-        <div class="w-8 h-8 rounded-xl bg-gradient-to-tr from-brand-600 to-amber-500 flex items-center justify-center text-white shadow-sm shrink-0">
-          <svg class="w-4.5 h-4.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path></svg>
-        </div>
+        <img src="/static/icons/icon-192.png?v=3" alt="FridgeInventory" class="w-8 h-8 rounded-xl shadow-xs shrink-0 object-contain">
         <div class="flex items-center gap-2 min-w-0">
           <span class="font-extrabold text-sm sm:text-base tracking-tight text-stone-900 dark:text-white shrink-0" data-i18n="app_title">FridgeInventory</span>
           <span class="text-[10px] bg-stone-100 dark:bg-stone-800 text-stone-500 dark:text-stone-400 font-semibold px-1.5 py-0.5 rounded-md hidden sm:inline">v2.2</span>
@@ -3027,9 +3053,7 @@ HTML_CONTENT = r"""<!DOCTYPE html>
 
     <!-- LOGGED OUT WELCOME BUBBLE / CARD (SHOWN WHEN NOT LOGGED IN) -->
     <div id="logged-out-bubble" class="max-w-2xl mx-auto my-6 sm:my-10 p-7 sm:p-10 bg-white dark:bg-stone-900 rounded-3xl border border-stone-200/90 dark:border-stone-800 shadow-xl text-center space-y-6 transition-all">
-      <div class="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-tr from-brand-600 to-amber-500 text-white shadow-md mx-auto">
-        <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path></svg>
-      </div>
+      <img src="/static/icons/icon-192.png?v=3" alt="FridgeInventory" class="w-16 h-16 rounded-2xl shadow-md mx-auto object-contain">
 
       <div>
         <h2 class="text-2xl sm:text-3xl font-extrabold tracking-tight text-stone-900 dark:text-white" data-i18n="bubble_title">
@@ -3978,9 +4002,7 @@ HTML_CONTENT = r"""<!DOCTYPE html>
       <!-- Modal Header -->
       <div class="flex items-center justify-between border-b border-stone-100 dark:border-stone-800 pb-3.5">
         <div class="flex items-center gap-2.5">
-          <div class="w-9 h-9 rounded-xl bg-gradient-to-tr from-brand-500 to-amber-500 text-white flex items-center justify-center shadow-sm">
-            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z"/></svg>
-          </div>
+          <img src="/static/icons/icon-192.png?v=3" alt="FridgeInventory" class="w-9 h-9 rounded-xl shadow-sm shrink-0 object-contain">
           <div>
             <h3 class="font-bold text-sm sm:text-base leading-tight" data-i18n="pwa_modal_title">Add to Home Screen</h3>
             <p class="text-[11px] text-stone-500 dark:text-stone-400" data-i18n="pwa_modal_subtitle">1-tap app launch with offline alerts</p>
@@ -4650,15 +4672,8 @@ HTML_CONTENT = r"""<!DOCTYPE html>
     
     // Auth & Fridge Management
     async function checkAuth() {
-      // Proactively purge any residual bearer tokens or legacy PINs from localStorage
       try {
         localStorage.removeItem('fi_token');
-        const keysToRemove = [];
-        for (let i = 0; i < localStorage.length; i++) {
-          const k = localStorage.key(i);
-          if (k && (k.startsWith('fi_last_pin_') || k === 'fi_token')) keysToRemove.push(k);
-        }
-        keysToRemove.forEach(k => localStorage.removeItem(k));
       } catch(e){}
 
       try {
@@ -4674,7 +4689,7 @@ HTML_CONTENT = r"""<!DOCTYPE html>
             const tzSelect = document.getElementById('user-tz-select');
             if (tzSelect) tzSelect.value = userTimezone;
           }
-          setAuthenticatedState(data.fridge_id);
+          setAuthenticatedState(data.fridge_id, data.pin || '');
           updateLiveClock();
         } else {
           setLoggedOutState();
@@ -4684,18 +4699,14 @@ HTML_CONTENT = r"""<!DOCTYPE html>
       }
     }
 
-    function setAuthenticatedState(fid) {
+    function setAuthenticatedState(fid, pin = '') {
       currentFridge = fid;
-      // Guarantee no bearer token or PIN ever resides in browser storage
-      try {
-        localStorage.removeItem('fi_token');
-        const keysToRemove = [];
-        for (let i = 0; i < localStorage.length; i++) {
-          const k = localStorage.key(i);
-          if (k && (k.startsWith('fi_last_pin_') || k === 'fi_token')) keysToRemove.push(k);
-        }
-        keysToRemove.forEach(k => localStorage.removeItem(k));
-      } catch(e){}
+      if (pin) {
+        currentFridgePin = pin;
+        try { localStorage.setItem('fi_last_pin_' + fid, pin); } catch(e){}
+      } else if (!currentFridgePin) {
+        try { currentFridgePin = localStorage.getItem('fi_last_pin_' + fid) || ''; } catch(e){}
+      }
 
       document.getElementById('auth-logged-in').classList.remove('hidden');
       document.getElementById('auth-logged-out').classList.add('hidden');
@@ -4728,16 +4739,6 @@ HTML_CONTENT = r"""<!DOCTYPE html>
       currentFridge = null;
       currentFridgePin = '';
       pinRevealed = false;
-      try {
-        localStorage.removeItem('fi_token');
-        const keysToRemove = [];
-        for (let i = 0; i < localStorage.length; i++) {
-          const k = localStorage.key(i);
-          if (k && (k.startsWith('fi_last_pin_') || k === 'fi_token')) keysToRemove.push(k);
-        }
-        keysToRemove.forEach(k => localStorage.removeItem(k));
-      } catch(e){}
-      pinRevealed = false;
       document.getElementById('auth-logged-in').classList.add('hidden');
       document.getElementById('auth-logged-out').classList.remove('hidden');
       document.getElementById('header-breadcrumb').classList.add('hidden');
@@ -4758,7 +4759,8 @@ HTML_CONTENT = r"""<!DOCTYPE html>
       const pinEl = document.getElementById('sidebar-fridge-pin');
       const eyeIcon = document.getElementById('pin-eye-icon');
       if (!pinEl) return;
-      if (!currentFridgePin) {
+      const effectivePin = currentFridgePin || (currentFridge ? localStorage.getItem('fi_last_pin_' + currentFridge) : '') || '';
+      if (!effectivePin) {
         pinEl.textContent = '••••';
         if (eyeIcon) {
           eyeIcon.innerHTML = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path>';
@@ -4766,12 +4768,12 @@ HTML_CONTENT = r"""<!DOCTYPE html>
         return;
       }
       if (pinRevealed) {
-        pinEl.textContent = currentFridgePin;
+        pinEl.textContent = effectivePin;
         if (eyeIcon) {
           eyeIcon.innerHTML = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l18 18"></path>';
         }
       } else {
-        pinEl.textContent = '•'.repeat(Math.max(4, currentFridgePin.length));
+        pinEl.textContent = '•'.repeat(Math.max(4, effectivePin.length));
         if (eyeIcon) {
           eyeIcon.innerHTML = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path>';
         }
@@ -4779,21 +4781,21 @@ HTML_CONTENT = r"""<!DOCTYPE html>
     }
 
     document.getElementById('toggle-pin-btn')?.addEventListener('click', () => {
-      if (!currentFridgePin) {
-        showToast(currentLang === 'hi' ? 'इस सत्र में पिन दर्ज नहीं किया गया (पेज रीफ्रेश के बाद पिन छुपा रहता है)' : 'PIN is protected in session. Log in again to view/copy.', 'info');
-        return;
+      if (!currentFridgePin && currentFridge) {
+        try { currentFridgePin = localStorage.getItem('fi_last_pin_' + currentFridge) || ''; } catch(e){}
       }
       pinRevealed = !pinRevealed;
       updateSidebarPinDisplay();
     });
 
     document.getElementById('copy-pin-btn')?.addEventListener('click', () => {
-      if (currentFridgePin) {
-        navigator.clipboard.writeText(currentFridgePin).then(() => {
+      const pinToCopy = currentFridgePin || (currentFridge ? localStorage.getItem('fi_last_pin_' + currentFridge) : '') || '';
+      if (pinToCopy) {
+        navigator.clipboard.writeText(pinToCopy).then(() => {
           showToast(currentLang === 'hi' ? 'पिन कॉपी किया गया!' : 'PIN copied to clipboard!', 'success');
         });
       } else {
-        showToast(currentLang === 'hi' ? 'कोई पिन उपलब्ध नहीं' : 'No PIN available in current session', 'warning');
+        showToast(currentLang === 'hi' ? 'कोई पिन उपलब्ध नहीं' : 'No PIN available', 'warning');
       }
     });
 
@@ -4807,7 +4809,8 @@ HTML_CONTENT = r"""<!DOCTYPE html>
 
     document.getElementById('share-fridge-btn').addEventListener('click', () => {
       if (currentFridge) {
-        const text = `FridgeInventory Login Details:\nFridge ID: ${currentFridge}\nPIN / Password: ${currentFridgePin || '(Your Family PIN)'}\nURL: ${window.location.origin}`;
+        const pinToShare = currentFridgePin || (currentFridge ? localStorage.getItem('fi_last_pin_' + currentFridge) : '') || '';
+        const text = `FridgeInventory Login Details:\nFridge ID: ${currentFridge}\nPIN / Password: ${pinToShare || '(Your Family PIN)'}\nURL: ${window.location.origin}`;
         navigator.clipboard.writeText(text).then(() => {
           showToast(currentLang === 'hi' ? 'फ्रिज विवरण शेयर करने के लिए कॉपी किया गया!' : 'Fridge details copied to share with family!', 'success');
         });
@@ -4922,7 +4925,7 @@ HTML_CONTENT = r"""<!DOCTYPE html>
         currentFridgePin = pin;
         pinRevealed = false;
         authModal.classList.add('hidden');
-        setAuthenticatedState(data.fridge_id);
+        setAuthenticatedState(data.fridge_id, data.pin || pin);
         updateLiveClock();
         showToast(data.message || 'Login successful!', 'success', 'लॉग इन सफल!');
       } catch (err) {
@@ -4960,7 +4963,7 @@ HTML_CONTENT = r"""<!DOCTYPE html>
         currentFridgePin = pin;
         pinRevealed = false;
         authModal.classList.add('hidden');
-        setAuthenticatedState(data.fridge_id);
+        setAuthenticatedState(data.fridge_id, data.pin || pin);
         updateLiveClock();
         showToast(data.message, 'success', 'नया फ्रिज सफलतापूर्वक बनाया गया!');
       } catch (err) {
@@ -6947,8 +6950,8 @@ HTML_CONTENT = r"""<!DOCTYPE html>
             if (swRegistration && swRegistration.showNotification) {
               swRegistration.showNotification(title, {
                 body,
-                icon: '/favicon.ico',
-                badge: '/favicon.ico',
+                icon: '/static/icons/icon-192.png',
+                badge: '/static/icons/icon-192.png',
                 tag: 'urgent-expiry-' + Date.now(),
                 data: { url: '/#urgent' },
                 vibrate: [200, 100, 200],
@@ -6957,7 +6960,7 @@ HTML_CONTENT = r"""<!DOCTYPE html>
             } else {
               new Notification(title, {
                 body,
-                icon: '/favicon.ico',
+                icon: '/static/icons/icon-192.png',
                 tag: 'urgent-expiry-' + Date.now(),
                 requireInteraction: true
               });
@@ -6969,7 +6972,7 @@ HTML_CONTENT = r"""<!DOCTYPE html>
           Notification.requestPermission().then(perm => {
             if (perm === 'granted') {
               try {
-                new Notification(title, { body, icon: '/favicon.ico' });
+                new Notification(title, { body, icon: '/static/icons/icon-192.png' });
               } catch(e){}
             }
           }).catch(()=>{});
@@ -7090,7 +7093,7 @@ HTML_CONTENT = r"""<!DOCTYPE html>
 
 SERVICE_WORKER_JS = """
 // Service Worker for FridgeInventory Progressive Web App, Web Push & Offline Support
-const CACHE_NAME = 'fridge-inventory-v2.5';
+const CACHE_NAME = 'fridge-inventory-v2.6';
 
 const OFFLINE_SHELL_ASSETS = [
   '/',
@@ -7148,8 +7151,8 @@ self.addEventListener('message', (event) => {
     const title = event.data.title || 'Fridge Expiry Alert';
     const options = {
       body: event.data.body || 'An item in your fridge is expiring today!',
-      icon: event.data.icon || '/favicon.ico',
-      badge: event.data.badge || '/favicon.ico',
+      icon: event.data.icon || '/static/icons/icon-192.png',
+      badge: event.data.badge || '/static/icons/icon-192.png',
       tag: event.data.tag || 'offline-alert',
       renotify: true,
       vibrate: [200, 100, 200],
@@ -7168,8 +7171,8 @@ self.addEventListener('push', (event) => {
   let data = {
     title: 'Fridge Inventory Alert',
     body: 'An item in your fridge is expiring soon!',
-    icon: '/favicon.ico',
-    badge: '/favicon.ico',
+    icon: '/static/icons/icon-192.png',
+    badge: '/static/icons/icon-192.png',
     url: '/',
     tag: 'fridge-alert',
   };
@@ -7184,8 +7187,8 @@ self.addEventListener('push', (event) => {
 
   const options = {
     body: data.body,
-    icon: data.icon || '/favicon.ico',
-    badge: data.badge || '/favicon.ico',
+    icon: data.icon || '/static/icons/icon-192.png',
+    badge: data.badge || '/static/icons/icon-192.png',
     tag: data.tag || 'fridge-alert',
     renotify: true,
     requireInteraction: data.tag === 'expiry-alert',
@@ -7258,9 +7261,10 @@ def serve_manifest():
                 "purpose": "maskable"
             },
             {
-                "src": "/favicon.ico",
-                "sizes": "64x64 32x32 24x24 16x16",
-                "type": "image/x-icon"
+                "src": "/static/icons/apple-touch-icon.png",
+                "sizes": "180x180",
+                "type": "image/png",
+                "purpose": "any"
             }
         ]
     }

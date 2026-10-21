@@ -1,5 +1,5 @@
 // Service Worker for FridgeInventory Progressive Web App, Web Push & Offline Support
-const CACHE_NAME = 'fridge-inventory-v2.5';
+const CACHE_NAME = 'fridge-inventory-v2.6';
 
 const OFFLINE_SHELL_ASSETS = [
   '/',
