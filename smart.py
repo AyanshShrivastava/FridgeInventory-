@@ -592,7 +592,6 @@ def get_current_session_data(request: Request) -> Optional[dict]:
                 if fid:
                     return {
                         "fridge_id": fid,
-                        "pin": data.get("pin", ""),
                         "token": token,
                     }
         except Exception as exc:
@@ -608,7 +607,6 @@ def get_current_session_data(request: Request) -> Optional[dict]:
         if fid:
             return {
                 "fridge_id": fid,
-                "pin": sess.get("pin", ""),
                 "token": token,
             }
 
@@ -2109,7 +2107,6 @@ def api_auth_me(request: Request):
             "fridge_id": fid,
             "fridge_name": fid,
             "token": sess.get("token", ""),
-            "pin": sess.get("pin", ""),
             "timezone": active_tz,
             "timezone_code": tz_code,
             "last_sync_time": now_local.strftime(f"%I:%M:%S %p {tz_code}"),
@@ -2119,7 +2116,6 @@ def api_auth_me(request: Request):
         "authenticated": False,
         "fridge_id": None,
         "fridge_name": None,
-        "pin": "",
     }
 
 
@@ -2181,7 +2177,6 @@ def api_auth_login(payload: AuthLoginRequest, request: Request, response: Respon
 
     session_data = {
         "fridge_id": fid,
-        "pin": pin,
         "created_at": firestore.SERVER_TIMESTAMP if db is not None else datetime.now(timezone.utc).isoformat(),
         "expires_at": expires_at,
         "revoked": False,
@@ -2226,7 +2221,6 @@ def api_auth_login(payload: AuthLoginRequest, request: Request, response: Respon
         "ok": True,
         "fridge_id": fid,
         "token": token,
-        "pin": pin,
         "timezone": client_tz or "UTC",
         "timezone_code": tz_code,
         "last_login_at": login_time_str,
@@ -2285,7 +2279,6 @@ def api_auth_create(payload: AuthCreateRequest, request: Request, response: Resp
 
     session_data = {
         "fridge_id": fid,
-        "pin": pin,
         "created_at": firestore.SERVER_TIMESTAMP if db is not None else datetime.now(timezone.utc).isoformat(),
         "expires_at": expires_at,
         "revoked": False,
@@ -2328,7 +2321,6 @@ def api_auth_create(payload: AuthCreateRequest, request: Request, response: Resp
         "ok": True,
         "fridge_id": fid,
         "token": token,
-        "pin": pin,
         "timezone": client_tz or "UTC",
         "timezone_code": tz_code,
         "last_login_at": login_time_str,
@@ -2477,15 +2469,59 @@ def api_push_check_expiry(request: Request):
     return {"ok": True, "expiring_count": len(expiring), "expired_count": len(expired), "alerts_sent": sent}
 
 
+CRON_SECRET = os.getenv("CRON_SECRET", "fridge_inventory_cron_secret_2026")
+
+
+def verify_cron_authorization(request: Request) -> bool:
+    """
+    Application-level authentication check for automated cron execution:
+    - Verifies Bearer token in 'Authorization: Bearer <CRON_SECRET>'
+    - OR 'X-Cron-Key' header
+    - OR query parameter '?key=<CRON_SECRET>'
+    - OR active authenticated fridge session
+    """
+    auth_header = request.headers.get("Authorization") or ""
+    cron_key = request.headers.get("X-Cron-Key") or ""
+    query_key = request.query_params.get("key") or ""
+
+    expected = os.getenv("CRON_SECRET", "fridge_inventory_cron_secret_2026")
+
+    # 1. Bearer token
+    if auth_header.startswith("Bearer "):
+        token = auth_header[7:].strip()
+        if hmac.compare_digest(token, expected):
+            return True
+
+    # 2. X-Cron-Key header
+    if cron_key and hmac.compare_digest(cron_key.strip(), expected):
+        return True
+
+    # 3. Query param key
+    if query_key and hmac.compare_digest(query_key.strip(), expected):
+        return True
+
+    # 4. Verified session
+    sess = get_current_session_data(request)
+    if sess and sess.get("fridge_id"):
+        return True
+
+    return False
+
 @app.api_route("/api/check-expiry-cron", methods=["GET", "POST"], summary="Automated Cron Route: Check Expiry Across All Fridges & Broadcast Web Push")
 def api_check_expiry_cron(request: Request):
     """
-    Automated background cron route (Requirement 4):
+    Automated background cron route (Protected with Application-Level Authorization):
+    - Requires valid CRON_SECRET (via Bearer token, X-Cron-Key header, or ?key=) or authenticated session.
     - Iterates across all stored fridge database collections.
     - Dynamically compares current time with food item addition dates.
-    - Finds items whose expiryDate values are within the upcoming 24-hour window (0 <= days_left <= 1) or expired.
     - Signs and broadcasts push alerts to registered user subscriptions using web-push.
     """
+    if not verify_cron_authorization(request):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Unauthorized: Access to /api/check-expiry-cron requires a valid CRON_SECRET or authenticated session.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
     db, _ = init_firestore()
     all_fridge_ids = set()
 
@@ -2898,16 +2934,10 @@ HTML_CONTENT = r"""<!DOCTYPE html>
       <!-- Right: Family PIN, Push Alerts Status, and Share Button -->
       <div class="flex items-center gap-2 flex-wrap justify-between sm:justify-end">
         
-        <!-- Family PIN Container -->
-        <div id="header-pin-container" class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-white dark:bg-stone-800 border border-stone-200 dark:border-stone-700 text-xs font-mono shadow-2xs">
-          <span class="text-[11px] text-stone-400 font-sans font-medium">PIN:</span>
-          <span id="sidebar-fridge-pin" class="font-bold text-stone-700 dark:text-stone-300 tracking-wider">••••</span>
-          <button type="button" id="toggle-pin-btn" class="text-stone-400 hover:text-brand-600 dark:hover:text-brand-400 ml-0.5 p-0.5" title="Show / Hide PIN">
-            <svg id="pin-eye-icon" class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path></svg>
-          </button>
-          <button type="button" id="copy-pin-btn" class="text-stone-400 hover:text-brand-600 dark:hover:text-brand-400 p-0.5" title="Copy PIN">
-            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>
-          </button>
+        <!-- Security Status Badge (Hashed PIN Protected) -->
+        <div id="header-pin-container" class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-white dark:bg-stone-800 border border-stone-200 dark:border-stone-700 text-xs shadow-2xs" title="PIN Protected Fridge Session">
+          <svg class="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
+          <span id="sidebar-fridge-pin" class="text-[11px] font-semibold text-stone-700 dark:text-stone-300" data-i18n="badge_pin_protected">PIN Protected</span>
         </div>
 
         <!-- Quick Push Alerts Button -->
@@ -3998,7 +4028,7 @@ HTML_CONTENT = r"""<!DOCTYPE html>
     let inventory = [];
     let currentFilter = 'all';
     let currentFridge = null;
-    let currentFridgePin = '';
+    // PIN is never stored in browser memory or localStorage
     let pinRevealed = false;
     let currentLang = localStorage.getItem('fi_lang') || localStorage.getItem('rasoi_lang') || 'en';
     let selectedItemsForRescue = new Set();
@@ -4145,7 +4175,8 @@ HTML_CONTENT = r"""<!DOCTYPE html>
         pwa_desk_step2_title: "Confirm 'Install'",
         pwa_desk_step2_desc: "Click Install to run FridgeInventory in its own distraction-free standalone desktop window.",
         pwa_trigger_btn: "Click Here to Install Now",
-        pwa_close_btn: "Got It, Thanks!"
+        pwa_close_btn: "Got It, Thanks!",
+        badge_pin_protected: "PIN Protected"
       },
       hi: {
         app_title: "FridgeInventory",
@@ -4256,7 +4287,8 @@ HTML_CONTENT = r"""<!DOCTYPE html>
         pwa_desk_step2_title: "'Install' पर क्लिक करें",
         pwa_desk_step2_desc: "FridgeInventory बिना किसी रुकावट के एक स्वतंत्र ऐप विंडो में खुल जाएगा।",
         pwa_trigger_btn: "अभी इंस्टॉल करने के लिए यहाँ क्लिक करें",
-        pwa_close_btn: "समझ गया, धन्यवाद!"
+        pwa_close_btn: "समझ गया, धन्यवाद!",
+        badge_pin_protected: "PIN द्वारा सुरक्षित"
       }
     };
 
@@ -4459,6 +4491,16 @@ HTML_CONTENT = r"""<!DOCTYPE html>
       return outputArray;
     }
 
+        // Purge legacy PIN keys from browser storage immediately on page load
+    try {
+      const keysToRemove = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (k && k.startsWith('fi_last_pin_')) keysToRemove.push(k);
+      }
+      keysToRemove.forEach(k => localStorage.removeItem(k));
+    } catch(e){}
+    
     // Auth & Fridge Management
     async function checkAuth() {
       try {
@@ -4473,7 +4515,7 @@ HTML_CONTENT = r"""<!DOCTYPE html>
             const tzSelect = document.getElementById('user-tz-select');
             if (tzSelect) tzSelect.value = userTimezone;
           }
-          setAuthenticatedState(data.fridge_id, data.pin, data.token || '');
+          setAuthenticatedState(data.fridge_id, data.token || '');
           updateLiveClock();
         } else {
           setLoggedOutState();
@@ -4483,16 +4525,20 @@ HTML_CONTENT = r"""<!DOCTYPE html>
       }
     }
 
-    function setAuthenticatedState(fid, pin, token = '') {
+    function setAuthenticatedState(fid, token = '') {
       currentFridge = fid;
       if (token) {
         try { localStorage.setItem('fi_token', token); } catch(e){}
       }
-      if (pin) currentFridgePin = pin;
-      else if (!currentFridgePin) currentFridgePin = localStorage.getItem('fi_last_pin_' + fid) || '';
-      if (fid && currentFridgePin) {
-        try { localStorage.setItem('fi_last_pin_' + fid, currentFridgePin); } catch(e){}
-      }
+      // Purge any legacy PINs from browser localStorage
+      try {
+        const keysToRemove = [];
+        for (let i = 0; i < localStorage.length; i++) {
+          const k = localStorage.key(i);
+          if (k && k.startsWith('fi_last_pin_')) keysToRemove.push(k);
+        }
+        keysToRemove.forEach(k => localStorage.removeItem(k));
+      } catch(e){}
 
       document.getElementById('auth-logged-in').classList.remove('hidden');
       document.getElementById('auth-logged-out').classList.add('hidden');
@@ -4523,8 +4569,15 @@ HTML_CONTENT = r"""<!DOCTYPE html>
 
     function setLoggedOutState() {
       currentFridge = null;
-      currentFridgePin = '';
       try { localStorage.removeItem('fi_token'); } catch(e){}
+      try {
+        const keysToRemove = [];
+        for (let i = 0; i < localStorage.length; i++) {
+          const k = localStorage.key(i);
+          if (k && k.startsWith('fi_last_pin_')) keysToRemove.push(k);
+        }
+        keysToRemove.forEach(k => localStorage.removeItem(k));
+      } catch(e){}
       pinRevealed = false;
       document.getElementById('auth-logged-in').classList.add('hidden');
       document.getElementById('auth-logged-out').classList.remove('hidden');
@@ -4544,41 +4597,20 @@ HTML_CONTENT = r"""<!DOCTYPE html>
 
     function updateSidebarPinDisplay() {
       const pinEl = document.getElementById('sidebar-fridge-pin');
-      const eyeIcon = document.getElementById('pin-eye-icon');
-      if (!pinEl) return;
-      if (!currentFridgePin) {
-        pinEl.textContent = '••••';
-        return;
-      }
-      if (pinRevealed) {
-        pinEl.textContent = currentFridgePin;
-        if (eyeIcon) {
-          eyeIcon.innerHTML = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l18 18"></path>';
-        }
-      } else {
-        pinEl.textContent = '•'.repeat(Math.max(4, currentFridgePin.length));
-        if (eyeIcon) {
-          eyeIcon.innerHTML = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path>';
-        }
+      if (pinEl) {
+        pinEl.textContent = currentLang === 'hi' ? 'PIN द्वारा सुरक्षित' : 'PIN Protected';
       }
     }
 
-    document.getElementById('toggle-pin-btn').addEventListener('click', () => {
-      pinRevealed = !pinRevealed;
-      updateSidebarPinDisplay();
+    document.getElementById('toggle-pin-btn')?.addEventListener('click', () => {
+      showToast(currentLang === 'hi' ? 'परिवार PIN सुरक्षित रूप से एन्क्रिप्टेड है' : 'Family PIN is securely hashed & encrypted.', 'info');
     });
 
-    document.getElementById('copy-pin-btn').addEventListener('click', () => {
-      if (currentFridgePin) {
-        navigator.clipboard.writeText(currentFridgePin).then(() => {
-          showToast(currentLang === 'hi' ? 'पिन कॉपी किया गया!' : 'PIN copied to clipboard!', 'success');
-        });
-      } else {
-        showToast(currentLang === 'hi' ? 'कोई पिन उपलब्ध नहीं' : 'No PIN available', 'warning');
-      }
+    document.getElementById('copy-pin-btn')?.addEventListener('click', () => {
+      showToast(currentLang === 'hi' ? 'सुरक्षा कारणों से PIN कॉपी नहीं किया जा सकता' : 'PIN cannot be copied for security reasons.', 'info');
     });
 
-    document.getElementById('copy-fid-btn').addEventListener('click', () => {
+    document.getElementById('copy-fid-btn')?.addEventListener('click', () => {
       if (currentFridge) {
         navigator.clipboard.writeText(currentFridge).then(() => {
           showToast(currentLang === 'hi' ? 'फ्रिज ID कॉपी किया गया!' : 'Fridge ID copied to clipboard!', 'success');
@@ -4588,9 +4620,9 @@ HTML_CONTENT = r"""<!DOCTYPE html>
 
     document.getElementById('share-fridge-btn').addEventListener('click', () => {
       if (currentFridge) {
-        const text = `FridgeInventory Login Details:\nFridge ID: ${currentFridge}\nPIN / Password: ${currentFridgePin || '(Your Family PIN)'}\nURL: ${window.location.origin}`;
+        const text = `FridgeInventory Family Access:\nFridge ID: ${currentFridge}\nURL: ${window.location.origin}\n(Enter your family PIN to connect)`;
         navigator.clipboard.writeText(text).then(() => {
-          showToast(currentLang === 'hi' ? 'फ्रिज विवरण शेयर करने के लिए कॉपी किया गया!' : 'Fridge details copied to share with family!', 'success');
+          showToast(currentLang === 'hi' ? 'परिवार के साथ शेयर करने हेतु लिंक कॉपी किया गया!' : 'Family link copied! Enter family PIN to connect.', 'success');
         });
       }
     });
@@ -4697,7 +4729,7 @@ HTML_CONTENT = r"""<!DOCTYPE html>
         const data = await res.json();
         if (!res.ok) throw new Error(data.detail || 'Login failed');
         authModal.classList.add('hidden');
-        setAuthenticatedState(data.fridge_id, pin, data.token || '');
+        setAuthenticatedState(data.fridge_id, data.token || '');
         updateLiveClock();
         showToast(data.message || 'Login successful!', 'success', 'लॉग इन सफल!');
       } catch (err) {
@@ -4732,7 +4764,7 @@ HTML_CONTENT = r"""<!DOCTYPE html>
         const data = await res.json();
         if (!res.ok) throw new Error(data.detail || 'Fridge creation failed');
         authModal.classList.add('hidden');
-        setAuthenticatedState(data.fridge_id, pin, data.token || '');
+        setAuthenticatedState(data.fridge_id, data.token || '');
         updateLiveClock();
         showToast(data.message, 'success', 'नया फ्रिज सफलतापूर्वक बनाया गया!');
       } catch (err) {
