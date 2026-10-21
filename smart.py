@@ -32,6 +32,7 @@ import base64
 from datetime import datetime, timedelta, timezone
 from enum import Enum
 from typing import Any, Dict, List, Optional, Tuple, Union
+import difflib
 
 # Multi-Country Global Timezone Support
 try:
@@ -421,13 +422,16 @@ class RescueRequest(BaseModel):
 
 
 class RescueRecipe(BaseModel):
-    recipe_name: str = Field(description="Appetizing, authentic Indian recipe title in English")
+    recipe_name: str = Field(description="Appetizing, authentic recipe title in English")
     recipe_name_hi: str = Field(description="Recipe title in Hindi (Devanagari script)")
+    meal_type: str = Field(default="Homestyle Meal", description="Category: 'Food & Drink Combo', 'Savory Food', 'Beverage / Drink', or 'Homestyle Meal'")
+    pairing_notes: Optional[str] = Field(default="", description="Explanation of culinary pairing or rationale for separating drink and food items")
     prep_time_minutes: int = Field(default=20, description="Total preparation and cooking time in minutes")
     ingredients_used: List[str] = Field(default_factory=list, description="Expiring ingredients incorporated into the dish")
-    pantry_items_needed: List[str] = Field(default_factory=list, description="Common Indian pantry spices/staples needed")
+    corrected_ingredients: List[str] = Field(default_factory=list, description="Corrected ingredient names resolving user typos")
+    pantry_items_needed: List[str] = Field(default_factory=list, description="Common kitchen pantry spices/staples needed")
     steps: List[str] = Field(default_factory=list, description="Clear, numbered step-by-step cooking instructions")
-    chef_tip: str = Field(default="", description="Pro Indian home chef tip for zero-waste or flavor enhancement ('दादी माँ का नुस्खा')")
+    chef_tip: str = Field(default="", description="Pro home chef tip for zero-waste or flavor enhancement ('दादी माँ का नुस्खा')")
 
 
 class InventoryItemCreate(BaseModel):
@@ -883,7 +887,167 @@ PACKAGED_SNACK_WORDS = {
     "burger", "burgers", "pizza", "pizzas", "puff", "puffs", "snack", "snacks",
     "biscuit", "biscuits", "cookie", "cookies", "frozen", "packaged", "packet",
     "wafers", "wafer", "namkeen", "bhujia", "popcorn", "nachos", "rings", "wedges",
+    "lays", "kurkure", "pringles", "doritos", "cheetos", "coke", "pepsi", "sprite",
+    "fanta", "thumsup", "frooti", "maaza", "maggi", "oreo", "kitkat", "chocolate",
+    "chocolates", "candy", "candies", "noodles", "cereal", "muesli", "tetrapack",
 }
+
+PACKAGED_SNACK_PHRASES = [
+    "red bull", "redbull", "energy drink", "lays", "potato chips", "banana chips",
+    "potato bites", "french fries", "onion rings", "cheese sticks", "veggie fingers",
+    "kurkure", "doritos", "pringles", "cheetos", "maggi", "instant noodles",
+    "oreo", "dairy milk", "kit kat", "kitkat", "chocolate bar", "coca cola",
+    "pepsi", "sprite", "thums up", "thumsup", "frooti", "maaza"
+]
+
+# Comprehensive culinary dictionary and typo map for zero-waste recipe and food entry
+CULINARY_TYPO_MAP: Dict[str, str] = {
+    # Chocolates & Sweets
+    "choklate": "Chocolate",
+    "choclate": "Chocolate",
+    "choclet": "Chocolate",
+    "chocklate": "Chocolate",
+    "choc": "Chocolate",
+    # Breads & Bakery
+    "bred": "Bread",
+    "braed": "Bread",
+    "bready": "Bread",
+    "paav": "Pav / Bread",
+    "pav": "Pav / Bread",
+    "bun": "Bun / Bread",
+    # Cheeses & Dairy
+    "cheez": "Cheese",
+    "chese": "Cheese",
+    "cheeze": "Cheese",
+    "cheddar": "Cheddar Cheese",
+    "mozerella": "Mozzarella Cheese",
+    "mozzarella": "Mozzarella Cheese",
+    "paneeer": "Paneer",
+    "paner": "Paneer",
+    "panner": "Paneer",
+    "dahi": "Curd",
+    "curds": "Curd",
+    "yoghurt": "Yogurt",
+    "yogert": "Yogurt",
+    "makhan": "Butter",
+    "buttr": "Butter",
+    "malai": "Cream / Malai",
+    # Seasonings & Spices
+    "peri peri": "Peri Peri",
+    "piri piri": "Peri Peri",
+    "periperi": "Peri Peri",
+    "piripiri": "Peri Peri",
+    "origano": "Oregano",
+    "oregano": "Oregano",
+    "chilli flakes": "Chilli Flakes",
+    "chili flakes": "Chilli Flakes",
+    # Vegetables & Produce
+    "tommato": "Tomato",
+    "tamatar": "Tomato",
+    "tomatos": "Tomatoes",
+    "potatos": "Potato",
+    "potatoe": "Potato",
+    "aloo": "Potato",
+    "alloo": "Potato",
+    "onions": "Onion",
+    "piyaz": "Onion",
+    "pyaz": "Onion",
+    "pyaj": "Onion",
+    "spinch": "Spinach",
+    "palak": "Spinach",
+    "spinich": "Spinach",
+    "gajar": "Carrot",
+    "carot": "Carrot",
+    "shimla mirch": "Capsicum",
+    "capsicum": "Capsicum",
+    "kheera": "Cucumber",
+    "adrak": "Ginger",
+    "gingr": "Ginger",
+    "lahsun": "Garlic",
+    "garlick": "Garlic",
+    "dhaniya": "Coriander",
+    "coriender": "Coriander",
+    "curry leaves": "Curry Leaves",
+    "kadi patta": "Curry Leaves",
+    "pudina": "Mint",
+    # Snacks & Beverages
+    "redbull": "Red Bull",
+    "red bull": "Red Bull",
+    "lays": "Lays Chips",
+    "chips": "Potato Chips",
+    "biskit": "Biscuits",
+    "biscit": "Biscuits",
+    "biscut": "Biscuits",
+    "chikn": "Chicken",
+    "chiken": "Chicken",
+    "machli": "Fish",
+    "anda": "Eggs",
+    "ande": "Eggs",
+}
+
+_FOOD_LEXICON: Optional[List[str]] = None
+
+def _get_known_food_lexicon() -> List[str]:
+    lex = set(CULINARY_TYPO_MAP.values())
+    if isinstance(EXPIRY_DATABASE, dict):
+        for key, val in EXPIRY_DATABASE.items():
+            lex.add(str(key).title())
+            if isinstance(val, (list, tuple)) and len(val) >= 2:
+                en_name = str(val[1])
+                lex.add(en_name)
+                for word in en_name.split():
+                    if len(word) >= 4:
+                        lex.add(word)
+    elif isinstance(EXPIRY_DATABASE, list):
+        for item in EXPIRY_DATABASE:
+            if isinstance(item, dict) and "name_en" in item:
+                lex.add(item["name_en"])
+    return sorted(list(lex))
+
+def correct_single_ingredient(raw_name: str) -> Tuple[str, bool]:
+    """Corrects spelling typos in an ingredient using mapping + fuzzy matching."""
+    global _FOOD_LEXICON
+    clean = raw_name.strip()
+    if not clean:
+        return clean, False
+    
+    clean_lower = clean.lower()
+    # 1. Exact match in typo map
+    if clean_lower in CULINARY_TYPO_MAP:
+        return CULINARY_TYPO_MAP[clean_lower], True
+
+    # 2. Check phrase substrings in typo map (e.g. 'extra peri peri')
+    for typo, correction in CULINARY_TYPO_MAP.items():
+        if typo == clean_lower or f" {typo} " in f" {clean_lower} ":
+            replaced = re.sub(rf'\b{re.escape(typo)}\b', correction, clean, flags=re.IGNORECASE)
+            return replaced, True
+
+    # 3. Fuzzy match using difflib against known food terms
+    if _FOOD_LEXICON is None:
+        _FOOD_LEXICON = _get_known_food_lexicon()
+
+    matches = difflib.get_close_matches(clean_lower, [w.lower() for w in _FOOD_LEXICON], n=1, cutoff=0.76)
+    if matches:
+        match_lower = matches[0]
+        for canon in _FOOD_LEXICON:
+            if canon.lower() == match_lower:
+                return canon, True
+
+    return clean.title(), False
+
+def correct_ingredients_list(items: List[str]) -> Tuple[List[str], Dict[str, str]]:
+    """Takes a list of raw ingredients, corrects spelling, and returns (corrected_list, corrections_map)."""
+    corrected_list = []
+    corrections_map = {}
+    for item in items:
+        clean = str(item).strip()
+        if not clean:
+            continue
+        corr, was_changed = correct_single_ingredient(clean)
+        corrected_list.append(corr)
+        if was_changed and corr.lower() != clean.lower():
+            corrections_map[clean] = corr
+    return corrected_list, corrections_map
 
 def lookup_local_database(phrase: str) -> Optional[Tuple[int, str, str, bool]]:
     """Check EXPIRY_DATABASE for exact zero-latency local match.
@@ -985,18 +1149,22 @@ def classify_food(phrase: str) -> ClassifyResponse:
                 logger.warning(f"Gemini model {model_name} failed on '{clean_phrase}': {exc}")
                 continue
 
-    # 2. Check for multi-word packaged snacks heuristic (e.g. "potato bites", "banana chips")
+    # 2. Check for packaged snacks & brand drinks heuristic (e.g. "lays", "red bull", "potato bites")
     tokens = set(clean_phrase.lower().split())
-    if tokens & PACKAGED_SNACK_WORDS:
+    clean_lower = clean_phrase.lower()
+    is_packaged = bool(tokens & PACKAGED_SNACK_WORDS) or any(p in clean_lower for p in PACKAGED_SNACK_PHRASES)
+    if is_packaged:
+        is_drink = any(w in clean_lower for w in ["red bull", "redbull", "energy drink", "coke", "pepsi", "sprite", "fanta", "thums up", "thumsup", "soda", "juice"])
+        cat = "beverage" if is_drink else "snack_bakery"
         return ClassifyResponse(
             is_food=True,
             name_en=clean_phrase.title(),
             name_hi=clean_phrase,
-            category="snack_bakery",
+            category=cat,
             shelf_life_days=None,
             requires_expiry_date=True,
-            storage_tip="Store in freezer or cool dry place. Check printed package date.",
-            message="Packaged / frozen snack detected. Printed expiry date required.",
+            storage_tip="Store in a cool dry place or refrigerate. Check printed package date.",
+            message="Packaged product detected. Printed expiry date required.",
             analyzed_by="Smart Classifier",
         )
 
@@ -1140,30 +1308,49 @@ def classify_food_photo(image_data: str, mime_type: Optional[str] = "image/jpeg"
     )
 
 
-RESCUE_PROMPT_TEMPLATE = """You are an expert home cook and zero-waste kitchen master for 'FridgeInventory'.
+RESCUE_PROMPT_TEMPLATE = """You are an expert master chef and zero-waste kitchen culinary genius for 'FridgeInventory'.
 A household has these specific expiring items or leftovers that MUST be used today to prevent food waste:
 {ingredients}
 
-Task:
-Create one authentic, delicious, and easy everyday Indian recipe (curry, dry sabzi, paratha, dal tadka, pulao, or snacks) that incorporates these expiring items.
-Pair with basic Indian pantry spices available in every home (turmeric, red chilli powder, cumin, mustard seeds, garam masala, salt, oil).
+CRITICAL CULINARY RULES & PAIRING INTELLIGENCE:
+1. DETECT INCOMPATIBLE INGREDIENTS OR DRINK + FOOD COMBINATIONS:
+   - Carefully evaluate if these ingredients harmoniously belong together in ONE single pot/pan, OR if they should be prepared as separate complementary items (such as a SAVORY DISH + REFRESHING DRINK/BEVERAGE, or MAIN COURSE + DESSERT/SIDE)!
+   - NEVER force jarring flavor clashes! For example, if given 'milk, chocolate, bread, cheese, peri peri':
+     DO NOT combine chocolate and peri-peri cheese into a single weird concoction!
+     Instead, make a delightful Food & Drink Zero-Waste Combo (e.g. 'Peri-Peri Grilled Cheese Toast' paired with a 'Chilled Creamy Chocolate Milkshake / Hot Cocoa').
+   - If ingredients include drink bases or sweet beverages (milk, chocolate, cocoa, lemons/citrus, mint, roohafza, mango, coffee, tea, soda, yogurt/curd for lassi, fruit juice) alongside savory items (bread, cheese, peri-peri, vegetables, chicken, eggs, rice, savoury spices):
+     Set meal_type to 'Food & Drink Combo' and provide a paired menu!
+   - In pairing_notes, explain clearly to the home cook how and why these items were paired into complementary food and drink courses.
+2. HARMONIOUS SINGLE-DISH COMBINATIONS:
+   - If all ingredients naturally cook together (e.g., potatoes, onions, tomatoes, spinach, paneer, vegetables, dal, rice), set meal_type to 'Homestyle Meal' or 'Savory Food' and create one delicious, authentic, easy Indian dish (curry, dry sabzi, paratha, pulao, or snacks).
+   - If only beverage/drink ingredients are provided (e.g. milk, chocolate, bananas, honey), set meal_type to 'Beverage / Drink' and make an extraordinary drink.
+3. INSTRUCTIONS:
+   - If creating a combo, clearly label which steps are for the Food item (e.g. 'Food Step 1:', 'Food Step 2:') and which are for the Beverage (e.g. 'Drink Step 1:', 'Drink Step 2:').
+   - Keep steps concise, practical, and everyday homestyle.
 
-Output Format Requirements:
+Output Schema:
 - recipe_name in English
-- recipe_name_hi in Hindi (Devanagari)
-- prep_time_minutes (realistic integer, 15 to 35 mins)
+- recipe_name_hi in Hindi (Devanagari script)
+- meal_type ('Food & Drink Combo', 'Savory Food', 'Beverage / Drink', or 'Homestyle Meal')
+- pairing_notes (explanation of pairing rationale or flavor harmony)
+- prep_time_minutes (realistic integer, 10 to 30 mins)
 - ingredients_used (list)
-- pantry_items_needed (list of common kitchen spices/staples)
+- corrected_ingredients (list)
+- pantry_items_needed (list)
 - steps (list of clear step-by-step cooking steps)
-- chef_tip (clever Indian cooking tip or zero-waste flavor boost)
+- chef_tip (pro zero-waste tip)
 """
 
 def generate_rescue_recipe(items: List[str]) -> RescueRecipe:
-    """Generate an Indian zero-waste rescue recipe using Gemini GenAI with graceful culinary fallback."""
-    clean_items = [str(i).strip() for i in items if str(i).strip()]
-    if not clean_items:
+    """Generate an Indian zero-waste rescue recipe using Gemini GenAI with graceful culinary fallback and drink/food pairing."""
+    raw_clean = [str(i).strip() for i in items if str(i).strip()]
+    if not raw_clean:
         raise HTTPException(status_code=400, detail="Provide at least one expiring food item.")
 
+    # 1. Automatic culinary spelling and typo correction
+    clean_items, corrections = correct_ingredients_list(raw_clean)
+
+    # 2. Try Gemini GenAI
     client = get_gemini_client()
     if client is not None and types is not None:
         for model_name in GEMINI_MODELS:
@@ -1180,18 +1367,84 @@ def generate_rescue_recipe(items: List[str]) -> RescueRecipe:
                 )
                 raw_text = (response.text or "").strip()
                 recipe = RescueRecipe.model_validate_json(raw_text)
+                recipe.corrected_ingredients = clean_items
                 return recipe
             except Exception as exc:
                 logger.warning(f"Rescue recipe generation failed on {model_name}: {exc}")
                 continue
 
+    # 3. Intelligent Culinary Fallback (Supports Drink + Food Combos)
+    drink_kw = {"milk", "chocolate", "cocoa", "curd", "dahi", "yogurt", "shake", "smoothie",
+                "juice", "lemon", "nimbu", "mint", "pudina", "roohafza", "orange", "mango",
+                "coffee", "tea", "chai", "lassi", "buttermilk", "chaas", "soda", "syrup", "honey"}
+    savory_kw = {"bread", "cheese", "peri peri", "chilli", "paneer", "potato", "onion", "tomato",
+                 "capsicum", "chicken", "egg", "rice", "dal", "spinach", "palak", "garlic", "ginger",
+                 "chips", "snack", "masala", "curry", "paratha", "roti", "flour", "atta", "butter"}
+
+    drink_items = [it for it in clean_items if any(k in it.lower() for k in drink_kw)]
+    savory_items = [it for it in clean_items if any(k in it.lower() for k in savory_kw)]
+
+    # Case A: Food & Drink Combo (e.g. milk, chocolate, bread, cheese, peri-peri)
+    if drink_items and savory_items:
+        savory_title = " & ".join(savory_items[:2])
+        drink_title = " & ".join(drink_items[:2])
+        return RescueRecipe(
+            recipe_name=f"Zero-Waste Combo: Toasted {savory_title} & Chilled {drink_title} Shake",
+            recipe_name_hi=f"जीरो-वेस्ट कॉम्बो: क्रिस्पी {savory_title} टोस्ट और ठंडा {drink_title} शेक",
+            meal_type="Food & Drink Combo",
+            pairing_notes="To avoid clashing savory seasonings with sweet cocoa or milk, these ingredients are crafted into a café-style hot melt and cold beverage pairing.",
+            prep_time_minutes=15,
+            ingredients_used=clean_items,
+            corrected_ingredients=clean_items,
+            pantry_items_needed=[
+                "1 tbsp Butter or Cooking Oil",
+                "1/2 tsp Cumin or Mixed Herbs",
+                "Pinch of Salt & Black Pepper",
+                "1 tsp Sugar or Honey (for drink)",
+                "Ice cubes",
+            ],
+            steps=[
+                f"Savory Course: Place {', '.join(savory_items)} between bread slices or onto a pan with butter and seasoning.",
+                "Toast over medium heat on a tawa until golden, crispy, and cheese is smoothly melted.",
+                f"Beverage: In a blender or shaker bottle, combine {', '.join(drink_items)} with ice and a touch of sweetener.",
+                "Blend or shake vigorously for 30 seconds until frothy and chilled.",
+                "Serve the piping hot savory sandwich immediately alongside the refreshing chilled drink for a satisfying zero-waste meal!",
+            ],
+            chef_tip="Pairing a spicy or savory toasted snack with a cold creamy milkshake or fruit drink balances the palate and utilizes both sweet and savory fridge perishables!",
+        )
+
+    # Case B: Beverage Only
+    if drink_items and not savory_items:
+        primary_drink = drink_items[0]
+        return RescueRecipe(
+            recipe_name=f"Refreshing Homestyle {primary_drink} Cooler / Shake",
+            recipe_name_hi=f"ताज़ा होमस्टाइल {primary_drink} शेक",
+            meal_type="Beverage / Drink",
+            pairing_notes="Perishable drink bases blended into a nutritious, refreshing homemade beverage.",
+            prep_time_minutes=10,
+            ingredients_used=clean_items,
+            corrected_ingredients=clean_items,
+            pantry_items_needed=["1-2 tsp Honey or Sugar", "Pinch of Cardamom / Cinnamon", "Ice cubes"],
+            steps=[
+                f"Wash and measure the beverage ingredients ({', '.join(clean_items)}).",
+                "Add to a blender with ice cubes and a dash of cardamom or honey to taste.",
+                "Blend on high for 45 seconds until silky smooth and frothy.",
+                "Pour into tall glasses and serve chilled.",
+            ],
+            chef_tip="Add a pinch of roasted cinnamon or cardamom powder to elevate dairy drinks and bring out natural sweetness!",
+        )
+
+    # Case C: Homestyle Savory Dish / Masala Stir-Fry
     primary = clean_items[0].title()
     all_items_str = ", ".join(clean_items)
     return RescueRecipe(
         recipe_name=f"Homestyle Kitchen Masala Bhurji / Stir-Fry ({primary})",
         recipe_name_hi=f"झटपट मसाला {primary} भुर्जी",
+        meal_type="Homestyle Meal",
+        pairing_notes="Perishable ingredients harmoniously sautéed with everyday Indian spices.",
         prep_time_minutes=20,
         ingredients_used=clean_items,
+        corrected_ingredients=clean_items,
         pantry_items_needed=[
             "1-2 tbsp Cooking Mustard or Sunflower Oil",
             "1/2 tsp Cumin seeds (Jeera)",
@@ -1427,68 +1680,175 @@ def api_process_command(payload: CommandRequest, request: Request, fridge: Optio
 
     action = detect_action(tokens)
 
-    # 3. Handle Take / Consume / Waste command (e.g. "i ate lays", "used milk", "khaya paneer")
+    # 3. Handle Take / Consume / Waste command (e.g. "i ate lays", "ate milk, spinach", "used milk and spinach")
     if action in ("take", "waste"):
-        # Strip action & stop words to find the target food phrase
-        target_words = [w for w in tokens if w not in STOP_WORDS]
-        target_phrase = " ".join(target_words).strip()
-        if not target_phrase:
-            # Fallback to non-action tokens if everything got stripped
-            target_words = [w for w in tokens if w not in TAKE_WORDS and w not in WASTE_WORDS]
-            target_phrase = " ".join(target_words).strip()
+        clean_target_text = cmd_lower
+        for w in sorted(list(TAKE_WORDS | WASTE_WORDS | {"i", "me", "we"}), key=len, reverse=True):
+            clean_target_text = re.sub(rf'^{re.escape(w)}\s+', '', clean_target_text)
+            clean_target_text = re.sub(rf'\s+{re.escape(w)}$', '', clean_target_text)
 
-        if not target_phrase:
+        clean_target_text = re.sub(r'\s+(and|&|aur|tatha|\+|with)\s+', ',', clean_target_text)
+        candidate_items = [p.strip() for p in re.split(r'[,;]+', clean_target_text) if p.strip()]
+
+        if not candidate_items:
+            target_words = [w for w in tokens if w not in STOP_WORDS and w not in TAKE_WORDS and w not in WASTE_WORDS]
+            candidate_items = [" ".join(target_words).strip()] if target_words else []
+
+        if not candidate_items or not candidate_items[0]:
             return {
                 "action": "unknown",
-                "message_en": "Please specify which item you consumed or removed.",
+                "message_en": "Please specify which item(s) you consumed or removed.",
                 "message_hi": "कृपया बताएं कि आपने कौन सा सामान खाया या हटाया।",
             }
 
-        # Match against current inventory
-        matched_item = None
-        for it in inv:
-            name_en_lower = it.name_en.lower()
-            name_hi_lower = it.name_hi.lower()
-            # Direct or substring match
-            if (target_phrase in name_en_lower or name_en_lower in target_phrase or
-                (name_hi_lower and (target_phrase in name_hi_lower or name_hi_lower in target_phrase))):
-                matched_item = it
-                break
+        removed_items = []
+        not_found_items = []
+        available_inv = list(inv)
 
-        # Also check word-by-word if target_phrase has multiple words (e.g. "lays chips")
-        if not matched_item:
-            for it in inv:
-                for tw in target_words:
-                    if len(tw) >= 3 and (tw in it.name_en.lower() or tw in it.name_hi.lower()):
-                        matched_item = it
-                        break
-                if matched_item:
+        for target_phrase in candidate_items:
+            phrase_tokens = [w for w in WORD_RE.findall(target_phrase) if w not in STOP_WORDS]
+            effective_target = " ".join(phrase_tokens) if phrase_tokens else target_phrase
+            matched = None
+
+            # 1. Direct or substring match
+            for it in available_inv:
+                en_l = it.name_en.lower()
+                hi_l = it.name_hi.lower() if it.name_hi else ""
+                if (effective_target in en_l or en_l in effective_target or
+                    (hi_l and (effective_target in hi_l or hi_l in effective_target))):
+                    matched = it
                     break
 
-        if matched_item:
-            if not fid:
-                raise HTTPException(status_code=401, detail="Please login to your fridge to manage items.")
-            remove_fridge_inventory_item(fid, matched_item.id)
-            verb_en = "Consumed" if action == "take" else "Discarded"
-            verb_hi = "इस्तेमाल हुआ" if action == "take" else "फेंका गया"
+            # 2. Token overlap match
+            if not matched and phrase_tokens:
+                for it in available_inv:
+                    for pt in phrase_tokens:
+                        if len(pt) >= 3 and (pt in it.name_en.lower() or (it.name_hi and pt in it.name_hi.lower())):
+                            matched = it
+                            break
+                    if matched:
+                        break
+
+            if matched:
+                if fid:
+                    remove_fridge_inventory_item(fid, matched.id)
+                removed_items.append(matched)
+                available_inv.remove(matched)
+            else:
+                not_found_items.append(target_phrase)
+
+        verb_en = "Consumed" if action == "take" else "Discarded"
+        verb_hi = "इस्तेमाल हुआ" if action == "take" else "फेंका गया"
+
+        if len(candidate_items) > 1 or len(removed_items) > 1:
+            if not removed_items:
+                return {
+                    "action": "not_found",
+                    "target": ", ".join(not_found_items),
+                    "message_en": f"None of the items ({', '.join(not_found_items)}) were found in your fridge inventory.",
+                    "message_hi": f"कोई भी सामान ({', '.join(not_found_items)}) फ्रिज में नहीं मिला।",
+                }
+            names_en = ", ".join(it.name_en for it in removed_items)
+            names_hi = ", ".join(it.name_hi or it.name_en for it in removed_items)
+            not_found_msg_en = f" (Not found: {', '.join(not_found_items)})" if not_found_items else ""
+            not_found_msg_hi = f" (नहीं मिले: {', '.join(not_found_items)})" if not_found_items else ""
+            return {
+                "action": "removed_multi",
+                "removed": [{"id": it.id, "name_en": it.name_en, "name_hi": it.name_hi} for it in removed_items],
+                "not_found": not_found_items,
+                "message_en": f"{verb_en} {len(removed_items)} item(s): {names_en}.{not_found_msg_en}",
+                "message_hi": f"{len(removed_items)} सामान {verb_hi}: {names_hi}।{not_found_msg_hi}",
+            }
+        elif len(removed_items) == 1:
+            m = removed_items[0]
             return {
                 "action": "removed",
-                "item_id": matched_item.id,
-                "name_en": matched_item.name_en,
-                "name_hi": matched_item.name_hi,
-                "message_en": f"{verb_en}: {matched_item.name_en}.",
-                "message_hi": f"{verb_hi}: {matched_item.name_hi or matched_item.name_en}।",
+                "item_id": m.id,
+                "name_en": m.name_en,
+                "name_hi": m.name_hi,
+                "message_en": f"{verb_en}: {m.name_en}.",
+                "message_hi": f"{verb_hi}: {m.name_hi or m.name_en}।",
             }
         else:
+            tf = candidate_items[0]
             return {
                 "action": "not_found",
-                "target": target_phrase,
-                "message_en": f"'{target_phrase}' was not found in your fridge inventory.",
-                "message_hi": f"'{target_phrase}' आपके फ्रिज में नहीं मिला।",
+                "target": tf,
+                "message_en": f"'{tf}' was not found in your fridge inventory.",
+                "message_hi": f"'{tf}' आपके फ्रिज में नहीं मिला।",
             }
 
     # 4. Handle Add / Classify command
-    # Strip addition command keywords (e.g., 'brought 2kg palak' -> '2kg palak')
+    clean_add_text = raw_cmd
+    for w in sorted(list(ADD_WORDS | {"i", "we", "just", "brought", "bought", "bring", "add", "added", "laye", "kharida"}), key=len, reverse=True):
+        clean_add_text = re.sub(rf'^(i\s+)?{re.escape(w)}\s+', '', clean_add_text, flags=re.IGNORECASE)
+        clean_add_text = re.sub(rf'\s+{re.escape(w)}$', '', clean_add_text, flags=re.IGNORECASE)
+
+    clean_add_text = re.sub(r'\s+(and|&|aur|tatha|\+|with)\s+', ',', clean_add_text, flags=re.IGNORECASE)
+    parts = [p.strip() for p in re.split(r'[,;]+', clean_add_text) if p.strip()]
+
+    # If compound items detected (e.g. "lays, red bull, milk, spinach")
+    if len(parts) > 1:
+        auto_added_list = []
+        needs_expiry_list = []
+        client_tz_str = request.headers.get("X-Client-Timezone")
+        client_tz = resolve_tz(client_tz_str)
+        now_local = datetime.now(client_tz)
+        today_str = now_local.strftime("%Y-%m-%d")
+
+        for phrase in parts:
+            c = classify_food(phrase)
+            if not c.is_food:
+                continue
+
+            if c.requires_expiry_date:
+                # Packaged good (e.g. Lays, Red Bull) needing label date
+                needs_expiry_list.append(c.model_dump())
+            else:
+                # Fresh item / Made today / Grocery (e.g. Milk, Spinach) - auto add immediately!
+                days = c.shelf_life_days if (c.shelf_life_days and c.shelf_life_days > 0) else 4
+                exp_date_obj = now_local + timedelta(days=days)
+                exp_str = exp_date_obj.strftime("%Y-%m-%d")
+
+                item_create = InventoryItemCreate(
+                    name_en=c.name_en,
+                    name_hi=c.name_hi,
+                    category=c.category,
+                    shelf_life_days=days,
+                    requires_expiry_date=False,
+                    expiry_date=exp_str,
+                    storage_tip=c.storage_tip
+                )
+                if fid:
+                    saved_item = save_fridge_inventory_item(fid, item_create, client_tz=client_tz_str)
+                    auto_added_list.append(saved_item.model_dump())
+                else:
+                    auto_added_list.append({
+                        "id": secrets.token_hex(5),
+                        "name_en": c.name_en,
+                        "name_hi": c.name_hi,
+                        "category": c.category,
+                        "added_date": today_str,
+                        "expiry_date": exp_str,
+                        "days_left": days,
+                        "days_elapsed": 0,
+                        "is_expired": False,
+                        "is_expiring_soon": days <= 2,
+                        "requires_expiry_date": False,
+                        "storage_tip": c.storage_tip,
+                        "last_synced_at": now_local.strftime("%Y-%m-%d %H:%M:%S")
+                    })
+
+        fresh_names = ", ".join(i.get("name_en", "") for i in auto_added_list)
+        return {
+            "action": "multi_add",
+            "auto_added": auto_added_list,
+            "needs_expiry": needs_expiry_list,
+            "message_en": f"Processed {len(parts)} items: Added fresh ({fresh_names or 'none'}) to dashboard. Please verify expiry date for {len(needs_expiry_list)} packaged item(s).",
+            "message_hi": f"{len(parts)} सामान: ताज़ा सामान फ्रिज में जोड़ा गया, पैकेज्ड सामान की तारीख दर्ज करें।",
+        }
+
+    # Single item fallback
     food_tokens = [w for w in tokens if w not in ADD_WORDS]
     food_phrase = " ".join(food_tokens).strip() or raw_cmd
 
@@ -1873,7 +2233,7 @@ def api_push_check_expiry(request: Request):
         names = ", ".join([i.name_en for i in expiring[:5]])
         suffix = f" +{len(expiring) - 5} more" if len(expiring) > 5 else ""
         if _send_push_to_fridge(fid, subs,
-            title=f"⚠️ {len(expiring)} item(s) expiring soon!",
+            title=f"[Fridge Alert] {len(expiring)} item(s) expiring soon!",
             body=f"{names}{suffix} — use them before they go bad!",
             tag="expiry-warning",
         ):
@@ -1883,7 +2243,7 @@ def api_push_check_expiry(request: Request):
         names = ", ".join([i.name_en for i in expired[:5]])
         suffix = f" +{len(expired) - 5} more" if len(expired) > 5 else ""
         if _send_push_to_fridge(fid, subs,
-            title=f"🚨 {len(expired)} item(s) expired!",
+            title=f"[Fridge Alert] {len(expired)} item(s) expired!",
             body=f"{names}{suffix} — check and discard if needed.",
             tag="expiry-alert",
         ):
@@ -1937,7 +2297,7 @@ def api_check_expiry_cron(request: Request):
             suffix = f" (+{len(expiring_24h)-4} more)" if len(expiring_24h) > 4 else ""
             if _send_push_to_fridge(
                 fid, subs,
-                title=f"⚠️ {len(expiring_24h)} item(s) expiring within 24 hours!",
+                title=f"[Fridge Alert] {len(expiring_24h)} item(s) expiring within 24 hours!",
                 body=f"{names}{suffix} — consume soon to avoid food waste!",
                 tag="expiry-warning-24h",
             ):
@@ -1948,7 +2308,7 @@ def api_check_expiry_cron(request: Request):
             suffix = f" (+{len(expired)-4} more)" if len(expired) > 4 else ""
             if _send_push_to_fridge(
                 fid, subs,
-                title=f"🚨 {len(expired)} item(s) expired in fridge!",
+                title=f"[Fridge Alert] {len(expired)} item(s) expired in fridge!",
                 body=f"{names}{suffix} — inspect and clear.",
                 tag="expiry-alert",
             ):
@@ -2010,6 +2370,22 @@ def api_classify_photo(payload: PhotoScanRequest):
     return classify_food_photo(payload.image, payload.mime_type)
 
 
+
+class SpellingCheckRequest(BaseModel):
+    text: str = Field(description="Raw ingredients string, comma or space separated")
+
+@app.post("/api/rescue/correct-spelling", summary="Correct spelling errors in ingredient input")
+def api_rescue_correct_spelling(payload: SpellingCheckRequest):
+    """Detects and fixes spelling typos in user-entered ingredients."""
+    parts = [p.strip() for p in re.split(r'[,;]+', payload.text) if p.strip()]
+    corrected, corrections = correct_ingredients_list(parts)
+    return {
+        "original": parts,
+        "corrected": corrected,
+        "corrected_text": ", ".join(corrected),
+        "corrections": corrections,
+        "has_corrections": len(corrections) > 0,
+    }
 
 @app.post("/rescue", response_model=RescueRecipe, summary="Generate Zero-Waste Rescue Recipe")
 def api_rescue(payload: RescueRequest):
@@ -2080,8 +2456,32 @@ HTML_CONTENT = r"""<!DOCTYPE html>
             mono: ['JetBrains Mono', 'monospace'],
           },
           colors: {
-            brand: { 50: '#fffbeb', 100: '#fef3c7', 500: '#f59e0b', 600: '#d97706', 700: '#b45309' },
-            leaf: { 50: '#ecfdf5', 100: '#d1fae5', 500: '#10b981', 600: '#059669', 700: '#047857' }
+            brand: {
+              50: '#fffbeb',
+              100: '#fef3c7',
+              200: '#fde68a',
+              300: '#fcd34d',
+              400: '#fbbf24',
+              500: '#f59e0b',
+              600: '#d97706',
+              700: '#b45309',
+              800: '#92400e',
+              900: '#78350f',
+              950: '#451a03'
+            },
+            leaf: {
+              50: '#ecfdf5',
+              100: '#d1fae5',
+              200: '#a7f3d0',
+              300: '#6ee7b7',
+              400: '#34d399',
+              500: '#10b981',
+              600: '#059669',
+              700: '#047857',
+              800: '#065f46',
+              900: '#064e3b',
+              950: '#022c22'
+            }
           }
         }
       }
@@ -2094,6 +2494,14 @@ HTML_CONTENT = r"""<!DOCTYPE html>
     }
   </script>
   <style>
+    select option {
+      background-color: #1c1917;
+      color: #f5f5f4;
+    }
+    html:not(.dark) select option {
+      background-color: #ffffff;
+      color: #1c1917;
+    }
     @keyframes scannerLaser {
       0% { top: 3%; opacity: 0.85; }
       50% { top: 92%; opacity: 1; }
@@ -2133,12 +2541,12 @@ HTML_CONTENT = r"""<!DOCTYPE html>
           <span class="font-extrabold text-sm sm:text-base tracking-tight text-stone-900 dark:text-white shrink-0" data-i18n="app_title">FridgeInventory</span>
           <span class="text-[10px] bg-stone-100 dark:bg-stone-800 text-stone-500 dark:text-stone-400 font-semibold px-1.5 py-0.5 rounded-md hidden sm:inline">v2.2</span>
           
-          <!-- Compact Logged-in Fridge Pill -->
-          <div id="header-breadcrumb" class="hidden items-center gap-1 px-2 py-0.5 rounded-lg bg-brand-50 dark:bg-brand-950/60 border border-brand-200 dark:border-brand-800/80 text-xs font-mono font-bold text-brand-800 dark:text-brand-300 truncate">
-            <span class="text-stone-400 dark:text-stone-500 text-[10px]">fridge/</span>
-            <span id="header-fridge-name" class="truncate max-w-[90px] sm:max-w-[140px]">MY-FRIDGE</span>
-            <button type="button" id="copy-fid-btn" class="text-stone-400 hover:text-stone-600 dark:hover:text-stone-200 transition p-0.5 shrink-0" title="Copy Fridge ID">
-              <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>
+          <!-- Compact Logged-in Fridge Pill (High Contrast in Light & Dark Mode) -->
+          <div id="header-breadcrumb" class="hidden items-center gap-1.5 px-2.5 py-1 rounded-xl bg-amber-50 dark:bg-stone-800 border border-amber-200 dark:border-amber-500/40 text-xs font-mono font-bold shadow-2xs truncate">
+            <span class="text-amber-700/80 dark:text-amber-400/80 text-[11px] font-bold">fridge/</span>
+            <span id="header-fridge-name" class="truncate max-w-[100px] sm:max-w-[160px] text-amber-950 dark:text-amber-200 font-extrabold tracking-wide">MY-FRIDGE</span>
+            <button type="button" id="copy-fid-btn" class="text-amber-700/70 dark:text-amber-400/80 hover:text-amber-900 dark:hover:text-amber-100 transition p-0.5 shrink-0" title="Copy Fridge ID">
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>
             </button>
           </div>
         </div>
@@ -2195,8 +2603,9 @@ HTML_CONTENT = r"""<!DOCTYPE html>
         </div>
 
         <!-- Timezone Selector Dropdown -->
-        <div class="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-white dark:bg-stone-800 border border-stone-200 dark:border-stone-700 shadow-2xs">
-          <span class="text-stone-400 text-[10px] uppercase font-bold tracking-wider">🌍 Zone:</span>
+        <div class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-white dark:bg-stone-800 border border-stone-200 dark:border-stone-700 shadow-2xs">
+          <svg class="w-3.5 h-3.5 text-stone-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9"></path></svg>
+          <span class="text-stone-400 text-[10px] uppercase font-bold tracking-wider">Zone:</span>
           <select id="user-tz-select" class="bg-transparent text-xs font-semibold text-stone-800 dark:text-stone-200 border-none outline-none cursor-pointer focus:ring-0 pr-1" title="Select Global Timezone">
             <option value="auto">Auto (Detected Local Time)</option>
           </select>
@@ -2256,17 +2665,23 @@ HTML_CONTENT = r"""<!DOCTYPE html>
       <!-- Feature Highlight Cards -->
       <div class="grid grid-cols-1 sm:grid-cols-3 gap-3.5 text-left pt-1">
         <div class="p-4 rounded-2xl bg-stone-50 dark:bg-stone-800/60 border border-stone-200/70 dark:border-stone-700/60">
-          <div class="text-xl mb-1.5">📦</div>
+          <div class="w-8 h-8 rounded-xl bg-brand-100 dark:bg-stone-800 text-brand-700 dark:text-brand-300 flex items-center justify-center mb-2.5">
+            <svg class="w-4.5 h-4.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"></path></svg>
+          </div>
           <h3 class="font-bold text-xs sm:text-sm text-stone-900 dark:text-white" data-i18n="feat_track_title">Smart Food Tracking</h3>
           <p class="text-xs text-stone-500 dark:text-stone-400 mt-1" data-i18n="feat_track_desc">Keep real-time tabs on fresh produce, dairy, groceries, and cooked meals.</p>
         </div>
         <div class="p-4 rounded-2xl bg-stone-50 dark:bg-stone-800/60 border border-stone-200/70 dark:border-stone-700/60">
-          <div class="text-xl mb-1.5">🔔</div>
+          <div class="w-8 h-8 rounded-xl bg-indigo-100 dark:bg-stone-800 text-indigo-700 dark:text-indigo-300 flex items-center justify-center mb-2.5">
+            <svg class="w-4.5 h-4.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"></path></svg>
+          </div>
           <h3 class="font-bold text-xs sm:text-sm text-stone-900 dark:text-white" data-i18n="feat_expiry_title">Offline Push Alerts</h3>
           <p class="text-xs text-stone-500 dark:text-stone-400 mt-1" data-i18n="feat_expiry_desc">Background Service Worker alerts you before food expires, even when offline.</p>
         </div>
         <div class="p-4 rounded-2xl bg-stone-50 dark:bg-stone-800/60 border border-stone-200/70 dark:border-stone-700/60">
-          <div class="text-xl mb-1.5">✨</div>
+          <div class="w-8 h-8 rounded-xl bg-emerald-100 dark:bg-stone-800 text-emerald-700 dark:text-emerald-300 flex items-center justify-center mb-2.5">
+            <svg class="w-4.5 h-4.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+          </div>
           <h3 class="font-bold text-xs sm:text-sm text-stone-900 dark:text-white" data-i18n="feat_ai_title">AI Rescue Chef</h3>
           <p class="text-xs text-stone-500 dark:text-stone-400 mt-1" data-i18n="feat_ai_desc">Turn expiring ingredients into homestyle recipes with one click.</p>
         </div>
@@ -2437,8 +2852,9 @@ HTML_CONTENT = r"""<!DOCTYPE html>
           <!-- MULTI-SELECT RESCUE BAR -->
           <div id="rescue-action-bar" class="hidden bg-stone-900 dark:bg-stone-800 text-white px-3.5 py-2 rounded-2xl flex items-center justify-between gap-3 shadow-md">
             <span class="text-xs font-medium">Selected <b id="selected-count" class="text-brand-400 font-bold">0</b> items</span>
-            <button id="trigger-rescue-btn" class="px-3.5 py-1.5 bg-brand-600 hover:bg-brand-500 font-bold rounded-xl text-xs shadow transition">
-              Rescue Recipe ✨
+            <button id="trigger-rescue-btn" class="px-3.5 py-1.5 bg-brand-600 hover:bg-brand-500 font-bold rounded-xl text-xs shadow transition inline-flex items-center gap-1.5">
+              <span>Rescue Recipe</span>
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
             </button>
           </div>
         </div>
@@ -2450,7 +2866,9 @@ HTML_CONTENT = r"""<!DOCTYPE html>
 
         <!-- EMPTY STATE -->
         <div id="empty-state" class="hidden text-center py-16 bg-white dark:bg-stone-900 rounded-3xl border border-dashed border-stone-200 dark:border-stone-800 p-6 transition-colors">
-          <div class="text-3xl mb-2">🥬</div>
+          <div class="w-12 h-12 mx-auto mb-3 rounded-2xl bg-stone-100 dark:bg-stone-800 text-stone-400 dark:text-stone-500 flex items-center justify-center">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path></svg>
+          </div>
           <h3 class="text-base font-bold text-stone-800 dark:text-stone-200" data-i18n="empty_title">Your Fridge is Empty</h3>
           <p class="text-xs text-stone-500 dark:text-stone-400 mt-1 max-w-sm mx-auto" data-i18n="empty_desc">
             Add fresh produce, groceries, or meals using the input above or your microphone.
@@ -2459,12 +2877,13 @@ HTML_CONTENT = r"""<!DOCTYPE html>
       </section>
 
       <!-- TAB 2: EXPIRING SOON DEDICATED VIEW -->
+      <!-- TAB 2: URGENT / EXPIRING SOON -->
       <section id="section-urgent" class="tab-section hidden space-y-6">
         <div class="bg-white dark:bg-stone-900 rounded-3xl p-6 sm:p-8 border border-stone-200/80 dark:border-stone-800 shadow-sm space-y-6">
           <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-stone-100 dark:border-stone-800 pb-5">
             <div>
               <h2 class="text-lg sm:text-xl font-bold text-stone-900 dark:text-white flex items-center gap-2">
-                <span class="text-amber-500">⚠️</span>
+                <svg class="w-5 h-5 text-amber-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
                 <span data-i18n="urgent_tab_title">Urgent Attention Needed</span>
               </h2>
               <p class="text-xs text-stone-500 dark:text-stone-400 mt-1" data-i18n="urgent_tab_desc">
@@ -2472,8 +2891,9 @@ HTML_CONTENT = r"""<!DOCTYPE html>
               </p>
             </div>
             <div class="flex items-center gap-2">
-              <button id="urgent-rescue-all-btn" class="px-4 py-2.5 bg-brand-600 hover:bg-brand-700 text-white font-bold rounded-xl text-xs shadow transition flex items-center gap-1.5">
-                <span>Rescue All with AI Chef ✨</span>
+              <button id="urgent-rescue-all-btn" class="px-4 py-2.5 bg-brand-600 hover:bg-brand-700 text-white font-bold rounded-xl text-xs shadow transition flex items-center gap-2">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+                <span>Rescue All with AI Chef</span>
               </button>
             </div>
           </div>
@@ -2483,8 +2903,10 @@ HTML_CONTENT = r"""<!DOCTYPE html>
           </div>
 
           <div id="urgent-empty" class="hidden text-center py-12 bg-stone-50 dark:bg-stone-800/40 rounded-2xl border border-dashed border-stone-200 dark:border-stone-800 p-6">
-            <span class="text-2xl">🎉</span>
-            <h4 class="font-bold text-sm text-stone-800 dark:text-stone-200 mt-1">No Urgent Expirations!</h4>
+            <div class="w-12 h-12 mx-auto rounded-full bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
+              <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+            </div>
+            <h4 class="font-bold text-sm text-stone-800 dark:text-stone-200 mt-2">No Urgent Expirations!</h4>
             <p class="text-xs text-stone-500 dark:text-stone-400 mt-0.5">Everything in your fridge has plenty of shelf life remaining.</p>
           </div>
         </div>
@@ -2521,13 +2943,13 @@ HTML_CONTENT = r"""<!DOCTYPE html>
           <!-- Chrome & Browser Permission Guide (Prominent & Helpful) -->
           <div id="push-chrome-guide-card" class="p-4 rounded-2xl bg-amber-50/70 dark:bg-amber-950/30 border border-amber-200/80 dark:border-amber-800/60 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 transition-all">
             <div class="flex items-start gap-3">
-              <div class="w-10 h-10 rounded-xl bg-amber-100 dark:bg-amber-900/60 text-amber-700 dark:text-amber-300 flex items-center justify-center shrink-0 text-xl">
-                🔔
+              <div class="w-10 h-10 rounded-xl bg-amber-100 dark:bg-amber-900/60 text-amber-700 dark:text-amber-300 flex items-center justify-center shrink-0">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/></svg>
               </div>
               <div class="text-xs">
                 <h4 class="font-bold text-stone-900 dark:text-white" data-i18n="push_guide_title">How to allow notifications in Google Chrome</h4>
                 <p class="text-stone-600 dark:text-stone-300 mt-0.5 leading-relaxed" data-i18n="push_guide_desc">
-                  If your browser blocks notifications: click the <strong>lock / tune icon 🔒</strong> next to the web address at the top &gt; <strong>Site settings</strong> &gt; set <strong>Notifications</strong> to <strong>Allow</strong>.
+                  If your browser blocks notifications: click the <strong>lock / site settings icon</strong> next to the web address at the top &gt; <strong>Site settings</strong> &gt; set <strong>Notifications</strong> to <strong>Allow</strong>.
                 </p>
               </div>
             </div>
@@ -2541,7 +2963,10 @@ HTML_CONTENT = r"""<!DOCTYPE html>
           <div class="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
             <div class="p-4 rounded-2xl bg-stone-50 dark:bg-stone-800/50 border border-stone-200/70 dark:border-stone-700/60 flex items-center justify-between gap-3">
               <div>
-                <h4 class="font-bold text-xs text-stone-900 dark:text-white">🔔 Test Web Push</h4>
+                <h4 class="font-bold text-xs text-stone-900 dark:text-white flex items-center gap-1.5">
+                  <svg class="w-3.5 h-3.5 text-brand-600 dark:text-brand-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/></svg>
+                  <span>Test Web Push</span>
+                </h4>
                 <p class="text-[11px] text-stone-500 dark:text-stone-400 mt-0.5">Signed VAPID push (buffers 24h offline).</p>
               </div>
               <button id="push-tab-test-btn" class="px-3.5 py-2 rounded-xl bg-white dark:bg-stone-800 hover:bg-stone-100 dark:hover:bg-stone-700 border border-stone-200 dark:border-stone-700 text-stone-800 dark:text-stone-200 font-semibold text-xs transition shrink-0">
@@ -2551,7 +2976,10 @@ HTML_CONTENT = r"""<!DOCTYPE html>
 
             <div class="p-4 rounded-2xl bg-stone-50 dark:bg-stone-800/50 border border-stone-200/70 dark:border-stone-700/60 flex items-center justify-between gap-3">
               <div>
-                <h4 class="font-bold text-xs text-stone-900 dark:text-white">⚡ Test Offline Alert</h4>
+                <h4 class="font-bold text-xs text-stone-900 dark:text-white flex items-center gap-1.5">
+                  <svg class="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+                  <span>Test Offline Alert</span>
+                </h4>
                 <p class="text-[11px] text-stone-500 dark:text-stone-400 mt-0.5">Local Service Worker (no Wi-Fi needed).</p>
               </div>
               <button id="push-tab-offline-test-btn" class="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs shadow-sm transition shrink-0">
@@ -2561,7 +2989,10 @@ HTML_CONTENT = r"""<!DOCTYPE html>
 
             <div class="p-4 rounded-2xl bg-stone-50 dark:bg-stone-800/50 border border-stone-200/70 dark:border-stone-700/60 flex items-center justify-between gap-3">
               <div>
-                <h4 class="font-bold text-xs text-stone-900 dark:text-white">⏳ Check Expiry Now</h4>
+                <h4 class="font-bold text-xs text-stone-900 dark:text-white flex items-center gap-1.5">
+                  <svg class="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                  <span>Check Expiry Now</span>
+                </h4>
                 <p class="text-[11px] text-stone-500 dark:text-stone-400 mt-0.5">Scan fridge and alert for food expiring soon.</p>
               </div>
               <button id="push-tab-expiry-btn" class="px-3.5 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-semibold text-xs shadow-sm transition shrink-0">
@@ -2572,8 +3003,9 @@ HTML_CONTENT = r"""<!DOCTYPE html>
 
           <!-- Subtle collapsible diagnostics for developers / technical users -->
           <details class="text-xs text-stone-400 dark:text-stone-500 pt-2 border-t border-stone-100 dark:border-stone-800/60">
-            <summary class="cursor-pointer hover:text-stone-600 dark:hover:text-stone-300 font-medium select-none">
-              ⚙️ Technical status & diagnostics
+            <summary class="cursor-pointer hover:text-stone-600 dark:hover:text-stone-300 font-medium select-none flex items-center gap-1.5">
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+              <span>Technical status & diagnostics</span>
             </summary>
             <div class="mt-3 p-4 rounded-2xl bg-stone-50/80 dark:bg-stone-800/30 border border-stone-200/60 dark:border-stone-700/40 space-y-3">
               <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[11px]">
@@ -2623,15 +3055,39 @@ HTML_CONTENT = r"""<!DOCTYPE html>
 
           <!-- CUSTOM INGREDIENTS INPUT -->
           <div class="mt-4">
-            <label class="block text-xs font-semibold text-stone-700 dark:text-stone-300 mb-1" data-i18n="custom_rescue_label">
-              Custom Ingredients / Leftovers to Rescue (Comma-separated):
-            </label>
-            <input 
-              type="text" 
-              id="rescue-items-input" 
-              placeholder="e.g. leftover boiled potatoes, sour curd, coriander stems, capsicum..."
-              class="w-full px-4 py-2.5 rounded-xl border border-stone-200 dark:border-stone-700 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 bg-stone-50 dark:bg-stone-800 text-stone-800 dark:text-stone-100 font-medium"
-            />
+            <div class="flex items-center justify-between mb-1">
+              <label class="block text-xs font-semibold text-stone-700 dark:text-stone-300" data-i18n="custom_rescue_label">
+                Custom Ingredients / Leftovers to Rescue (Comma-separated):
+              </label>
+              <span class="text-[10px] text-stone-400">Speaks or types dishes, drinks, or leftovers</span>
+            </div>
+            <div class="relative">
+              <input 
+                type="text" 
+                id="rescue-items-input" 
+                placeholder="e.g. milk, chocolate, bread, cheese, peri peri, leftover dal..." 
+                class="w-full pl-4 pr-12 py-2.5 rounded-xl border border-stone-200 dark:border-stone-700 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 bg-stone-50 dark:bg-stone-800 text-stone-800 dark:text-stone-100 font-medium"
+              />
+              <button 
+                type="button" 
+                id="rescue-mic-btn" 
+                title="Speak ingredients via microphone"
+                class="absolute right-2 top-1.5 p-1.5 rounded-xl text-stone-400 hover:text-brand-600 hover:bg-stone-100 dark:hover:bg-stone-700 transition-colors"
+              >
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 003-3V5a3 3 0 00-6 0v6a3 3 0 003 3z"></path>
+                </svg>
+              </button>
+            </div>
+
+            <!-- SPELLING CORRECTION FEEDBACK BANNER -->
+            <div id="rescue-spell-badge" class="hidden mt-2 p-2.5 rounded-xl bg-amber-50 dark:bg-stone-800 border border-amber-200 dark:border-stone-700 text-xs text-amber-900 dark:text-amber-200 flex items-center justify-between gap-2">
+              <div class="flex items-center gap-1.5">
+                <svg class="w-3.5 h-3.5 text-amber-600 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                <span id="rescue-spell-text" class="font-medium"></span>
+              </div>
+              <button type="button" id="dismiss-spell-btn" class="text-stone-400 hover:text-stone-600 text-xs font-bold leading-none">&times;</button>
+            </div>
           </div>
 
           <!-- RECIPE RESULT CARD -->
@@ -2644,18 +3100,32 @@ HTML_CONTENT = r"""<!DOCTYPE html>
 
               <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-stone-200/60 dark:border-stone-700 pb-4 pr-24">
                 <div>
-                  <span class="text-xs font-bold text-brand-600 dark:text-brand-400 uppercase tracking-wider" data-i18n="recipe_card_tag">Zero-Waste Indian Recipe</span>
+                  <div class="flex items-center gap-2 mb-1 flex-wrap">
+                    <span class="text-xs font-bold text-brand-600 dark:text-brand-400 uppercase tracking-wider" data-i18n="recipe_card_tag">Zero-Waste Culinary Recipe</span>
+                    <span id="recipe-meal-type" class="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-indigo-50 dark:bg-indigo-950/70 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800">Homestyle Meal</span>
+                  </div>
                   <h3 id="recipe-name" class="text-xl sm:text-2xl font-bold text-stone-900 dark:text-white"></h3>
                   <h4 id="recipe-name-hi" class="text-base font-semibold text-brand-600 dark:text-brand-400"></h4>
                 </div>
                 <div class="flex items-center gap-2 mt-2 sm:mt-0">
-                  <span id="recipe-time" class="bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-700 text-stone-700 dark:text-stone-300 text-xs font-semibold px-3 py-1.5 rounded-full">
-                    ⏱️ 20 mins
+                  <span id="recipe-time" class="bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-700 text-stone-700 dark:text-stone-300 text-xs font-semibold px-3 py-1.5 rounded-full inline-flex items-center gap-1.5">
+                    <svg class="w-3.5 h-3.5 text-stone-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                    <span id="recipe-time-text">20 mins</span>
                   </span>
-                  <button id="copy-recipe-btn" class="p-2 bg-white dark:bg-stone-900 hover:bg-stone-100 border border-stone-200 dark:border-stone-700 rounded-xl text-stone-600 dark:text-stone-300 text-xs font-medium" title="Copy">
-                    📋 Copy
+                  <button id="copy-recipe-btn" class="p-2 bg-white dark:bg-stone-900 hover:bg-stone-100 border border-stone-200 dark:border-stone-700 rounded-xl text-stone-600 dark:text-stone-300 text-xs font-medium inline-flex items-center gap-1" title="Copy">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>
+                    <span>Copy</span>
                   </button>
                 </div>
+              </div>
+
+              <!-- PAIRING / COMBO NOTES (SHOWN FOR DRINKS + FOOD) -->
+              <div id="recipe-pairing-box" class="hidden mt-3.5 p-3.5 rounded-2xl bg-amber-50/80 dark:bg-stone-800/80 border border-amber-200 dark:border-stone-700 text-xs text-amber-900 dark:text-amber-200">
+                <div class="font-bold flex items-center gap-1.5 mb-1 text-stone-900 dark:text-stone-100">
+                  <svg class="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"></path></svg>
+                  <span>Chef's Zero-Waste Course & Pairing Notes:</span>
+                </div>
+                <p id="recipe-pairing-text" class="text-stone-700 dark:text-stone-300 leading-relaxed"></p>
               </div>
 
               <!-- INGREDIENTS LISTS -->
@@ -2692,7 +3162,9 @@ HTML_CONTENT = r"""<!DOCTYPE html>
 
           <!-- LOADING SKELETON -->
           <div id="recipe-loader" class="hidden text-center py-12">
-            <div class="inline-block animate-spin text-2xl mb-2">⏳</div>
+            <div class="inline-flex items-center justify-center w-12 h-12 rounded-2xl bg-brand-50 dark:bg-stone-800 text-brand-600 mb-2">
+              <svg class="w-6 h-6 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+            </div>
             <p class="text-sm font-semibold text-stone-800 dark:text-stone-200" data-i18n="recipe_loading">Consulting Indian Culinary Intelligence...</p>
           </div>
         </div>
@@ -2728,7 +3200,7 @@ HTML_CONTENT = r"""<!DOCTYPE html>
                   <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-300 opacity-75"></span>
                   <span class="relative inline-flex rounded-full h-3 w-3 bg-emerald-400"></span>
                 </span>
-                <span class="text-base transform group-hover:rotate-12 transition-transform duration-200">📸</span>
+                <svg class="w-4 h-4 transform group-hover:rotate-12 transition-transform duration-200" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
                 <span data-i18n="scanner_take_photo">Take Photo</span>
               </button>
 
@@ -2746,7 +3218,7 @@ HTML_CONTENT = r"""<!DOCTYPE html>
                 class="px-3 py-1.5 rounded-xl bg-white dark:bg-stone-800 border border-stone-200 dark:border-stone-700 hover:bg-stone-50 dark:hover:bg-stone-700 text-stone-700 dark:text-stone-300 text-[11px] font-semibold transition flex items-center gap-1.5 shadow-xs"
                 title="Open live desktop webcam viewfinder"
               >
-                <span>📹</span>
+                <svg class="w-3.5 h-3.5 text-stone-500 dark:text-stone-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
                 <span class="hidden sm:inline">Live Camera</span>
               </button>
               
@@ -2756,7 +3228,7 @@ HTML_CONTENT = r"""<!DOCTYPE html>
                 class="px-3 py-1.5 rounded-xl bg-white dark:bg-stone-800 border border-stone-200 dark:border-stone-700 hover:bg-stone-50 dark:hover:bg-stone-700 text-stone-700 dark:text-stone-300 text-[11px] font-semibold transition flex items-center gap-1.5 shadow-xs"
                 title="Upload image from device storage"
               >
-                <span>📁</span>
+                <svg class="w-3.5 h-3.5 text-stone-500 dark:text-stone-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/></svg>
                 <span class="hidden sm:inline">Upload Image</span>
               </button>
             </div>
@@ -2777,23 +3249,33 @@ HTML_CONTENT = r"""<!DOCTYPE html>
             class="hidden"
           />
 
-          <!-- Text Search Bar Row with inline camera icon -->
+          <!-- Text Search Bar Row with microphone + inline camera icon -->
           <div class="flex gap-2">
             <div class="relative flex-grow">
               <input 
                 type="text" 
                 id="scanner-input" 
                 placeholder="Or type any food (e.g. Paneer Butter Masala, Gajar, Dal Makhani)..." 
-                class="w-full pl-4 pr-10 py-2.5 rounded-xl border border-stone-200 dark:border-stone-700 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 bg-stone-50 dark:bg-stone-800 text-stone-800 dark:text-stone-100 font-medium"
+                class="w-full pl-4 pr-16 py-2.5 rounded-xl border border-stone-200 dark:border-stone-700 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 bg-stone-50 dark:bg-stone-800 text-stone-800 dark:text-stone-100 font-medium"
               />
-              <button 
-                type="button" 
-                id="scanner-inline-camera-icon" 
-                class="absolute right-2.5 top-1/2 -translate-y-1/2 text-stone-400 hover:text-emerald-600 dark:hover:text-emerald-400 text-base transition p-1"
-                title="Snap photo with camera"
-              >
-                📸
-              </button>
+              <div class="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-0.5">
+                <button 
+                  type="button" 
+                  id="scanner-mic-btn" 
+                  class="text-stone-400 hover:text-brand-600 dark:hover:text-brand-400 transition p-1.5 rounded-lg hover:bg-stone-100 dark:hover:bg-stone-700"
+                  title="Voice command for food scanner"
+                >
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 003-3V5a3 3 0 10-6 0v6a3 3 0 003 3z"/></svg>
+                </button>
+                <button 
+                  type="button" 
+                  id="scanner-inline-camera-icon" 
+                  class="text-stone-400 hover:text-emerald-600 dark:hover:text-emerald-400 transition p-1.5 rounded-lg hover:bg-stone-100 dark:hover:bg-stone-700"
+                  title="Snap photo with camera"
+                >
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+                </button>
+              </div>
             </div>
             
             <button 
@@ -2892,7 +3374,10 @@ HTML_CONTENT = r"""<!DOCTYPE html>
   <div id="classify-modal" class="fixed inset-0 bg-stone-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
     <div class="bg-white dark:bg-stone-900 rounded-3xl max-w-md w-full p-6 shadow-2xl border border-stone-100 dark:border-stone-800 text-stone-800 dark:text-stone-100">
       <div class="flex items-center justify-between border-b border-stone-100 dark:border-stone-800 pb-3">
-        <h3 class="font-bold text-base" data-i18n="modal_confirm_title">Confirm Fridge Entry</h3>
+        <div class="flex items-center gap-2">
+          <h3 class="font-bold text-base" data-i18n="modal_confirm_title">Confirm Fridge Entry</h3>
+          <span id="modal-queue-pill" class="hidden text-[10px] font-bold px-2 py-0.5 rounded-full bg-brand-100 dark:bg-brand-950/70 text-brand-800 dark:text-brand-300 border border-brand-200 dark:border-brand-800">Item 1 of 2</span>
+        </div>
         <button id="close-modal-btn" class="text-stone-400 hover:text-stone-600 text-xl font-bold">&times;</button>
       </div>
 
@@ -2942,7 +3427,7 @@ HTML_CONTENT = r"""<!DOCTYPE html>
     <div class="bg-white dark:bg-stone-900 rounded-3xl max-w-md w-full p-6 shadow-2xl border border-stone-200 dark:border-stone-800 text-stone-800 dark:text-stone-100 space-y-4">
       <div class="flex items-center justify-between border-b border-stone-100 dark:border-stone-800 pb-3">
         <div class="flex items-center gap-2">
-          <span class="text-xl">📸</span>
+          <svg class="w-5 h-5 text-emerald-600 dark:text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
           <h3 class="font-bold text-sm" data-i18n="scanner_webcam_title">Live Food Camera Viewfinder</h3>
         </div>
         <button id="close-webcam-modal-btn" type="button" class="text-stone-400 hover:text-stone-600 dark:hover:text-stone-200 text-2xl font-bold leading-none">&times;</button>
@@ -2965,10 +3450,10 @@ HTML_CONTENT = r"""<!DOCTYPE html>
         <button 
           type="button" 
           id="webcam-switch-cam-btn" 
-          class="px-3 py-2 rounded-xl bg-stone-100 dark:bg-stone-800 hover:bg-stone-200 text-stone-700 dark:text-stone-300 font-semibold text-xs transition flex items-center gap-1"
+          class="px-3 py-2 rounded-xl bg-stone-100 dark:bg-stone-800 hover:bg-stone-200 text-stone-700 dark:text-stone-300 font-semibold text-xs transition flex items-center gap-1.5"
           title="Switch front/back camera"
         >
-          <span>🔄</span>
+          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
           <span>Flip</span>
         </button>
 
@@ -2984,10 +3469,10 @@ HTML_CONTENT = r"""<!DOCTYPE html>
         <button 
           type="button" 
           id="webcam-choose-file-btn" 
-          class="px-3 py-2 rounded-xl bg-stone-100 dark:bg-stone-800 hover:bg-stone-200 text-stone-700 dark:text-stone-300 font-semibold text-xs transition"
+          class="px-3 py-2 rounded-xl bg-stone-100 dark:bg-stone-800 hover:bg-stone-200 text-stone-700 dark:text-stone-300 font-semibold text-xs transition flex items-center justify-center"
           title="Upload from device storage"
         >
-          📁
+          <svg class="w-4 h-4 text-stone-500 dark:text-stone-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/></svg>
         </button>
       </div>
     </div>
@@ -3090,7 +3575,7 @@ HTML_CONTENT = r"""<!DOCTYPE html>
         push_hero_title: "Expiry Alerts",
         push_hero_desc: "Get notified before food in your fridge expires, even when your browser or phone is closed.",
         push_guide_title: "How to allow notifications in Google Chrome",
-        push_guide_desc: "If your browser blocks notifications: click the lock / tune icon 🔒 next to the web address at the top > Site settings > set Notifications to Allow.",
+        push_guide_desc: "If your browser blocks notifications: click the lock / tune icon next to the web address at the top > Site settings > set Notifications to Allow.",
         push_guide_btn: "Google Help Guide",
         rescue_title: "Zero-Waste Rescue Chef",
         rescue_desc: "Select expiring ingredients from your fridge or specify custom leftovers to create an authentic homestyle dish.",
@@ -3173,7 +3658,7 @@ HTML_CONTENT = r"""<!DOCTYPE html>
         push_hero_title: "एक्सपायरी अलर्ट",
         push_hero_desc: "खाना खराब होने से पहले अपने फोन या कंप्यूटर पर नोटिफिकेशन पाएं, चाहे ऐप बंद ही क्यों न हो।",
         push_guide_title: "गूगल क्रोम में नोटिफिकेशन कैसे चालू करें",
-        push_guide_desc: "यदि नोटिफिकेशन ब्लॉक हैं: ऊपर वेबसाइट पते के पास ताले 🔒 के निशान पर क्लिक करें > Site settings > Notifications को Allow करें।",
+        push_guide_desc: "यदि नोटिफिकेशन ब्लॉक हैं: ऊपर वेबसाइट पते के पास ताले के निशान पर क्लिक करें > Site settings > Notifications को Allow करें।",
         push_guide_btn: "गूगल हेल्प गाइड",
         rescue_title: "रेस्क्यू शेफ़",
         rescue_desc: "बर्बादी रोकने के लिए अपने फ्रिज से समाप्त होने वाले सामान चुनें और स्वादिष्ट होमस्टाइल रेसिपी बनाएँ।",
@@ -3711,7 +4196,7 @@ HTML_CONTENT = r"""<!DOCTYPE html>
       }
     }
 
-    // Modal Handling for Adding Classified Food
+    // Modal Handling for Adding Classified Food (Supports Sequential Multi-Item Queue)
     const modal = document.getElementById('classify-modal');
     const modalNameEn = document.getElementById('modal-name-en');
     const modalNameHi = document.getElementById('modal-name-hi');
@@ -3720,13 +4205,27 @@ HTML_CONTENT = r"""<!DOCTYPE html>
     const modalDateInput = document.getElementById('modal-date-input');
     const modalDateHelp = document.getElementById('modal-date-help');
     const modalStorageTip = document.getElementById('modal-storage-tip');
+    const modalQueuePill = document.getElementById('modal-queue-pill');
 
-    function openModalWithClassification(result) {
+    let modalQueue = [];
+    let modalQueueTotal = 0;
+    let modalQueueIndex = 0;
+
+    function openModalWithClassification(result, currentIdx = 0, totalCount = 0) {
       pendingModalItem = result;
       modalNameEn.textContent = result.name_en;
       modalNameHi.textContent = result.name_hi;
       modalCatBadge.textContent = result.category.replace(/_/g, ' ');
       modalStorageTip.textContent = result.storage_tip || 'Keep in a cool dry spot or refrigerated.';
+
+      if (modalQueuePill) {
+        if (totalCount > 1 && currentIdx > 0) {
+          modalQueuePill.textContent = `Item ${currentIdx} of ${totalCount}`;
+          modalQueuePill.classList.remove('hidden');
+        } else {
+          modalQueuePill.classList.add('hidden');
+        }
+      }
 
       const today = new Date();
       let defaultDate = new Date();
@@ -3746,8 +4245,46 @@ HTML_CONTENT = r"""<!DOCTYPE html>
       modal.classList.remove('hidden');
     }
 
-    document.getElementById('close-modal-btn').addEventListener('click', () => modal.classList.add('hidden'));
-    document.getElementById('modal-cancel-btn').addEventListener('click', () => modal.classList.add('hidden'));
+    function processNextModalQueueItem() {
+      if (modalQueue.length > 0) {
+        modalQueueIndex++;
+        const nextItem = modalQueue.shift();
+        openModalWithClassification(nextItem, modalQueueIndex, modalQueueTotal);
+      } else {
+        pendingModalItem = null;
+        modalQueueTotal = 0;
+        modalQueueIndex = 0;
+        modal.classList.add('hidden');
+        if (modalQueuePill) modalQueuePill.classList.add('hidden');
+        document.getElementById('cmd-input').value = '';
+      }
+    }
+
+    document.getElementById('close-modal-btn').addEventListener('click', () => {
+      if (modalQueue.length > 0) {
+        const skipped = pendingModalItem ? pendingModalItem.name_en : 'Item';
+        showToast(`Skipped ${skipped}`, 'info');
+        processNextModalQueueItem();
+      } else {
+        modal.classList.add('hidden');
+        if (modalQueuePill) modalQueuePill.classList.add('hidden');
+        pendingModalItem = null;
+        modalQueue = [];
+      }
+    });
+
+    document.getElementById('modal-cancel-btn').addEventListener('click', () => {
+      if (modalQueue.length > 0) {
+        const skipped = pendingModalItem ? pendingModalItem.name_en : 'Item';
+        showToast(`Skipped ${skipped}`, 'info');
+        processNextModalQueueItem();
+      } else {
+        modal.classList.add('hidden');
+        if (modalQueuePill) modalQueuePill.classList.add('hidden');
+        pendingModalItem = null;
+        modalQueue = [];
+      }
+    });
 
     document.getElementById('modal-confirm-btn').addEventListener('click', async () => {
       if (!pendingModalItem) return;
@@ -3780,9 +4317,19 @@ HTML_CONTENT = r"""<!DOCTYPE html>
         try { localStorage.setItem('fi_cached_inventory', JSON.stringify(inventory)); } catch(e){}
         renderInventory();
         updateStats();
-        modal.classList.add('hidden');
-        document.getElementById('cmd-input').value = '';
         showToast(currentLang === 'hi' ? `${saved.name_hi || saved.name_en} जोड़ा गया!` : `Added ${saved.name_en}!`, 'success');
+
+        // Check if more packaged items are waiting in the sequential queue
+        if (modalQueue.length > 0) {
+          processNextModalQueueItem();
+        } else {
+          modal.classList.add('hidden');
+          if (modalQueuePill) modalQueuePill.classList.add('hidden');
+          pendingModalItem = null;
+          modalQueueTotal = 0;
+          modalQueueIndex = 0;
+          document.getElementById('cmd-input').value = '';
+        }
       } catch (err) {
         showToast('Error saving item to inventory', 'error');
       }
@@ -3872,9 +4419,19 @@ HTML_CONTENT = r"""<!DOCTYPE html>
           cmdInput.value = '';
           showToast(currentLang === 'hi' ? data.message_hi : data.message_en, 'success');
         }
-        // 2. Consume / Remove action (e.g. "i ate lays")
+        // 2a. Single Consume / Remove action (e.g. "i ate milk")
         else if (data.action === 'removed') {
           inventory = inventory.filter(i => i.id !== data.item_id);
+          try { localStorage.setItem('fi_cached_inventory', JSON.stringify(inventory)); } catch(e){}
+          renderInventory();
+          updateStats();
+          cmdInput.value = '';
+          showToast(currentLang === 'hi' ? data.message_hi : data.message_en, 'success');
+        }
+        // 2b. Multi-Remove action (e.g. "ate milk, spinach" or "consumed bread and butter")
+        else if (data.action === 'removed_multi') {
+          const removedIds = new Set(data.removed_ids || []);
+          inventory = inventory.filter(i => !removedIds.has(i.id));
           try { localStorage.setItem('fi_cached_inventory', JSON.stringify(inventory)); } catch(e){}
           renderInventory();
           updateStats();
@@ -3885,17 +4442,45 @@ HTML_CONTENT = r"""<!DOCTYPE html>
         else if (data.action === 'not_found') {
           showToast(currentLang === 'hi' ? data.message_hi : data.message_en, 'warning');
         }
-        // 4. Add / Classify action
+        // 4. Single Add / Classify action
         else if (data.action === 'classify') {
           const c = data.classification;
           if (!c.is_food) {
             showToast(c.message || 'Not recognized as a food item.', 'warning');
           } else if (c.requires_expiry_date) {
-            // Packaged snack with printed date — show modal
-            openModalWithClassification(c);
+            modalQueue = [];
+            modalQueueTotal = 1;
+            modalQueueIndex = 1;
+            openModalWithClassification(c, 1, 1);
           } else {
-            // Everyday groceries / produce — auto-add directly without modal
             autoAddFreshItem(c);
+          }
+        }
+        // 5. Multi-Add action (e.g. "brought lays, red bull, milk, spinach")
+        else if (data.action === 'multi_add') {
+          // Fresh items made today were already persisted on the backend
+          if (data.auto_added && data.auto_added.length > 0) {
+            data.auto_added.forEach(item => inventory.unshift(item));
+            try { localStorage.setItem('fi_cached_inventory', JSON.stringify(inventory)); } catch(e){}
+            renderInventory();
+            updateStats();
+          }
+
+          // Packaged items requiring printed expiry date open modal sequentially one-by-one
+          const needsExpiry = data.needs_expiry || [];
+          if (needsExpiry.length > 0) {
+            modalQueue = [...needsExpiry];
+            modalQueueTotal = needsExpiry.length;
+            modalQueueIndex = 1;
+            const firstItem = modalQueue.shift();
+            openModalWithClassification(firstItem, 1, modalQueueTotal);
+            if (data.auto_added && data.auto_added.length > 0) {
+              const freshNames = data.auto_added.map(i => i.name_en).join(', ');
+              showToast(`Added fresh: ${freshNames}. Setting expiry for packaged snacks...`, 'info');
+            }
+          } else {
+            cmdInput.value = '';
+            showToast(currentLang === 'hi' ? data.summary_hi : data.summary_en, 'success');
           }
         }
       } catch (err) {
@@ -3906,38 +4491,45 @@ HTML_CONTENT = r"""<!DOCTYPE html>
       }
     });
 
-    // Web Speech API Voice Input
-    const micBtn = document.getElementById('mic-btn');
-    if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
-      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-      const recognition = new SpeechRecognition();
-      recognition.continuous = false;
-      recognition.interimResults = false;
-      recognition.lang = currentLang === 'hi' ? 'hi-IN' : 'en-IN';
+    // Universal Voice Recognition Controller
+    function setupVoiceRecognition(buttonEl, inputEl, onComplete) {
+      if (!buttonEl) return;
+      if (!('webkitSpeechRecognition' in window || 'SpeechRecognition' in window)) {
+        buttonEl.style.display = 'none';
+        return;
+      }
+      const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
+      const rec = new SpeechRec();
+      rec.continuous = false;
+      rec.interimResults = false;
 
-      micBtn.addEventListener('click', () => {
+      buttonEl.addEventListener('click', () => {
         try {
-          recognition.lang = currentLang === 'hi' ? 'hi-IN' : 'en-IN';
-          recognition.start();
-          micBtn.classList.add('text-rose-600', 'animate-pulse');
+          rec.lang = currentLang === 'hi' ? 'hi-IN' : 'en-IN';
+          rec.start();
+          buttonEl.classList.add('text-rose-600', 'animate-pulse');
           showToast(currentLang === 'hi' ? 'सुन रहा हूँ... बोलिए' : 'Listening... Speak now', 'info');
         } catch (err) {
-          recognition.stop();
+          try { rec.stop(); } catch(e){}
+          buttonEl.classList.remove('text-rose-600', 'animate-pulse');
         }
       });
 
-      recognition.onresult = (e) => {
+      rec.onresult = (e) => {
         const transcript = e.results[0][0].transcript;
-        cmdInput.value = transcript;
-        micBtn.classList.remove('text-rose-600', 'animate-pulse');
-        commandForm.dispatchEvent(new Event('submit'));
+        buttonEl.classList.remove('text-rose-600', 'animate-pulse');
+        if (inputEl) inputEl.value = transcript;
+        if (onComplete) onComplete(transcript);
       };
 
-      recognition.onerror = () => micBtn.classList.remove('text-rose-600', 'animate-pulse');
-      recognition.onend = () => micBtn.classList.remove('text-rose-600', 'animate-pulse');
-    } else {
-      micBtn.style.display = 'none';
+      rec.onerror = () => buttonEl.classList.remove('text-rose-600', 'animate-pulse');
+      rec.onend = () => buttonEl.classList.remove('text-rose-600', 'animate-pulse');
     }
+
+    // Attach voice listeners to all 3 inputs: Command bar, Rescue Recipe, and Food Scanner
+    setupVoiceRecognition(document.getElementById('mic-btn'), cmdInput, () => commandForm.dispatchEvent(new Event('submit')));
+    setupVoiceRecognition(document.getElementById('rescue-mic-btn'), document.getElementById('rescue-items-input'), (text) => checkAndCorrectRescueSpelling(text));
+    setupVoiceRecognition(document.getElementById('scanner-mic-btn'), document.getElementById('scanner-input'), () => document.getElementById('scanner-btn').click());
 
     // Quick Chips
     document.querySelectorAll('.chip').forEach(chip => {
@@ -4010,6 +4602,44 @@ HTML_CONTENT = r"""<!DOCTYPE html>
     const recipeContainer = document.getElementById('recipe-container');
     const recipeLoader = document.getElementById('recipe-loader');
     const closeRecipeBtn = document.getElementById('close-recipe-btn');
+    const rescueItemsInput = document.getElementById('rescue-items-input');
+    const rescueSpellBadge = document.getElementById('rescue-spell-badge');
+
+    // Live spelling correction for Rescue Recipe custom ingredients
+    async function checkAndCorrectRescueSpelling(customStr = null) {
+      const val = customStr !== null ? customStr : (rescueItemsInput ? rescueItemsInput.value.trim() : '');
+      if (!val) {
+        if (rescueSpellBadge) rescueSpellBadge.classList.add('hidden');
+        return;
+      }
+      try {
+        const res = await fetch('/api/rescue/correct-spelling', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ items: val })
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data.has_corrections && data.corrected_string) {
+            if (rescueItemsInput) rescueItemsInput.value = data.corrected_string;
+            if (rescueSpellBadge) {
+              const pairs = Object.entries(data.corrections_made || {}).map(([o, c]) => `${o} → ${c}`).join(', ');
+              rescueSpellBadge.textContent = `Corrected: ${pairs}`;
+              rescueSpellBadge.classList.remove('hidden');
+            }
+          } else if (rescueSpellBadge) {
+            rescueSpellBadge.classList.add('hidden');
+          }
+        }
+      } catch (e) {
+        console.warn('Spelling check error:', e);
+      }
+    }
+
+    if (rescueItemsInput) {
+      rescueItemsInput.addEventListener('blur', () => checkAndCorrectRescueSpelling());
+      rescueItemsInput.addEventListener('change', () => checkAndCorrectRescueSpelling());
+    }
 
     closeRecipeBtn.addEventListener('click', () => {
       recipeContainer.classList.add('hidden');
@@ -4050,12 +4680,35 @@ HTML_CONTENT = r"""<!DOCTYPE html>
     function renderRecipe(recipe) {
       document.getElementById('recipe-name').textContent = recipe.recipe_name;
       document.getElementById('recipe-name-hi').textContent = recipe.recipe_name_hi;
-      document.getElementById('recipe-time').textContent = `⏱️ ${recipe.prep_time_minutes} mins`;
+      document.getElementById('recipe-time').textContent = `${recipe.prep_time_minutes} mins`;
       document.getElementById('recipe-tip').textContent = recipe.chef_tip;
+
+      // Meal Type pill
+      const mealTypeEl = document.getElementById('recipe-meal-type');
+      if (mealTypeEl) {
+        if (recipe.meal_type) {
+          mealTypeEl.textContent = recipe.meal_type.replace(/_/g, ' ');
+          mealTypeEl.classList.remove('hidden');
+        } else {
+          mealTypeEl.classList.add('hidden');
+        }
+      }
+
+      // Pairing Box (e.g. Drink + Food where combining in single dish won't work)
+      const pairingBox = document.getElementById('recipe-pairing-box');
+      const pairingText = document.getElementById('recipe-pairing-text');
+      if (pairingBox && pairingText) {
+        if (recipe.pairing_notes) {
+          pairingText.textContent = recipe.pairing_notes;
+          pairingBox.classList.remove('hidden');
+        } else {
+          pairingBox.classList.add('hidden');
+        }
+      }
 
       const rescuedList = document.getElementById('recipe-rescued-list');
       rescuedList.innerHTML = '';
-      recipe.ingredients_used.forEach(i => {
+      (recipe.ingredients_used || []).forEach(i => {
         const li = document.createElement('li');
         li.textContent = i;
         rescuedList.appendChild(li);
@@ -4063,7 +4716,7 @@ HTML_CONTENT = r"""<!DOCTYPE html>
 
       const pantryList = document.getElementById('recipe-pantry-list');
       pantryList.innerHTML = '';
-      recipe.pantry_items_needed.forEach(i => {
+      (recipe.pantry_items_needed || []).forEach(i => {
         const li = document.createElement('li');
         li.textContent = i;
         pantryList.appendChild(li);
@@ -4071,7 +4724,7 @@ HTML_CONTENT = r"""<!DOCTYPE html>
 
       const stepsList = document.getElementById('recipe-steps-list');
       stepsList.innerHTML = '';
-      recipe.steps.forEach((step, idx) => {
+      (recipe.steps || []).forEach((step, idx) => {
         const li = document.createElement('li');
         li.className = 'flex items-start gap-2.5';
         li.innerHTML = `<span class="w-5 h-5 rounded-full bg-brand-100 dark:bg-stone-800 text-brand-800 dark:text-brand-300 font-bold text-xs flex items-center justify-center shrink-0 mt-0.5">${idx + 1}</span><span>${step}</span>`;
@@ -4081,9 +4734,13 @@ HTML_CONTENT = r"""<!DOCTYPE html>
       recipeContainer.classList.remove('hidden');
     }
 
-    document.getElementById('generate-recipe-btn').addEventListener('click', () => {
+    document.getElementById('generate-recipe-btn').addEventListener('click', async () => {
       const customText = document.getElementById('rescue-items-input').value.trim();
-      let items = customText ? customText.split(',').map(s => s.trim()).filter(Boolean) : Array.from(selectedItemsForRescue);
+      if (customText) {
+        await checkAndCorrectRescueSpelling(customText);
+      }
+      const updatedText = document.getElementById('rescue-items-input').value.trim();
+      let items = updatedText ? updatedText.split(',').map(s => s.trim()).filter(Boolean) : Array.from(selectedItemsForRescue);
       if (items.length === 0) {
         items = inventory.filter(i => i.days_left <= 2).map(i => i.name_en);
       }
@@ -4148,7 +4805,7 @@ HTML_CONTENT = r"""<!DOCTYPE html>
         resBox.innerHTML = `
           <div class="p-5 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 text-xs text-amber-800 dark:text-amber-200 space-y-2">
             <div class="flex items-center gap-2 font-bold text-sm">
-              <span>⚠️</span>
+              <svg class="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
               <span>Not a Food Item</span>
             </div>
             <p>${data.message || `'${queryText || 'Item'}' does not appear to be an edible food or kitchen grocery item.`}</p>
@@ -4192,7 +4849,10 @@ HTML_CONTENT = r"""<!DOCTYPE html>
               </div>
               <div class="min-w-0">
                 <div class="flex items-center gap-2">
-                  <span class="px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 font-bold text-[10px] tracking-wide">📸 AI VISION SCANNED</span>
+                  <span class="px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 font-bold text-[10px] tracking-wide flex items-center gap-1">
+                    <svg class="w-3 h-3 text-emerald-600 dark:text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+                    <span>AI VISION SCANNED</span>
+                  </span>
                   <span class="text-[10px] text-stone-400 truncate">• ${data.analyzed_by || 'Gemini Vision AI'}</span>
                 </div>
                 <div class="text-[11px] text-stone-500 dark:text-stone-400 mt-1">Identified dish & shelf-life from camera snapshot</div>
@@ -4204,7 +4864,7 @@ HTML_CONTENT = r"""<!DOCTYPE html>
           <div class="flex items-start justify-between gap-3">
             <div>
               <div class="font-bold text-base text-stone-900 dark:text-white flex items-center gap-2">
-                <span>🍽️</span>
+                <svg class="w-4 h-4 text-brand-600 dark:text-brand-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"/></svg>
                 <span>${displayNameEn}</span>
               </div>
               ${displayNameHi ? `<div class="text-brand-600 dark:text-brand-400 font-semibold text-xs mt-0.5 pl-6">${displayNameHi}</div>` : ''}
@@ -4217,18 +4877,27 @@ HTML_CONTENT = r"""<!DOCTYPE html>
           <!-- Shelf Life & Package Expiry Requirement -->
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
             <div class="p-3 rounded-2xl bg-white dark:bg-stone-900 border border-stone-100 dark:border-stone-700/60 shadow-2xs">
-              <div class="text-[10px] text-stone-400 uppercase tracking-wider font-semibold mb-1">⏱️ Estimated Shelf Life</div>
+              <div class="text-[10px] text-stone-400 uppercase tracking-wider font-semibold mb-1 flex items-center gap-1">
+                <svg class="w-3 h-3 text-stone-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                <span>Estimated Shelf Life</span>
+              </div>
               <div class="text-xs">${shelfLifeText}</div>
             </div>
             <div class="p-3 rounded-2xl bg-white dark:bg-stone-900 border border-stone-100 dark:border-stone-700/60 shadow-2xs">
-              <div class="text-[10px] text-stone-400 uppercase tracking-wider font-semibold mb-1">📦 Package Expiry Required</div>
+              <div class="text-[10px] text-stone-400 uppercase tracking-wider font-semibold mb-1 flex items-center gap-1">
+                <svg class="w-3 h-3 text-stone-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/></svg>
+                <span>Package Expiry Required</span>
+              </div>
               <div class="text-xs">${requiresExpiryBadge}</div>
             </div>
           </div>
 
           <!-- Storage Tip -->
           <div class="p-3 rounded-2xl bg-white dark:bg-stone-900 border border-stone-100 dark:border-stone-700/60 shadow-2xs">
-            <div class="text-[10px] text-stone-400 uppercase tracking-wider font-semibold mb-1">💡 Storage Advice</div>
+            <div class="text-[10px] text-stone-400 uppercase tracking-wider font-semibold mb-1 flex items-center gap-1">
+              <svg class="w-3 h-3 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/></svg>
+              <span>Storage Advice</span>
+            </div>
             <div class="text-stone-700 dark:text-stone-300 text-xs leading-relaxed">${data.storage_tip || 'Keep refrigerated in an airtight container.'}</div>
           </div>
 
@@ -4239,7 +4908,7 @@ HTML_CONTENT = r"""<!DOCTYPE html>
               onclick="addScannedItemDirectly('${encodedPayload}', this)"
               class="w-full sm:w-auto flex-1 inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-sm hover:shadow transition active:scale-95"
             >
-              <span>➕</span>
+              <svg class="w-3.5 h-3.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
               <span>Add to Fridge Inventory</span>
             </button>
             <span class="text-[10px] text-stone-400 text-right w-full sm:w-auto">
@@ -4256,7 +4925,7 @@ HTML_CONTENT = r"""<!DOCTYPE html>
         const item = JSON.parse(decodeURIComponent(encodedPayload));
         if (btnElem) {
           btnElem.disabled = true;
-          btnElem.innerHTML = '<span>⏳</span><span>Adding to Fridge...</span>';
+          btnElem.innerHTML = '<svg class="w-3.5 h-3.5 animate-spin inline-block mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path></svg><span>Adding to Fridge...</span>';
         }
 
         const fid = currentFridge || 'test';
@@ -4286,7 +4955,7 @@ HTML_CONTENT = r"""<!DOCTYPE html>
         const saved = await res.json();
         if (btnElem) {
           btnElem.className = 'w-full sm:w-auto flex-1 inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-stone-200 dark:bg-stone-700 text-stone-800 dark:text-stone-200 font-bold text-xs cursor-default';
-          btnElem.innerHTML = `<span>✅</span><span>Added! (${saved.days_left}d left until ${saved.expiry_date})</span>`;
+          btnElem.innerHTML = `<svg class="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg><span>Added! (${saved.days_left}d left until ${saved.expiry_date})</span>`;
         }
 
         await loadInventory(true);
@@ -4295,7 +4964,7 @@ HTML_CONTENT = r"""<!DOCTYPE html>
         console.error('Error adding scanned item:', err);
         if (btnElem) {
           btnElem.disabled = false;
-          btnElem.innerHTML = '<span>❌</span><span>Failed to Add. Retry?</span>';
+          btnElem.innerHTML = '<svg class="w-3.5 h-3.5 text-rose-500 inline-block mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg><span>Failed to Add. Retry?</span>';
         }
         showToast('Failed to save to fridge.', 'error');
       }
@@ -4322,7 +4991,7 @@ HTML_CONTENT = r"""<!DOCTYPE html>
           </div>
           <div class="text-center space-y-1">
             <div class="text-xs font-bold text-stone-800 dark:text-stone-200 flex items-center justify-center gap-2">
-              <span class="animate-spin text-sm">⏳</span>
+              <svg class="w-4 h-4 text-emerald-600 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path></svg>
               <span>Gemini AI Vision Analyzing Food Photo...</span>
             </div>
             <p class="text-[11px] text-stone-500 dark:text-stone-400">Detecting dish name, culinary category, freshness & accurate shelf life</p>
@@ -4353,7 +5022,7 @@ HTML_CONTENT = r"""<!DOCTYPE html>
         resBox.innerHTML = `
           <div class="p-5 rounded-2xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 text-xs text-rose-800 dark:text-rose-200 space-y-3">
             <div class="font-bold flex items-center gap-2">
-              <span>❌</span>
+              <svg class="w-4 h-4 text-rose-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
               <span>AI Photo Inspection Failed</span>
             </div>
             <p>Could not analyze the photo. Please ensure a clear photo of food and try again.</p>
@@ -4817,7 +5486,7 @@ HTML_CONTENT = r"""<!DOCTYPE html>
 
       swRegistration.active.postMessage({
         type: 'SHOW_OFFLINE_NOTIFICATION',
-        title: currentLang === 'hi' ? `🚨 खाद्य समाप्ति अलर्ट (${count} सामान)` : `🚨 Food Expiry Alert (${count} item${count > 1 ? 's' : ''})`,
+        title: currentLang === 'hi' ? `[खाद्य समाप्ति अलर्ट] ${count} सामान` : `[Food Expiry Alert] ${count} item${count > 1 ? 's' : ''}`,
         body: currentLang === 'hi' ? `${itemNames} जल्द समाप्त हो रहे हैं! फ्रिज खोलकर उपयोग करें।` : `${itemNames} expiring soon! Open your fridge to inspect.`,
         tag: 'offline-expiry-alert',
         url: '/'
@@ -4831,7 +5500,7 @@ HTML_CONTENT = r"""<!DOCTYPE html>
       }
       swRegistration.active.postMessage({
         type: 'SHOW_OFFLINE_NOTIFICATION',
-        title: currentLang === 'hi' ? '🔔 ऑफ़लाइन टेस्ट नोटिफिकेशन' : '🔔 Native Offline Notification',
+        title: currentLang === 'hi' ? '[टेस्ट] ऑफ़लाइन नोटिफिकेशन' : '[Test] Native Offline Notification',
         body: currentLang === 'hi' ? 'यह नोटिफिकेशन बिना किसी इंटरनेट कनेक्शन के सर्विस वर्कर द्वारा भेजा गया है!' : 'Delivered directly by Service Worker without requiring active internet!',
         tag: 'offline-test-notification',
         url: '/'
