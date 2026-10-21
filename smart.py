@@ -2908,6 +2908,24 @@ HTML_CONTENT = r"""<!DOCTYPE html>
       animation: voiceTintPulse 1.5s ease-in-out infinite alternate;
       pointer-events: none;
     }
+    /* Mobile-first zero-overlap & smooth touch responsiveness */
+    .scrollbar-none::-webkit-scrollbar {
+      display: none;
+    }
+    .scrollbar-none {
+      -ms-overflow-style: none;
+      scrollbar-width: none;
+    }
+    @media (max-width: 640px) {
+      input, select, textarea, button {
+        touch-action: manipulation;
+      }
+      .chip {
+        display: inline-flex;
+        align-items: center;
+        white-space: nowrap;
+      }
+    }
   </style>
 </head>
 <body class="bg-stone-50 dark:bg-stone-950 text-stone-800 dark:text-stone-100 min-h-screen flex flex-col antialiased selection:bg-brand-500 selection:text-white transition-colors duration-150">
@@ -2927,66 +2945,68 @@ HTML_CONTENT = r"""<!DOCTYPE html>
     </div>
   </div>
 
-  <!-- GITHUB-INSPIRED TOP HEADER (CLEAN & NON-OVERLAPPING) -->
+  <!-- GITHUB-INSPIRED TOP HEADER (CLEAN, COMPACT & ZERO-OVERLAP ON MOBILE) -->
   <header class="bg-white dark:bg-stone-900 border-b border-stone-200 dark:border-stone-800 sticky top-0 z-40 transition-colors">
-    <div class="max-w-6xl mx-auto px-4 py-2.5 flex items-center justify-between gap-3">
+    <div class="max-w-6xl mx-auto px-3 sm:px-4 py-2 sm:py-2.5 flex items-center justify-between gap-2 sm:gap-3">
       
-      <!-- Brand Logo, Title & Logged-in Fridge Badge -->
-      <div class="flex items-center gap-2.5 min-w-0">
+      <!-- Brand Logo, Title & Logged-in Fridge Badge (Desktop) -->
+      <div class="flex items-center gap-2 sm:gap-2.5 min-w-0">
         <img src="/static/icons/icon-192.png?v=3" alt="FridgeInventory" class="w-8 h-8 rounded-xl shadow-xs shrink-0 object-contain">
-        <div class="flex items-center gap-2 min-w-0">
-          <span class="font-extrabold text-sm sm:text-base tracking-tight text-stone-900 dark:text-white shrink-0" data-i18n="app_title">FridgeInventory</span>
-          <span class="text-[10px] bg-stone-100 dark:bg-stone-800 text-stone-500 dark:text-stone-400 font-semibold px-1.5 py-0.5 rounded-md hidden sm:inline">v2.2</span>
+        <div class="flex items-center gap-1.5 sm:gap-2 min-w-0">
+          <span class="font-extrabold text-sm sm:text-base tracking-tight text-stone-900 dark:text-white truncate" data-i18n="app_title">FridgeInventory</span>
+          <span class="text-[10px] bg-stone-100 dark:bg-stone-800 text-stone-500 dark:text-stone-400 font-semibold px-1.5 py-0.5 rounded-md hidden md:inline">v2.2</span>
           
-          <!-- Compact Logged-in Fridge Pill (High Contrast in Light & Dark Mode) -->
-          <div id="header-breadcrumb" class="hidden items-center gap-1.5 px-2.5 py-1 rounded-xl bg-amber-50 dark:bg-stone-800 border border-amber-200 dark:border-amber-500/40 text-xs font-mono font-bold shadow-2xs truncate">
+          <!-- Compact Logged-in Fridge Pill (Visible on Desktop; Mobile gets dedicated pill in subheader) -->
+          <div id="header-breadcrumb" class="hidden md:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-amber-50 dark:bg-stone-800 border border-amber-200 dark:border-amber-500/40 text-xs font-mono font-bold shadow-2xs truncate shrink-0">
             <span class="text-amber-700/80 dark:text-amber-400/80 text-[11px] font-bold">fridge/</span>
-            <span id="header-fridge-name" class="truncate max-w-[100px] sm:max-w-[160px] text-amber-950 dark:text-amber-200 font-extrabold tracking-wide">MY-FRIDGE</span>
-            <button type="button" id="copy-fid-btn" class="text-amber-700/70 dark:text-amber-400/80 hover:text-amber-900 dark:hover:text-amber-100 transition p-0.5 shrink-0" title="Copy Fridge ID">
-              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>
+            <span id="header-fridge-name" class="truncate max-w-[120px] lg:max-w-[180px] text-amber-950 dark:text-amber-200 font-extrabold tracking-wide">MY-FRIDGE</span>
+            <button type="button" id="copy-fid-btn" class="text-amber-700/70 dark:text-amber-400/80 hover:text-amber-900 dark:hover:text-amber-100 transition p-0.5 shrink-0 cursor-pointer" title="Copy Fridge ID">
+              <svg class="w-3.5 h-3.5 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>
             </button>
           </div>
         </div>
       </div>
 
       <!-- Controls: Offline Indicator, Language, Theme, Logout/Login -->
-      <div class="flex items-center gap-1.5 sm:gap-2 text-xs shrink-0">
+      <div class="flex items-center gap-1 sm:gap-2 text-xs shrink-0">
         
         <!-- Offline Status Badge (Visible when internet is disconnected) -->
-        <span id="header-offline-badge" class="hidden items-center gap-1 px-2 py-1 rounded-full text-[10px] font-bold bg-amber-100 dark:bg-amber-950/70 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-800" title="Device is offline. Local inventory cache and offline alerts active.">
+        <span id="header-offline-badge" class="hidden items-center gap-1 px-2 py-1 rounded-full text-[10px] font-bold bg-amber-100 dark:bg-amber-950/70 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-800 shrink-0" title="Device is offline. Local inventory cache and offline alerts active.">
           <span class="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
           <span class="hidden sm:inline">Offline</span>
         </span>
 
         <!-- Add to Home Screen Button -->
-        <button id="pwa-install-btn" type="button" onclick="handlePwaInstallClick()" class="px-2.5 py-1.5 rounded-xl bg-gradient-to-r from-amber-500/10 to-brand-500/10 hover:from-amber-500/20 hover:to-brand-500/20 text-brand-700 dark:text-brand-300 font-semibold text-xs border border-amber-500/30 transition flex items-center gap-1.5 shadow-2xs" title="Add to Home Screen / Install App">
-          <svg class="w-3.5 h-3.5 text-brand-600 dark:text-brand-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z"/></svg>
-          <span class="hidden sm:inline" data-i18n="pwa_install_btn">Add to Home Screen</span>
-          <span class="inline sm:hidden" data-i18n="pwa_install_btn_short">Install</span>
+        <button id="pwa-install-btn" type="button" onclick="handlePwaInstallClick()" class="px-2 sm:px-2.5 py-1.5 rounded-xl bg-gradient-to-r from-amber-500/10 to-brand-500/10 hover:from-amber-500/20 hover:to-brand-500/20 text-brand-700 dark:text-brand-300 font-semibold text-xs border border-amber-500/30 transition flex items-center gap-1 shadow-2xs shrink-0" title="Add to Home Screen / Install App">
+          <svg class="w-3.5 h-3.5 text-brand-600 dark:text-brand-400 shrink-0 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z"/></svg>
+          <span class="hidden md:inline" data-i18n="pwa_install_btn">Add to Home Screen</span>
+          <span class="hidden sm:inline md:hidden" data-i18n="pwa_install_btn_short">Install</span>
+          <span class="inline sm:hidden font-bold text-[11px]">App</span>
         </button>
 
         <!-- Language Toggle Button -->
-        <button id="lang-toggle-btn" class="px-2.5 py-1.5 rounded-xl border border-stone-200 dark:border-stone-700 bg-stone-100 dark:bg-stone-800 hover:bg-stone-200 dark:hover:bg-stone-700 text-stone-700 dark:text-stone-300 font-semibold text-xs transition flex items-center gap-1" title="Switch Language">
-          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 5h12M9 3v2m1.048 9.5A18.022 18.022 0 016.412 9m6.088 9h7M11 21l5-10 5 10M12.751 5C11.783 10.77 8.07 15.61 3 18.129"></path></svg>
-          <span id="lang-label">हिन्दी</span>
+        <button id="lang-toggle-btn" class="px-2 sm:px-2.5 py-1.5 rounded-xl border border-stone-200 dark:border-stone-700 bg-stone-100 dark:bg-stone-800 hover:bg-stone-200 dark:hover:bg-stone-700 text-stone-700 dark:text-stone-300 font-semibold text-xs transition flex items-center gap-1 shrink-0" title="Switch Language">
+          <svg class="w-3.5 h-3.5 shrink-0 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 5h12M9 3v2m1.048 9.5A18.022 18.022 0 016.412 9m6.088 9h7M11 21l5-10 5 10M12.751 5C11.783 10.77 8.07 15.61 3 18.129"></path></svg>
+          <span id="lang-label" class="text-[11px] sm:text-xs">हिन्दी</span>
         </button>
 
         <!-- Theme Toggle Button -->
-        <button id="theme-toggle-btn" class="p-1.5 sm:p-2 rounded-xl border border-stone-200 dark:border-stone-700 bg-stone-100 dark:bg-stone-800 hover:bg-stone-200 dark:hover:bg-stone-700 text-stone-700 dark:text-stone-300 transition" title="Toggle Dark/Light Mode">
-          <svg id="theme-icon-sun" class="w-4 h-4 hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"></path></svg>
-          <svg id="theme-icon-moon" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"></path></svg>
+        <button id="theme-toggle-btn" class="p-1.5 sm:p-2 rounded-xl border border-stone-200 dark:border-stone-700 bg-stone-100 dark:bg-stone-800 hover:bg-stone-200 dark:hover:bg-stone-700 text-stone-700 dark:text-stone-300 transition shrink-0" title="Toggle Dark/Light Mode">
+          <svg id="theme-icon-sun" class="w-4 h-4 hidden pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"></path></svg>
+          <svg id="theme-icon-moon" class="w-4 h-4 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"></path></svg>
         </button>
 
         <!-- Auth Actions -->
-        <div id="auth-logged-in" class="hidden items-center">
-          <button id="logout-btn" class="px-2.5 py-1.5 rounded-xl bg-stone-100 dark:bg-stone-800 hover:bg-rose-50 dark:hover:bg-rose-950/60 hover:text-rose-600 text-stone-600 dark:text-stone-300 font-semibold text-xs border border-stone-200 dark:border-stone-700 transition" title="Logout" data-i18n="logout_btn">
-            Logout
+        <div id="auth-logged-in" class="hidden items-center shrink-0">
+          <button id="logout-btn" class="px-2 sm:px-2.5 py-1.5 rounded-xl bg-stone-100 dark:bg-stone-800 hover:bg-rose-50 dark:hover:bg-rose-950/60 hover:text-rose-600 text-stone-600 dark:text-stone-300 font-semibold text-xs border border-stone-200 dark:border-stone-700 transition flex items-center gap-1 shrink-0" title="Logout" data-i18n="logout_btn">
+            <svg class="w-3.5 h-3.5 inline sm:hidden pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/></svg>
+            <span class="hidden sm:inline">Logout</span>
           </button>
         </div>
 
-        <div id="auth-logged-out" class="flex items-center">
-          <button id="open-auth-btn" class="px-3 py-1.5 rounded-xl bg-stone-900 dark:bg-white hover:bg-stone-800 dark:hover:bg-stone-100 text-white dark:text-stone-900 font-semibold text-xs shadow-sm transition flex items-center gap-1.5" data-i18n="login_create_btn">
-            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1"></path></svg>
+        <div id="auth-logged-out" class="flex items-center shrink-0">
+          <button id="open-auth-btn" class="px-2.5 sm:px-3 py-1.5 rounded-xl bg-stone-900 dark:bg-white hover:bg-stone-800 dark:hover:bg-stone-100 text-white dark:text-stone-900 font-semibold text-xs shadow-sm transition flex items-center gap-1 sm:gap-1.5 shrink-0" data-i18n="login_create_btn">
+            <svg class="w-3.5 h-3.5 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1"></path></svg>
             <span>Login</span>
           </button>
         </div>
@@ -2994,34 +3014,44 @@ HTML_CONTENT = r"""<!DOCTYPE html>
     </div>
   </header>
 
-  <!-- DEDICATED LIVE FRESHNESS & STATUS SUB-BAR (SHOWN WHEN LOGGED IN) -->
-  <div id="sub-header-bar" class="hidden bg-stone-100/95 dark:bg-stone-900/95 border-b border-stone-200/90 dark:border-stone-800 text-xs py-2 px-4 transition-all">
-    <div class="max-w-6xl mx-auto flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5">
+  <!-- DEDICATED LIVE FRESHNESS & STATUS SUB-BAR (RESPONSIVE & NON-OVERLAPPING ON ALL DEVICES) -->
+  <div id="sub-header-bar" class="hidden bg-stone-100/95 dark:bg-stone-900/95 border-b border-stone-200/90 dark:border-stone-800 text-xs py-2 px-3 sm:px-4 transition-all">
+    <div class="max-w-6xl mx-auto flex flex-col md:flex-row items-stretch md:items-center justify-between gap-2 sm:gap-2.5">
       
-      <!-- Left: Live Clock & Multi-Country Timezone Selector -->
-      <div class="flex items-center gap-2 flex-wrap min-w-0">
+      <!-- Top Row on Mobile / Left on Desktop: Mobile Fridge ID, Live Clock & Timezone Selector -->
+      <div class="flex items-center gap-1.5 sm:gap-2 flex-wrap min-w-0">
+        
+        <!-- Mobile-Only Fridge ID Pill (Takes zero space on desktop; provides instant fridge ID on mobile) -->
+        <div id="sub-header-fridge-pill" class="inline-flex md:hidden items-center gap-1 px-2.5 py-1 rounded-xl bg-amber-50 dark:bg-stone-800 border border-amber-200 dark:border-amber-500/40 text-[11px] font-mono font-bold shadow-2xs shrink-0">
+          <span class="text-amber-700/80 dark:text-amber-400/80 text-[10px]">fridge/</span>
+          <span id="sub-header-fridge-name" class="truncate max-w-[110px] text-amber-950 dark:text-amber-200 font-extrabold">MY-FRIDGE</span>
+          <button type="button" id="sub-copy-fid-btn" class="text-amber-700/70 dark:text-amber-400/80 hover:text-amber-900 dark:hover:text-amber-100 transition p-0.5 shrink-0 cursor-pointer" title="Copy Fridge ID">
+            <svg class="w-3 h-3 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>
+          </button>
+        </div>
+
         <!-- Live Clock Pill -->
-        <div id="header-sync-pill" class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-semibold bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/80 shadow-2xs shrink-0" title="Live clock & automatic real-time freshness tracking">
-          <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shrink-0"></span>
+        <div id="header-sync-pill" class="inline-flex items-center gap-1.5 px-2.5 sm:px-3 py-1 rounded-full text-[10px] sm:text-[11px] font-semibold bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/80 shadow-2xs shrink-0" title="Live clock & automatic real-time freshness tracking">
+          <span class="w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full bg-emerald-500 animate-pulse shrink-0"></span>
           <span id="header-sync-status" class="font-mono font-bold">Live • Syncing...</span>
         </div>
 
         <!-- Timezone Selector Dropdown -->
-        <div class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-white dark:bg-stone-800 border border-stone-200 dark:border-stone-700 shadow-2xs">
-          <svg class="w-3.5 h-3.5 text-stone-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9"></path></svg>
-          <span class="text-stone-400 text-[10px] uppercase font-bold tracking-wider">Zone:</span>
-          <select id="user-tz-select" class="bg-transparent text-xs font-semibold text-stone-800 dark:text-stone-200 border-none outline-none cursor-pointer focus:ring-0 pr-1" title="Select Global Timezone">
-            <option value="auto">Auto (Detected Local Time)</option>
+        <div class="inline-flex items-center gap-1 px-2 py-1 rounded-xl bg-white dark:bg-stone-800 border border-stone-200 dark:border-stone-700 shadow-2xs shrink-0">
+          <svg class="w-3 h-3 text-stone-400 shrink-0 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9"></path></svg>
+          <span class="text-stone-400 text-[9px] uppercase font-bold tracking-wider">TZ:</span>
+          <select id="user-tz-select" class="bg-transparent text-[11px] sm:text-xs font-semibold text-stone-800 dark:text-stone-200 border-none outline-none cursor-pointer focus:ring-0 pr-1 max-w-[125px] sm:max-w-none truncate" title="Select Global Timezone">
+            <option value="auto">Auto (Local Time)</option>
           </select>
         </div>
       </div>
 
-      <!-- Right: Family PIN, Push Alerts Status, and Share Button -->
-      <div class="flex items-center gap-2 flex-wrap justify-between sm:justify-end">
+      <!-- Bottom Row on Mobile / Right on Desktop: Family PIN, Push Alerts Status, and Share Button -->
+      <div class="flex items-center gap-1.5 sm:gap-2 flex-wrap justify-between md:justify-end">
         
         <!-- Family PIN Container with Circle Mask, Eye Toggle & Copy -->
-        <div id="header-pin-container" class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-white dark:bg-stone-800 border border-stone-200 dark:border-stone-700 text-xs font-mono shadow-2xs">
-          <span class="text-[11px] text-stone-400 font-sans font-medium">PIN:</span>
+        <div id="header-pin-container" class="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-white dark:bg-stone-800 border border-stone-200 dark:border-stone-700 text-xs font-mono shadow-2xs shrink-0">
+          <span class="text-[10px] text-stone-400 font-sans font-medium">PIN:</span>
           <span id="sidebar-fridge-pin" class="font-bold text-stone-700 dark:text-stone-300 tracking-wider">••••</span>
           <button type="button" id="toggle-pin-btn" class="text-stone-400 hover:text-brand-600 dark:hover:text-brand-400 ml-0.5 p-0.5 cursor-pointer select-none" title="Show / Hide PIN" aria-label="Show or hide PIN">
             <svg id="pin-eye-icon" class="w-3.5 h-3.5 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path></svg>
@@ -3032,15 +3062,15 @@ HTML_CONTENT = r"""<!DOCTYPE html>
         </div>
 
         <!-- Quick Push Alerts Button -->
-        <button type="button" id="header-push-pill" class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-white dark:bg-stone-800 hover:bg-stone-50 dark:hover:bg-stone-750 border border-stone-200 dark:border-stone-700 text-xs font-semibold transition shadow-2xs" title="View Offline Push Notifications">
-          <svg class="w-3.5 h-3.5 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"></path></svg>
+        <button type="button" id="header-push-pill" class="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-white dark:bg-stone-800 hover:bg-stone-50 dark:hover:bg-stone-750 border border-stone-200 dark:border-stone-700 text-xs font-semibold transition shadow-2xs shrink-0" title="View Offline Push Notifications">
+          <svg class="w-3.5 h-3.5 text-amber-500 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"></path></svg>
           <span class="text-stone-600 dark:text-stone-400">Alerts:</span>
           <span id="push-status-badge" class="font-bold text-[10px] px-1.5 py-0.5 rounded-full bg-stone-100 dark:bg-stone-700 text-stone-600 dark:text-stone-300">OFF</span>
         </button>
 
         <!-- Share Fridge with Family Button -->
-        <button type="button" id="share-fridge-btn" class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-white dark:bg-stone-800 hover:bg-stone-50 dark:hover:bg-stone-750 text-stone-700 dark:text-stone-300 border border-stone-200 dark:border-stone-700 text-xs font-semibold transition shadow-2xs" title="Share Fridge with Family">
-          <svg class="w-3.5 h-3.5 text-brand-600 dark:text-brand-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"></path></svg>
+        <button type="button" id="share-fridge-btn" class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-white dark:bg-stone-800 hover:bg-stone-50 dark:hover:bg-stone-750 text-stone-700 dark:text-stone-300 border border-stone-200 dark:border-stone-700 text-xs font-semibold transition shadow-2xs shrink-0" title="Share Fridge with Family">
+          <svg class="w-3.5 h-3.5 text-brand-600 dark:text-brand-400 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"></path></svg>
           <span data-i18n="sidebar_share_btn">Share</span>
         </button>
 
@@ -3107,29 +3137,29 @@ HTML_CONTENT = r"""<!DOCTYPE html>
 
       <!-- GITHUB-STYLE HORIZONTAL SUBNAV BAR -->
       <div class="border-b border-stone-200 dark:border-stone-800 -mx-4 px-4 sm:mx-0 sm:px-0">
-        <nav class="flex space-x-1 sm:space-x-3 overflow-x-auto text-xs sm:text-sm font-semibold pb-px scrollbar-none">
-          <button id="tab-inventory-btn" class="tab-btn py-3 px-3 border-b-2 border-brand-600 text-brand-600 dark:text-brand-400 flex items-center gap-2 whitespace-nowrap">
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path></svg>
+        <nav class="flex space-x-1 sm:space-x-3 overflow-x-auto text-xs sm:text-sm font-semibold pb-px scrollbar-none touch-pan-x">
+          <button id="tab-inventory-btn" class="tab-btn py-2.5 sm:py-3 px-2.5 sm:px-3 border-b-2 border-brand-600 text-brand-600 dark:text-brand-400 flex items-center gap-1.5 sm:gap-2 whitespace-nowrap shrink-0">
+            <svg class="w-4 h-4 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path></svg>
             <span data-i18n="tab_inventory">Fridge Inventory</span>
             <span id="tab-inventory-count" class="bg-stone-100 dark:bg-stone-800 text-stone-700 dark:text-stone-300 text-[11px] px-2 py-0.5 rounded-full font-bold">0</span>
           </button>
-          <button id="tab-urgent-btn" class="tab-btn py-3 px-3 border-b-2 border-transparent text-stone-500 dark:text-stone-400 hover:text-stone-800 dark:hover:text-stone-200 flex items-center gap-2 whitespace-nowrap">
-            <svg class="w-4 h-4 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
+          <button id="tab-urgent-btn" class="tab-btn py-2.5 sm:py-3 px-2.5 sm:px-3 border-b-2 border-transparent text-stone-500 dark:text-stone-400 hover:text-stone-800 dark:hover:text-stone-200 flex items-center gap-1.5 sm:gap-2 whitespace-nowrap shrink-0">
+            <svg class="w-4 h-4 text-amber-500 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
             <span data-i18n="tab_urgent">Expiring Soon</span>
             <span id="tab-urgent-count" class="bg-amber-100 dark:bg-amber-950/60 text-brand-700 dark:text-brand-300 text-[11px] px-2 py-0.5 rounded-full font-bold">0</span>
           </button>
-          <button id="tab-push-btn" class="tab-btn py-3 px-3 border-b-2 border-transparent text-stone-500 dark:text-stone-400 hover:text-stone-800 dark:hover:text-stone-200 flex items-center gap-2 whitespace-nowrap">
-            <svg class="w-4 h-4 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"></path></svg>
+          <button id="tab-push-btn" class="tab-btn py-2.5 sm:py-3 px-2.5 sm:px-3 border-b-2 border-transparent text-stone-500 dark:text-stone-400 hover:text-stone-800 dark:hover:text-stone-200 flex items-center gap-1.5 sm:gap-2 whitespace-nowrap shrink-0">
+            <svg class="w-4 h-4 text-indigo-500 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"></path></svg>
             <span data-i18n="tab_push">Offline Push Alerts</span>
             <span id="push-nav-badge" class="text-[10px] px-2 py-0.5 rounded-full bg-stone-100 dark:bg-stone-800 text-stone-600 dark:text-stone-400 font-bold">OFF</span>
           </button>
-          <button id="tab-rescue-btn" class="tab-btn py-3 px-3 border-b-2 border-transparent text-stone-500 dark:text-stone-400 hover:text-stone-800 dark:hover:text-stone-200 flex items-center gap-2 whitespace-nowrap">
-            <svg class="w-4 h-4 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+          <button id="tab-rescue-btn" class="tab-btn py-2.5 sm:py-3 px-2.5 sm:px-3 border-b-2 border-transparent text-stone-500 dark:text-stone-400 hover:text-stone-800 dark:hover:text-stone-200 flex items-center gap-1.5 sm:gap-2 whitespace-nowrap shrink-0">
+            <svg class="w-4 h-4 text-emerald-500 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
             <span data-i18n="tab_rescue">Rescue Chef</span>
             <span class="bg-leaf-50 dark:bg-leaf-950/60 text-leaf-700 dark:text-leaf-300 text-[11px] px-2 py-0.5 rounded-full font-bold">AI Zero-Waste</span>
           </button>
-          <button id="tab-test-btn" class="tab-btn py-3 px-3 border-b-2 border-transparent text-stone-500 dark:text-stone-400 hover:text-stone-800 dark:hover:text-stone-200 flex items-center gap-2 whitespace-nowrap">
-            <svg class="w-4 h-4 text-stone-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+          <button id="tab-test-btn" class="tab-btn py-2.5 sm:py-3 px-2.5 sm:px-3 border-b-2 border-transparent text-stone-500 dark:text-stone-400 hover:text-stone-800 dark:hover:text-stone-200 flex items-center gap-1.5 sm:gap-2 whitespace-nowrap shrink-0">
+            <svg class="w-4 h-4 text-stone-400 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
             <span data-i18n="tab_scanner">Food Scanner</span>
           </button>
         </nav>
@@ -3150,21 +3180,21 @@ HTML_CONTENT = r"""<!DOCTYPE html>
           </div>
 
           <form id="command-form" class="flex flex-col sm:flex-row gap-2.5">
-            <div class="relative flex-grow">
+            <div class="relative flex-grow w-full">
               <input 
                 type="text" 
                 id="cmd-input" 
                 placeholder="Type or speak (e.g. 'bought 2kg palak', 'i ate lays', 'used milk')..." 
-                class="w-full pl-4 pr-20 sm:pr-24 py-3 rounded-2xl border border-stone-200 dark:border-stone-700 focus:outline-none focus:ring-2 focus:ring-brand-500 text-sm text-stone-800 dark:text-stone-100 bg-stone-50/50 dark:bg-stone-800 font-medium"
+                class="w-full pl-3.5 sm:pl-4 pr-20 sm:pr-24 py-2.5 sm:py-3 rounded-2xl border border-stone-200 dark:border-stone-700 focus:outline-none focus:ring-2 focus:ring-brand-500 text-xs sm:text-sm text-stone-800 dark:text-stone-100 bg-stone-50/50 dark:bg-stone-800 font-medium"
               />
-              <div class="absolute right-2 top-2 flex items-center gap-1">
+              <div class="absolute right-1.5 sm:right-2 top-1/2 -translate-y-1/2 flex items-center gap-0.5 sm:gap-1">
                 <button 
                   type="button" 
                   id="cmd-photo-btn" 
                   title="Snap or upload food photo to auto-add items"
                   class="p-1.5 rounded-xl text-stone-400 hover:text-emerald-600 dark:hover:text-emerald-400 hover:bg-stone-100 dark:hover:bg-stone-700 transition-colors"
                 >
-                  <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+                  <svg class="w-4 h-4 sm:w-5 sm:h-5 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
                 </button>
                 <button 
                   type="button" 
@@ -3172,7 +3202,7 @@ HTML_CONTENT = r"""<!DOCTYPE html>
                   title="Speak command"
                   class="p-1.5 rounded-xl text-stone-400 hover:text-brand-600 hover:bg-stone-100 dark:hover:bg-stone-700 transition-colors"
                 >
-                  <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <svg class="w-4 h-4 sm:w-5 sm:h-5 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 003-3V5a3 3 0 00-6 0v6a3 3 0 003 3z"></path>
                   </svg>
                 </button>
@@ -3183,23 +3213,23 @@ HTML_CONTENT = r"""<!DOCTYPE html>
             <input type="file" id="cmd-camera-file" accept="image/*" capture="environment" class="hidden" />
             <input type="file" id="cmd-gallery-file" accept="image/*" class="hidden" />
 
-            <div class="flex items-center gap-2">
+            <div class="grid grid-cols-2 sm:flex items-center gap-2 w-full sm:w-auto shrink-0">
               <button 
                 type="button" 
                 id="cmd-camera-btn"
-                class="px-4 py-3 bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 hover:from-emerald-500 hover:to-teal-500 text-white font-semibold rounded-2xl shadow-sm text-sm flex items-center justify-center gap-2 transition-all transform active:scale-95 shrink-0"
+                class="flex-1 sm:flex-none px-3 sm:px-4 py-2.5 sm:py-3 bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 hover:from-emerald-500 hover:to-teal-500 text-white font-semibold rounded-2xl shadow-sm text-xs sm:text-sm flex items-center justify-center gap-1.5 sm:gap-2 transition-all transform active:scale-95"
                 title="Snap food photo to auto-add items"
               >
-                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
-                <span data-i18n="cmd_photo_btn">Add by Photo</span>
+                <svg class="w-4 h-4 pointer-events-none shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+                <span data-i18n="cmd_photo_btn" class="truncate">Add by Photo</span>
               </button>
               <button 
                 type="submit" 
                 id="cmd-submit-btn"
-                class="px-5 py-3 bg-brand-600 hover:bg-brand-700 text-white font-semibold rounded-2xl shadow-sm text-sm flex items-center justify-center gap-2 transition-all transform active:scale-95 shrink-0"
+                class="flex-1 sm:flex-none px-3.5 sm:px-5 py-2.5 sm:py-3 bg-brand-600 hover:bg-brand-700 text-white font-semibold rounded-2xl shadow-sm text-xs sm:text-sm flex items-center justify-center gap-1.5 sm:gap-2 transition-all transform active:scale-95"
               >
-                <span data-i18n="cmd_btn">Process Command</span>
-                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"></path></svg>
+                <span data-i18n="cmd_btn" class="truncate">Process</span>
+                <svg class="w-4 h-4 pointer-events-none shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"></path></svg>
               </button>
             </div>
           </form>
@@ -3276,18 +3306,18 @@ HTML_CONTENT = r"""<!DOCTYPE html>
         </div>
 
         <!-- FILTER CONTROLS & RESCUE ACTION BAR -->
-        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-1">
-          <div id="filter-controls" class="flex items-center gap-1.5 text-xs">
-            <button class="filter-btn active bg-stone-900 dark:bg-white text-white dark:text-stone-900 px-3.5 py-1.5 rounded-full font-medium" data-filter="all" data-i18n="filter_all">All Items</button>
-            <button class="filter-btn bg-stone-100 dark:bg-stone-800 text-stone-600 dark:text-stone-300 hover:bg-stone-200 px-3.5 py-1.5 rounded-full font-medium" data-filter="urgent" data-i18n="filter_urgent">Urgent</button>
-            <button class="filter-btn bg-stone-100 dark:bg-stone-800 text-stone-600 dark:text-stone-300 hover:bg-stone-200 px-3.5 py-1.5 rounded-full font-medium" data-filter="fresh" data-i18n="filter_fresh">Fresh</button>
-            <button class="filter-btn bg-stone-100 dark:bg-stone-800 text-stone-600 dark:text-stone-300 hover:bg-stone-200 px-3.5 py-1.5 rounded-full font-medium" data-filter="expired" data-i18n="filter_expired">Expired</button>
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 sm:gap-3 pt-1">
+          <div id="filter-controls" class="flex items-center gap-1.5 text-xs overflow-x-auto pb-1 max-w-full scrollbar-none flex-nowrap sm:flex-wrap">
+            <button class="filter-btn active bg-stone-900 dark:bg-white text-white dark:text-stone-900 px-3 sm:px-3.5 py-1.5 rounded-full font-medium shrink-0 whitespace-nowrap" data-filter="all" data-i18n="filter_all">All Items</button>
+            <button class="filter-btn bg-stone-100 dark:bg-stone-800 text-stone-600 dark:text-stone-300 hover:bg-stone-200 px-3 sm:px-3.5 py-1.5 rounded-full font-medium shrink-0 whitespace-nowrap" data-filter="urgent" data-i18n="filter_urgent">Urgent</button>
+            <button class="filter-btn bg-stone-100 dark:bg-stone-800 text-stone-600 dark:text-stone-300 hover:bg-stone-200 px-3 sm:px-3.5 py-1.5 rounded-full font-medium shrink-0 whitespace-nowrap" data-filter="fresh" data-i18n="filter_fresh">Fresh</button>
+            <button class="filter-btn bg-stone-100 dark:bg-stone-800 text-stone-600 dark:text-stone-300 hover:bg-stone-200 px-3 sm:px-3.5 py-1.5 rounded-full font-medium shrink-0 whitespace-nowrap" data-filter="expired" data-i18n="filter_expired">Expired</button>
           </div>
 
           <!-- MULTI-SELECT RESCUE BAR -->
-          <div id="rescue-action-bar" class="hidden bg-stone-900 dark:bg-stone-800 text-white px-3.5 py-2 rounded-2xl flex items-center justify-between gap-3 shadow-md">
+          <div id="rescue-action-bar" class="hidden bg-stone-900 dark:bg-stone-800 text-white px-3.5 py-2 rounded-2xl flex items-center justify-between gap-3 shadow-md w-full sm:w-auto">
             <span class="text-xs font-medium">Selected <b id="selected-count" class="text-brand-400 font-bold">0</b> items</span>
-            <button id="trigger-rescue-btn" class="px-3.5 py-1.5 bg-brand-600 hover:bg-brand-500 font-bold rounded-xl text-xs shadow transition inline-flex items-center gap-1.5">
+            <button id="trigger-rescue-btn" class="px-3.5 py-1.5 bg-brand-600 hover:bg-brand-500 font-bold rounded-xl text-xs shadow transition inline-flex items-center gap-1.5 shrink-0">
               <span>Rescue Recipe</span>
               <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
             </button>
@@ -3528,30 +3558,30 @@ HTML_CONTENT = r"""<!DOCTYPE html>
           <!-- RECIPE RESULT CARD -->
           <div id="recipe-container" class="mt-6 hidden space-y-6">
             <div class="bg-stone-50 dark:bg-stone-800/60 border border-stone-200 dark:border-stone-700 rounded-2xl p-6 relative">
-              <button id="close-recipe-btn" class="absolute top-4 right-4 px-3 py-1.5 rounded-xl border border-stone-200 dark:border-stone-700 hover:bg-stone-200 dark:hover:bg-stone-700 text-stone-600 dark:text-stone-300 text-xs font-semibold flex items-center gap-1.5 transition">
-                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
-                <span data-i18n="close_recipe_btn">Close Recipe</span>
-              </button>
-
-              <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-stone-200/60 dark:border-stone-700 pb-4 pr-24">
-                <div>
+              <div class="flex items-start justify-between gap-3 border-b border-stone-200/60 dark:border-stone-700 pb-4">
+                <div class="min-w-0 flex-1">
                   <div class="flex items-center gap-2 mb-1 flex-wrap">
                     <span class="text-xs font-bold text-brand-600 dark:text-brand-400 uppercase tracking-wider" data-i18n="recipe_card_tag">Zero-Waste Culinary Recipe</span>
                     <span id="recipe-meal-type" class="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-indigo-50 dark:bg-indigo-950/70 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800">Homestyle Meal</span>
                   </div>
-                  <h3 id="recipe-name" class="text-xl sm:text-2xl font-bold text-stone-900 dark:text-white"></h3>
-                  <h4 id="recipe-name-hi" class="text-base font-semibold text-brand-600 dark:text-brand-400"></h4>
+                  <h3 id="recipe-name" class="text-lg sm:text-2xl font-bold text-stone-900 dark:text-white break-words"></h3>
+                  <h4 id="recipe-name-hi" class="text-sm sm:text-base font-semibold text-brand-600 dark:text-brand-400"></h4>
+                  <div class="flex items-center gap-2 mt-2.5 flex-wrap">
+                    <span id="recipe-time" class="bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-700 text-stone-700 dark:text-stone-300 text-xs font-semibold px-3 py-1 rounded-full inline-flex items-center gap-1.5 shrink-0">
+                      <svg class="w-3.5 h-3.5 text-stone-400 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                      <span id="recipe-time-text">20 mins</span>
+                    </span>
+                    <button id="copy-recipe-btn" class="px-2.5 py-1 bg-white dark:bg-stone-900 hover:bg-stone-100 dark:hover:bg-stone-750 border border-stone-200 dark:border-stone-700 rounded-xl text-stone-600 dark:text-stone-300 text-xs font-medium inline-flex items-center gap-1 shrink-0" title="Copy">
+                      <svg class="w-3.5 h-3.5 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>
+                      <span>Copy</span>
+                    </button>
+                  </div>
                 </div>
-                <div class="flex items-center gap-2 mt-2 sm:mt-0">
-                  <span id="recipe-time" class="bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-700 text-stone-700 dark:text-stone-300 text-xs font-semibold px-3 py-1.5 rounded-full inline-flex items-center gap-1.5">
-                    <svg class="w-3.5 h-3.5 text-stone-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                    <span id="recipe-time-text">20 mins</span>
-                  </span>
-                  <button id="copy-recipe-btn" class="p-2 bg-white dark:bg-stone-900 hover:bg-stone-100 border border-stone-200 dark:border-stone-700 rounded-xl text-stone-600 dark:text-stone-300 text-xs font-medium inline-flex items-center gap-1" title="Copy">
-                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>
-                    <span>Copy</span>
-                  </button>
-                </div>
+                <button id="close-recipe-btn" class="px-2.5 sm:px-3 py-1.5 rounded-xl border border-stone-200 dark:border-stone-700 hover:bg-stone-200 dark:hover:bg-stone-700 text-stone-600 dark:text-stone-300 text-xs font-semibold flex items-center gap-1.5 transition shrink-0">
+                  <svg class="w-3.5 h-3.5 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                  <span class="hidden sm:inline" data-i18n="close_recipe_btn">Close Recipe</span>
+                  <span class="inline sm:hidden">Close</span>
+                </button>
               </div>
 
               <!-- PAIRING / COMBO NOTES (SHOWN FOR DRINKS + FOOD) -->
@@ -3684,23 +3714,23 @@ HTML_CONTENT = r"""<!DOCTYPE html>
             class="hidden"
           />
 
-          <!-- Text Search Bar Row with microphone + inline camera icon -->
-          <div class="flex gap-2">
-            <div class="relative flex-grow">
+          <!-- Text Search Bar Row with microphone + inline camera icon (Mobile Responsive) -->
+          <div class="flex flex-col sm:flex-row gap-2">
+            <div class="relative flex-grow w-full">
               <input 
                 type="text" 
                 id="scanner-input" 
                 placeholder="Or type any food (e.g. Paneer Butter Masala, Gajar, Dal Makhani)..." 
-                class="w-full pl-4 pr-16 py-2.5 rounded-xl border border-stone-200 dark:border-stone-700 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 bg-stone-50 dark:bg-stone-800 text-stone-800 dark:text-stone-100 font-medium"
+                class="w-full pl-3.5 sm:pl-4 pr-20 sm:pr-24 py-2.5 rounded-xl border border-stone-200 dark:border-stone-700 text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 bg-stone-50 dark:bg-stone-800 text-stone-800 dark:text-stone-100 font-medium"
               />
-              <div class="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-0.5">
+              <div class="absolute right-1.5 sm:right-2 top-1/2 -translate-y-1/2 flex items-center gap-0.5 sm:gap-1">
                 <button 
                   type="button" 
                   id="scanner-mic-btn" 
                   class="text-stone-400 hover:text-brand-600 dark:hover:text-brand-400 transition p-1.5 rounded-lg hover:bg-stone-100 dark:hover:bg-stone-700"
                   title="Voice command for food scanner"
                 >
-                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 003-3V5a3 3 0 10-6 0v6a3 3 0 003 3z"/></svg>
+                  <svg class="w-4 h-4 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 003-3V5a3 3 0 10-6 0v6a3 3 0 003 3z"/></svg>
                 </button>
                 <button 
                   type="button" 
@@ -3708,7 +3738,7 @@ HTML_CONTENT = r"""<!DOCTYPE html>
                   class="text-stone-400 hover:text-emerald-600 dark:hover:text-emerald-400 transition p-1.5 rounded-lg hover:bg-stone-100 dark:hover:bg-stone-700"
                   title="Snap photo with camera"
                 >
-                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+                  <svg class="w-4 h-4 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
                 </button>
               </div>
             </div>
@@ -3716,7 +3746,7 @@ HTML_CONTENT = r"""<!DOCTYPE html>
             <button 
               type="button" 
               id="scanner-btn" 
-              class="px-5 py-2.5 bg-stone-900 dark:bg-white text-white dark:text-stone-900 font-semibold rounded-xl text-sm transition hover:opacity-90 shrink-0"
+              class="w-full sm:w-auto px-5 py-2.5 bg-stone-900 dark:bg-white text-white dark:text-stone-900 font-semibold rounded-xl text-xs sm:text-sm transition hover:opacity-90 shrink-0"
               data-i18n="scanner_inspect_btn"
             >
               Inspect
@@ -4729,6 +4759,8 @@ HTML_CONTENT = r"""<!DOCTYPE html>
       document.getElementById('share-fridge-btn').classList.add('inline-flex');
 
       document.getElementById('header-fridge-name').textContent = fid;
+      const subFid = document.getElementById('sub-header-fridge-name');
+      if (subFid) subFid.textContent = fid;
       const diagFid = document.getElementById('diag-fridge-id');
       if (diagFid) diagFid.textContent = fid;
 
@@ -4867,6 +4899,13 @@ HTML_CONTENT = r"""<!DOCTYPE html>
     }
 
     document.getElementById('copy-fid-btn')?.addEventListener('click', () => {
+      if (currentFridge) {
+        navigator.clipboard.writeText(currentFridge).then(() => {
+          showToast(currentLang === 'hi' ? 'फ्रिज ID कॉपी किया गया!' : 'Fridge ID copied to clipboard!', 'success');
+        });
+      }
+    });
+    document.getElementById('sub-copy-fid-btn')?.addEventListener('click', () => {
       if (currentFridge) {
         navigator.clipboard.writeText(currentFridge).then(() => {
           showToast(currentLang === 'hi' ? 'फ्रिज ID कॉपी किया गया!' : 'Fridge ID copied to clipboard!', 'success');
@@ -5209,35 +5248,35 @@ HTML_CONTENT = r"""<!DOCTYPE html>
         item.days_left < 0 ? 'opacity-85' : ''
       }`;
       card.innerHTML = `
-        <div>
+        <div class="space-y-3">
           <div class="flex items-start justify-between gap-2">
-            <div>
+            <div class="min-w-0 flex-1">
               <div class="flex items-center gap-1.5 flex-wrap">
-                <h4 class="font-bold text-stone-900 dark:text-white text-sm leading-tight">${displayName}</h4>
-                <span class="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-stone-100 dark:bg-stone-800 text-stone-500 uppercase">${item.category.replace(/_/g, ' ')}</span>
+                <h4 class="font-bold text-stone-900 dark:text-white text-sm leading-tight break-words">${displayName}</h4>
+                <span class="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-stone-100 dark:bg-stone-800 text-stone-500 uppercase shrink-0">${item.category.replace(/_/g, ' ')}</span>
               </div>
-              ${subName ? `<p class="text-xs text-stone-500 dark:text-stone-400 mt-0.5">${subName}</p>` : ''}
+              ${subName ? `<p class="text-xs text-stone-500 dark:text-stone-400 mt-0.5 truncate">${subName}</p>` : ''}
             </div>
-            <span class="text-[11px] px-2.5 py-0.5 rounded-full border ${badgeClass} shrink-0">
+            <span class="text-[11px] px-2.5 py-0.5 rounded-full border ${badgeClass} shrink-0 whitespace-nowrap">
               ${statusText}
             </span>
           </div>
 
-          <div class="mt-3 text-[11px] text-stone-500 dark:text-stone-400 space-y-1.5">
-            <div class="flex items-center justify-between">
-              <span>${currentLang === 'hi' ? 'जोड़ा गया:' : 'Added:'} <b class="text-stone-700 dark:text-stone-300 font-medium">${item.added_date}</b> (${elapsedText})</span>
-              <span>${currentLang === 'hi' ? 'समाप्त होगा:' : 'Expires:'} <b class="text-stone-700 dark:text-stone-300 font-medium">${item.expiry_date}</b></span>
+          <div class="text-[11px] text-stone-500 dark:text-stone-400 space-y-1.5">
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-1 text-[11px]">
+              <div>${currentLang === 'hi' ? 'जोड़ा गया:' : 'Added:'} <b class="text-stone-700 dark:text-stone-300 font-medium">${item.added_date}</b> (${elapsedText})</div>
+              <div class="sm:text-right">${currentLang === 'hi' ? 'समाप्त होगा:' : 'Expires:'} <b class="text-stone-700 dark:text-stone-300 font-medium">${item.expiry_date}</b></div>
             </div>
-            ${item.storage_tip ? `<div class="text-stone-600 dark:text-stone-300 bg-stone-50 dark:bg-stone-800/80 p-2 rounded-xl border border-stone-100 dark:border-stone-700/80">${item.storage_tip}</div>` : ''}
+            ${item.storage_tip ? `<div class="text-stone-600 dark:text-stone-300 bg-stone-50 dark:bg-stone-800/80 p-2 rounded-xl border border-stone-100 dark:border-stone-700/80 leading-relaxed text-[11px]">${item.storage_tip}</div>` : ''}
           </div>
         </div>
 
-        <div class="mt-4 pt-3 border-t border-stone-100 dark:border-stone-800 flex items-center justify-between">
-          <label class="flex items-center gap-1.5 text-xs text-stone-600 dark:text-stone-300 cursor-pointer select-none">
-            <input type="checkbox" class="rescue-check rounded text-brand-600 focus:ring-brand-500" data-name="${item.name_en}" ${isChecked ? 'checked' : ''}>
-            <span>${currentLang === 'hi' ? 'रेस्क्यू में जोड़ें' : 'Select for Rescue'}</span>
+        <div class="mt-3 pt-3 border-t border-stone-100 dark:border-stone-800 flex items-center justify-between gap-2">
+          <label class="flex items-center gap-1.5 text-xs text-stone-600 dark:text-stone-300 cursor-pointer select-none min-w-0">
+            <input type="checkbox" class="rescue-check rounded text-brand-600 focus:ring-brand-500 shrink-0" data-name="${item.name_en}" ${isChecked ? 'checked' : ''}>
+            <span class="truncate">${currentLang === 'hi' ? 'रेस्क्यू में जोड़ें' : 'Select for Rescue'}</span>
           </label>
-          <button class="delete-btn text-xs text-stone-400 hover:text-rose-600 font-medium transition" data-id="${item.id}">
+          <button class="delete-btn text-xs text-stone-400 hover:text-rose-600 font-medium transition px-2 py-1 rounded-lg hover:bg-stone-100 dark:hover:bg-stone-800 shrink-0 cursor-pointer" data-id="${item.id}">
             ${currentLang === 'hi' ? 'हटाएँ' : 'Clear'}
           </button>
         </div>
