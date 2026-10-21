@@ -611,6 +611,7 @@ def get_current_session_data(request: Request) -> Optional[dict]:
                     return {
                         "fridge_id": fid,
                         "token": token,
+                        "pin": data.get("pin", ""),
                     }
         except Exception as exc:
             logger.error(f"Error checking Firestore session: {exc}")
@@ -626,6 +627,7 @@ def get_current_session_data(request: Request) -> Optional[dict]:
             return {
                 "fridge_id": fid,
                 "token": token,
+                "pin": sess.get("pin", ""),
             }
 
     return None
@@ -2470,6 +2472,12 @@ def api_auth_me(request: Request):
         if not pin:
             pin = _IN_MEMORY_FRIDGES.get(fid, {}).get("pin", "")
 
+        if pin and db is not None:
+            try:
+                db.collection("fridges").document(fid).set({"pin": pin}, merge=True)
+            except Exception:
+                pass
+
         return {
             "authenticated": True,
             "fridge_id": fid,
@@ -2570,6 +2578,7 @@ def api_auth_login(payload: AuthLoginRequest, request: Request, response: Respon
     if db is not None:
         try:
             db.collection("fridges").document(fid).set({
+                "pin": pin,
                 "last_login_at": login_time_str,
                 "last_active_at": login_time_str,
                 "timezone": client_tz or "UTC",
@@ -2578,6 +2587,7 @@ def api_auth_login(payload: AuthLoginRequest, request: Request, response: Respon
             logger.warning(f"Failed to record login timestamp for {fid}: {exc}")
     else:
         if fid in _IN_MEMORY_FRIDGES:
+            _IN_MEMORY_FRIDGES[fid]["pin"] = pin
             _IN_MEMORY_FRIDGES[fid]["last_login_at"] = login_time_str
             _IN_MEMORY_FRIDGES[fid]["last_active_at"] = login_time_str
             _IN_MEMORY_FRIDGES[fid]["timezone"] = client_tz or "UTC"
@@ -3368,12 +3378,12 @@ HTML_CONTENT = r"""<!DOCTYPE html>
       <!-- Bottom Row on Mobile / Right on Desktop: Family PIN, Push Alerts Status, and Share Button -->
       <div class="flex items-center gap-1.5 sm:gap-2 flex-wrap justify-between md:justify-end">
         
-        <!-- Family PIN Container with Circle Mask, Eye Toggle & Copy -->
+        <!-- Family PIN Container with Direct Revealed PIN & Eye Toggle -->
         <div id="header-pin-container" class="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-white dark:bg-stone-800 border border-stone-200 dark:border-stone-700 text-xs font-mono shadow-2xs shrink-0">
           <span class="text-[10px] text-stone-400 font-sans font-medium">PIN:</span>
-          <span id="sidebar-fridge-pin" class="font-bold text-stone-700 dark:text-stone-300 tracking-wider">••••</span>
-          <button type="button" id="toggle-pin-btn" class="text-stone-400 hover:text-brand-600 dark:hover:text-brand-400 ml-0.5 p-0.5 cursor-pointer select-none" title="Show / Hide PIN" aria-label="Show or hide PIN">
-            <svg id="pin-eye-icon" class="w-3.5 h-3.5 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path></svg>
+          <span id="sidebar-fridge-pin" class="font-bold text-stone-800 dark:text-stone-100 tracking-wider">----</span>
+          <button type="button" id="toggle-pin-btn" class="text-stone-400 hover:text-brand-600 dark:hover:text-brand-400 ml-0.5 p-0.5 cursor-pointer select-none" title="Hide PIN" aria-label="Show or hide PIN">
+            <svg id="pin-eye-icon" class="w-3.5 h-3.5 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l18 18"></path></svg>
           </button>
           <button type="button" id="copy-pin-btn" class="text-stone-400 hover:text-brand-600 dark:hover:text-brand-400 p-0.5 cursor-pointer select-none" title="Copy PIN" aria-label="Copy PIN">
             <svg class="w-3 h-3 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>
@@ -4547,7 +4557,7 @@ HTML_CONTENT = r"""<!DOCTYPE html>
     let currentFilter = 'all';
     let currentFridge = null;
     let currentFridgePin = '';
-    let pinRevealed = false;
+    let pinRevealed = true;
     let currentLang = localStorage.getItem('fi_lang') || localStorage.getItem('rasoi_lang') || 'en';
     let selectedItemsForRescue = new Set();
     let pendingModalItem = null;
@@ -5262,9 +5272,10 @@ HTML_CONTENT = r"""<!DOCTYPE html>
       if (pin) {
         currentFridgePin = pin;
         try { localStorage.setItem('fi_last_pin_' + fid, pin); } catch(e){}
-      } else if (!currentFridgePin) {
-        try { currentFridgePin = localStorage.getItem('fi_last_pin_' + fid) || ''; } catch(e){}
+      } else {
+        try { currentFridgePin = localStorage.getItem('fi_last_pin_' + fid) || currentFridgePin || ''; } catch(e){}
       }
+      pinRevealed = true; // Straight up reveal PIN directly on screen without any prompts
 
       document.getElementById('auth-logged-in').classList.remove('hidden');
       document.getElementById('auth-logged-out').classList.add('hidden');
@@ -5301,7 +5312,7 @@ HTML_CONTENT = r"""<!DOCTYPE html>
       }
       currentFridge = null;
       currentFridgePin = '';
-      pinRevealed = false;
+      pinRevealed = true;
       document.getElementById('auth-logged-in').classList.add('hidden');
       document.getElementById('auth-logged-out').classList.remove('hidden');
       document.getElementById('header-breadcrumb').classList.add('hidden');
@@ -5544,7 +5555,7 @@ HTML_CONTENT = r"""<!DOCTYPE html>
         const data = await res.json();
         if (!res.ok) throw new Error(data.detail || 'Login failed');
         currentFridgePin = pin;
-        pinRevealed = false;
+        pinRevealed = true;
         authModal.classList.add('hidden');
         setAuthenticatedState(data.fridge_id, data.pin || pin);
         updateLiveClock();
@@ -5582,7 +5593,7 @@ HTML_CONTENT = r"""<!DOCTYPE html>
         const data = await res.json();
         if (!res.ok) throw new Error(data.detail || 'Fridge creation failed');
         currentFridgePin = pin;
-        pinRevealed = false;
+        pinRevealed = true;
         authModal.classList.add('hidden');
         setAuthenticatedState(data.fridge_id, data.pin || pin);
         updateLiveClock();
