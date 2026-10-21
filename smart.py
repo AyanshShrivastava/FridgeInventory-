@@ -2958,8 +2958,7 @@ HTML_CONTENT = r"""<!DOCTYPE html>
           
           <!-- Compact Logged-in Fridge Pill (Visible on Desktop; Mobile gets dedicated pill in subheader) -->
           <div id="header-breadcrumb" class="hidden md:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-amber-50 dark:bg-stone-800 border border-amber-200 dark:border-amber-500/40 text-xs font-mono font-bold shadow-2xs truncate shrink-0">
-            <span class="text-amber-700/80 dark:text-amber-400/80 text-[11px] font-bold">fridge/</span>
-            <span id="header-fridge-name" class="truncate max-w-[120px] lg:max-w-[180px] text-amber-950 dark:text-amber-200 font-extrabold tracking-wide">MY-FRIDGE</span>
+            <span id="header-fridge-name" class="truncate max-w-[140px] lg:max-w-[200px] text-amber-950 dark:text-amber-200 font-extrabold tracking-wide">MY-FRIDGE</span>
             <button type="button" id="copy-fid-btn" class="text-amber-700/70 dark:text-amber-400/80 hover:text-amber-900 dark:hover:text-amber-100 transition p-0.5 shrink-0 cursor-pointer" title="Copy Fridge ID">
               <svg class="w-3.5 h-3.5 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>
             </button>
@@ -3023,8 +3022,7 @@ HTML_CONTENT = r"""<!DOCTYPE html>
         
         <!-- Mobile-Only Fridge ID Pill (Takes zero space on desktop; provides instant fridge ID on mobile) -->
         <div id="sub-header-fridge-pill" class="inline-flex md:hidden items-center gap-1 px-2.5 py-1 rounded-xl bg-amber-50 dark:bg-stone-800 border border-amber-200 dark:border-amber-500/40 text-[11px] font-mono font-bold shadow-2xs shrink-0">
-          <span class="text-amber-700/80 dark:text-amber-400/80 text-[10px]">fridge/</span>
-          <span id="sub-header-fridge-name" class="truncate max-w-[110px] text-amber-950 dark:text-amber-200 font-extrabold">MY-FRIDGE</span>
+          <span id="sub-header-fridge-name" class="truncate max-w-[130px] text-amber-950 dark:text-amber-200 font-extrabold">MY-FRIDGE</span>
           <button type="button" id="sub-copy-fid-btn" class="text-amber-700/70 dark:text-amber-400/80 hover:text-amber-900 dark:hover:text-amber-100 transition p-0.5 shrink-0 cursor-pointer" title="Copy Fridge ID">
             <svg class="w-3 h-3 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>
           </button>
