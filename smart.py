@@ -237,7 +237,9 @@ def init_firestore() -> Tuple[Optional[Any], str]:
 
         raw_env_creds = (
             os.getenv("FIREBASE_CREDENTIALS_JSON")
+            or os.getenv("FIREBASE_CREDENTIALS")
             or os.getenv("FIREBASE_SERVICE_ACCOUNT_JSON")
+            or os.getenv("FIREBASE_SERVICE_ACCOUNT_KEY")
             or os.getenv("FIREBASE_CONFIG")
         )
         google_app_creds = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
@@ -246,19 +248,34 @@ def init_firestore() -> Tuple[Optional[Any], str]:
 
         if raw_env_creds:
             raw_str = raw_env_creds.strip()
-            if raw_str.startswith("{"):
+            # If wrapped in outer quotation marks from dashboard paste
+            if (raw_str.startswith('"') and raw_str.endswith('"')) or (raw_str.startswith("'") and raw_str.endswith("'")):
+                raw_str = raw_str[1:-1].strip()
+
+            # Direct JSON parse attempt
+            try:
+                cert_dict = json.loads(raw_str)
+                if isinstance(cert_dict, str):
+                    cert_dict = json.loads(cert_dict)
+            except Exception as json_err:
+                logger.debug(f"Direct JSON parse attempt: {json_err}")
+
+            # File path attempt
+            if not cert_dict and os.path.isfile(raw_str):
                 try:
-                    cert_dict = json.loads(raw_str)
-                except Exception as json_err:
-                    logger.error(f"Failed to parse FIREBASE_CREDENTIALS_JSON string: {json_err}")
-            elif os.path.isfile(raw_str):
-                with open(raw_str, "r", encoding="utf-8") as f:
-                    cert_dict = json.load(f)
-            else:
+                    with open(raw_str, "r", encoding="utf-8") as f:
+                        cert_dict = json.load(f)
+                except Exception as file_err:
+                    logger.debug(f"File credential read attempt: {file_err}")
+
+            # Base64 decode attempt
+            if not cert_dict:
                 import base64
                 try:
                     decoded = base64.b64decode(raw_str).decode("utf-8")
                     cert_dict = json.loads(decoded)
+                    if isinstance(cert_dict, str):
+                        cert_dict = json.loads(cert_dict)
                 except Exception:
                     pass
 
@@ -2106,7 +2123,6 @@ def api_auth_me(request: Request):
             "authenticated": True,
             "fridge_id": fid,
             "fridge_name": fid,
-            "token": sess.get("token", ""),
             "timezone": active_tz,
             "timezone_code": tz_code,
             "last_sync_time": now_local.strftime(f"%I:%M:%S %p {tz_code}"),
@@ -2220,7 +2236,6 @@ def api_auth_login(payload: AuthLoginRequest, request: Request, response: Respon
     return {
         "ok": True,
         "fridge_id": fid,
-        "token": token,
         "timezone": client_tz or "UTC",
         "timezone_code": tz_code,
         "last_login_at": login_time_str,
@@ -2320,7 +2335,6 @@ def api_auth_create(payload: AuthCreateRequest, request: Request, response: Resp
     return {
         "ok": True,
         "fridge_id": fid,
-        "token": token,
         "timezone": client_tz or "UTC",
         "timezone_code": tz_code,
         "last_login_at": login_time_str,
@@ -2474,57 +2488,71 @@ def api_push_check_expiry(request: Request):
     return {"ok": True, "expiring_count": len(expiring), "expired_count": len(expired), "alerts_sent": sent}
 
 
-CRON_SECRET = os.getenv("CRON_SECRET", "fridge_inventory_cron_secret_2026")
+def get_configured_cron_secret() -> str:
+    """
+    Read CRON_SECRET strictly from environment variables.
+    NO hardcoded fallback permitted to prevent unauthorized global execution.
+    """
+    return (os.getenv("CRON_SECRET") or "").strip().strip('"').strip("'")
 
 
 def verify_cron_authorization(request: Request) -> bool:
     """
     Application-level authentication check for automated cron execution:
+    - Requires CRON_SECRET to be explicitly configured in environment variables.
+    - Fails closed when CRON_SECRET is missing or empty.
     - Verifies Bearer token in 'Authorization: Bearer <CRON_SECRET>'
     - OR 'X-Cron-Key' header
     - OR query parameter '?key=<CRON_SECRET>'
-    - OR active authenticated fridge session
+    - Normal user fridge sessions are strictly REJECTED (cron operates globally across all fridges).
     """
+    cron_secret = get_configured_cron_secret()
+    if not cron_secret:
+        logger.warning("CRON_SECRET environment variable is missing or empty. Global expiry cron is locked (failed closed).")
+        return False
+
     auth_header = request.headers.get("Authorization") or ""
     cron_key = request.headers.get("X-Cron-Key") or ""
     query_key = request.query_params.get("key") or ""
 
-    expected = os.getenv("CRON_SECRET", "fridge_inventory_cron_secret_2026")
-
     # 1. Bearer token
     if auth_header.startswith("Bearer "):
         token = auth_header[7:].strip()
-        if hmac.compare_digest(token, expected):
+        if hmac.compare_digest(token, cron_secret):
             return True
 
     # 2. X-Cron-Key header
-    if cron_key and hmac.compare_digest(cron_key.strip(), expected):
+    if cron_key and hmac.compare_digest(cron_key.strip(), cron_secret):
         return True
 
     # 3. Query param key
-    if query_key and hmac.compare_digest(query_key.strip(), expected):
+    if query_key and hmac.compare_digest(query_key.strip(), cron_secret):
         return True
 
-    # 4. Verified session
-    sess = get_current_session_data(request)
-    if sess and sess.get("fridge_id"):
-        return True
-
+    # Ordinary user fridge sessions strictly disallowed
     return False
 
 @app.api_route("/api/check-expiry-cron", methods=["GET", "POST"], summary="Automated Cron Route: Check Expiry Across All Fridges & Broadcast Web Push")
 def api_check_expiry_cron(request: Request):
     """
     Automated background cron route (Protected with Application-Level Authorization):
-    - Requires valid CRON_SECRET (via Bearer token, X-Cron-Key header, or ?key=) or authenticated session.
+    - Requires a separately configured CRON_SECRET in server environment variables.
+    - Fails closed when CRON_SECRET is missing.
+    - Ordinary fridge sessions are strictly not accepted.
     - Iterates across all stored fridge database collections.
     - Dynamically compares current time with food item addition dates.
     - Signs and broadcasts push alerts to registered user subscriptions using web-push.
     """
+    cron_secret = get_configured_cron_secret()
+    if not cron_secret:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Cron service unavailable: CRON_SECRET environment variable is not configured on this server.",
+        )
     if not verify_cron_authorization(request):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Unauthorized: Access to /api/check-expiry-cron requires a valid CRON_SECRET or authenticated session.",
+            detail="Unauthorized: Access to /api/check-expiry-cron requires a valid configured CRON_SECRET.",
             headers={"WWW-Authenticate": "Bearer"},
         )
     db, _ = init_firestore()
@@ -4508,9 +4536,21 @@ HTML_CONTENT = r"""<!DOCTYPE html>
     
     // Auth & Fridge Management
     async function checkAuth() {
+      // Proactively purge any residual bearer tokens or legacy PINs from localStorage
+      try {
+        localStorage.removeItem('fi_token');
+        const keysToRemove = [];
+        for (let i = 0; i < localStorage.length; i++) {
+          const k = localStorage.key(i);
+          if (k && (k.startsWith('fi_last_pin_') || k === 'fi_token')) keysToRemove.push(k);
+        }
+        keysToRemove.forEach(k => localStorage.removeItem(k));
+      } catch(e){}
+
       try {
         const activeTz = getEffectiveTimezone();
         const res = await fetch('/api/auth/me', {
+          credentials: 'same-origin',
           headers: { 'X-Client-Timezone': activeTz }
         });
         const data = await res.json();
@@ -4520,7 +4560,7 @@ HTML_CONTENT = r"""<!DOCTYPE html>
             const tzSelect = document.getElementById('user-tz-select');
             if (tzSelect) tzSelect.value = userTimezone;
           }
-          setAuthenticatedState(data.fridge_id, data.token || '');
+          setAuthenticatedState(data.fridge_id);
           updateLiveClock();
         } else {
           setLoggedOutState();
@@ -4530,17 +4570,15 @@ HTML_CONTENT = r"""<!DOCTYPE html>
       }
     }
 
-    function setAuthenticatedState(fid, token = '') {
+    function setAuthenticatedState(fid) {
       currentFridge = fid;
-      if (token) {
-        try { localStorage.setItem('fi_token', token); } catch(e){}
-      }
-      // Purge any legacy PINs from browser localStorage
+      // Guarantee no bearer token or PIN ever resides in browser storage
       try {
+        localStorage.removeItem('fi_token');
         const keysToRemove = [];
         for (let i = 0; i < localStorage.length; i++) {
           const k = localStorage.key(i);
-          if (k && k.startsWith('fi_last_pin_')) keysToRemove.push(k);
+          if (k && (k.startsWith('fi_last_pin_') || k === 'fi_token')) keysToRemove.push(k);
         }
         keysToRemove.forEach(k => localStorage.removeItem(k));
       } catch(e){}
@@ -4574,12 +4612,12 @@ HTML_CONTENT = r"""<!DOCTYPE html>
 
     function setLoggedOutState() {
       currentFridge = null;
-      try { localStorage.removeItem('fi_token'); } catch(e){}
       try {
+        localStorage.removeItem('fi_token');
         const keysToRemove = [];
         for (let i = 0; i < localStorage.length; i++) {
           const k = localStorage.key(i);
-          if (k && k.startsWith('fi_last_pin_')) keysToRemove.push(k);
+          if (k && (k.startsWith('fi_last_pin_') || k === 'fi_token')) keysToRemove.push(k);
         }
         keysToRemove.forEach(k => localStorage.removeItem(k));
       } catch(e){}
@@ -4634,7 +4672,10 @@ HTML_CONTENT = r"""<!DOCTYPE html>
 
     async function handleLogout() {
       try {
-        await fetch('/api/auth/logout', { method: 'POST' });
+        await fetch('/api/auth/logout', { 
+          method: 'POST',
+          credentials: 'same-origin'
+        });
       } catch (e) {
         console.error('Logout error:', e);
       }
@@ -4725,6 +4766,7 @@ HTML_CONTENT = r"""<!DOCTYPE html>
       try {
         const res = await fetch('/api/auth/login', {
           method: 'POST',
+          credentials: 'same-origin',
           headers: {
             'Content-Type': 'application/json',
             'X-Client-Timezone': activeTz,
@@ -4734,7 +4776,7 @@ HTML_CONTENT = r"""<!DOCTYPE html>
         const data = await res.json();
         if (!res.ok) throw new Error(data.detail || 'Login failed');
         authModal.classList.add('hidden');
-        setAuthenticatedState(data.fridge_id, data.token || '');
+        setAuthenticatedState(data.fridge_id);
         updateLiveClock();
         showToast(data.message || 'Login successful!', 'success', 'लॉग इन सफल!');
       } catch (err) {
@@ -4760,6 +4802,7 @@ HTML_CONTENT = r"""<!DOCTYPE html>
       try {
         const res = await fetch('/api/auth/create', {
           method: 'POST',
+          credentials: 'same-origin',
           headers: {
             'Content-Type': 'application/json',
             'X-Client-Timezone': activeTz,
@@ -4769,7 +4812,7 @@ HTML_CONTENT = r"""<!DOCTYPE html>
         const data = await res.json();
         if (!res.ok) throw new Error(data.detail || 'Fridge creation failed');
         authModal.classList.add('hidden');
-        setAuthenticatedState(data.fridge_id, data.token || '');
+        setAuthenticatedState(data.fridge_id);
         updateLiveClock();
         showToast(data.message, 'success', 'नया फ्रिज सफलतापूर्वक बनाया गया!');
       } catch (err) {
@@ -4783,13 +4826,12 @@ HTML_CONTENT = r"""<!DOCTYPE html>
     async function loadInventory(silent = false) {
       if (!currentFridge) return;
       const activeTz = getEffectiveTimezone();
-      const sessionToken = localStorage.getItem('fi_token') || '';
       try {
         const url = `/api/inventory?fridge=${encodeURIComponent(currentFridge)}`;
         const res = await fetch(url, {
+          credentials: 'same-origin',
           headers: { 
-            'X-Client-Timezone': activeTz,
-            ...(sessionToken ? { 'X-Fridge-Session': sessionToken } : {})
+            'X-Client-Timezone': activeTz
           }
         });
         if (res.status === 401 || res.status === 403) {
@@ -4974,13 +5016,10 @@ HTML_CONTENT = r"""<!DOCTYPE html>
 
     async function deleteItem(id) {
       try {
-        const sessionToken = localStorage.getItem('fi_token') || '';
         const url = currentFridge ? `/api/inventory/${id}?fridge=${encodeURIComponent(currentFridge)}` : `/api/inventory/${id}`;
         const res = await fetch(url, { 
           method: 'DELETE',
-          headers: {
-            ...(sessionToken ? { 'X-Fridge-Session': sessionToken } : {})
-          }
+          credentials: 'same-origin'
         });
         if (res.status === 401 || res.status === 403) {
           setLoggedOutState();
@@ -5127,14 +5166,13 @@ HTML_CONTENT = r"""<!DOCTYPE html>
           storage_tip: pendingModalItem.storage_tip
         };
 
-        const sessionToken = localStorage.getItem('fi_token') || '';
         const url = currentFridge ? `/api/inventory?fridge=${encodeURIComponent(currentFridge)}` : '/api/inventory';
         const res = await fetch(url, {
           method: 'POST',
+          credentials: 'same-origin',
           headers: {
             'Content-Type': 'application/json',
-            'X-Client-Timezone': getEffectiveTimezone(),
-            ...(sessionToken ? { 'X-Fridge-Session': sessionToken } : {})
+            'X-Client-Timezone': getEffectiveTimezone()
           },
           body: JSON.stringify(payload)
         });
@@ -5184,6 +5222,7 @@ HTML_CONTENT = r"""<!DOCTYPE html>
         const url = currentFridge ? `/api/inventory?fridge=${encodeURIComponent(currentFridge)}` : '/api/inventory';
         const res = await fetch(url, {
           method: 'POST',
+          credentials: 'same-origin',
           headers: {
             'Content-Type': 'application/json',
             'X-Client-Timezone': getEffectiveTimezone(),
@@ -5221,14 +5260,13 @@ HTML_CONTENT = r"""<!DOCTYPE html>
       cmdSubmitBtn.innerHTML = '<span>Processing...</span>';
 
       try {
-        const sessionToken = localStorage.getItem('fi_token') || '';
         const url = currentFridge ? `/api/command?fridge=${encodeURIComponent(currentFridge)}` : '/api/command';
         const res = await fetch(url, {
           method: 'POST',
+          credentials: 'same-origin',
           headers: {
             'Content-Type': 'application/json',
-            'X-Client-Timezone': getEffectiveTimezone(),
-            ...(sessionToken ? { 'X-Fridge-Session': sessionToken } : {})
+            'X-Client-Timezone': getEffectiveTimezone()
           },
           body: JSON.stringify({ command: text })
         });
@@ -6163,13 +6201,12 @@ HTML_CONTENT = r"""<!DOCTYPE html>
         const activeTz = getEffectiveTimezone();
         const fid = currentFridge || '';
 
-        const sessionToken = localStorage.getItem('fi_token') || '';
         const res = await fetch('/api/scanner/photo', {
           method: 'POST',
+          credentials: 'same-origin',
           headers: { 
             'Content-Type': 'application/json',
-            'X-Client-Timezone': activeTz,
-            ...(sessionToken ? { 'X-Fridge-Session': sessionToken } : {})
+            'X-Client-Timezone': activeTz
           },
           body: JSON.stringify({
             image: dataUrl,

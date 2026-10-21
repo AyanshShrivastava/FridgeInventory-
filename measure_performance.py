@@ -127,8 +127,10 @@ def benchmark_ordinary_inventory(iterations: int = 60, concurrency: int = 5) -> 
     pin = "BenchPin123"
     auth_res = client.post("/api/auth/create", json={"fridge_id": bench_fid, "pin": pin})
     assert auth_res.status_code == 200
-    token = auth_res.json()["token"]
-    headers = {"X-Fridge-Session": token, "X-Client-Timezone": "Asia/Kolkata"}
+    token = auth_res.json().get("token")
+    headers = {"X-Client-Timezone": "Asia/Kolkata"}
+    if token:
+        headers["X-Fridge-Session"] = token
     
     # Prepopulate items
     item_ids = []
@@ -255,8 +257,10 @@ def benchmark_photo_scans(sample_count: int = 5) -> Dict[str, Any]:
     bench_fid = f"PhotoBench{uuid.uuid4().hex[:6]}"
     pin = "BenchPin123"
     auth_res = client.post("/api/auth/create", json={"fridge_id": bench_fid, "pin": pin})
-    token = auth_res.json()["token"]
-    headers = {"X-Fridge-Session": token, "X-Client-Timezone": "Asia/Kolkata"}
+    token = auth_res.json().get("token")
+    headers = {"X-Client-Timezone": "Asia/Kolkata"}
+    if token:
+        headers["X-Fridge-Session"] = token
 
     latencies: List[float] = []
     gemini_failures = 0
