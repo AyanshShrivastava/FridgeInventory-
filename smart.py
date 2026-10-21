@@ -161,7 +161,8 @@ def detect_action(tokens: List[str]) -> str:
 
 from fastapi import FastAPI, HTTPException, Request, Response, status
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, FileResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 import uvicorn
 
@@ -1716,6 +1717,24 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Mount static asset directory for PWA icons
+os.makedirs("static/icons", exist_ok=True)
+app.mount("/static", StaticFiles(directory="static"), name="static")
+
+
+@app.get("/favicon.ico", summary="Browser Favicon")
+def serve_favicon():
+    """Serve favicon.ico with proper image/x-icon MIME type."""
+    fav_path = "static/favicon.ico" if os.path.exists("static/favicon.ico") else "favicon.ico"
+    return FileResponse(fav_path, media_type="image/x-icon", headers={"Cache-Control": "public, max-age=86400"})
+
+
+@app.get("/apple-touch-icon.png", summary="iOS Apple Touch Icon")
+@app.get("/apple-touch-icon-precomposed.png")
+def serve_apple_touch_icon():
+    """Serve Apple touch icon with image/png MIME type."""
+    return FileResponse("static/icons/apple-touch-icon.png", media_type="image/png", headers={"Cache-Control": "public, max-age=86400"})
+
 
 # ============================================================================
 # 9b. VAPID KEY MANAGEMENT & WEB PUSH NOTIFICATION SYSTEM
@@ -2744,11 +2763,18 @@ HTML_CONTENT = r"""<!DOCTYPE html>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>FridgeInventory - Smart Food Inventory & Zero-Waste Kitchen</title>
   <!-- Progressive Web App / Mobile Optimization -->
+  <meta name="application-name" content="FridgeInventory">
   <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <meta name="apple-mobile-web-app-title" content="FridgeInventory">
-  <meta name="theme-color" content="#10b981">
+  <meta name="theme-color" content="#F59E0B">
+  <meta name="msapplication-TileColor" content="#F59E0B">
+  <!-- PWA Manifest & App Icons -->
   <link rel="manifest" href="/manifest.json">
+  <link rel="icon" type="image/x-icon" href="/favicon.ico">
+  <link rel="icon" type="image/png" sizes="192x192" href="/static/icons/icon-192.png">
+  <link rel="icon" type="image/png" sizes="512x512" href="/static/icons/icon-512.png">
+  <link rel="apple-touch-icon" sizes="180x180" href="/static/icons/apple-touch-icon.png">
   <!-- Tailwind CSS CDN -->
   <script src="https://cdn.tailwindcss.com"></script>
   <!-- Google Fonts: Inter, Poppins, Noto Sans Devanagari -->
@@ -2907,8 +2933,8 @@ HTML_CONTENT = r"""<!DOCTYPE html>
         </span>
 
         <!-- Add to Home Screen Button -->
-        <button id="pwa-install-btn" type="button" onclick="openHomeScreenModal()" class="px-2.5 py-1.5 rounded-xl bg-gradient-to-r from-emerald-500/10 to-teal-500/10 hover:from-emerald-500/20 hover:to-teal-500/20 text-emerald-700 dark:text-emerald-300 font-semibold text-xs border border-emerald-500/30 transition flex items-center gap-1.5 shadow-2xs" title="Add to Home Screen / Install App">
-          <svg class="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z"/></svg>
+        <button id="pwa-install-btn" type="button" onclick="handlePwaInstallClick()" class="px-2.5 py-1.5 rounded-xl bg-gradient-to-r from-amber-500/10 to-brand-500/10 hover:from-amber-500/20 hover:to-brand-500/20 text-brand-700 dark:text-brand-300 font-semibold text-xs border border-amber-500/30 transition flex items-center gap-1.5 shadow-2xs" title="Add to Home Screen / Install App">
+          <svg class="w-3.5 h-3.5 text-brand-600 dark:text-brand-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z"/></svg>
           <span class="hidden sm:inline" data-i18n="pwa_install_btn">Add to Home Screen</span>
           <span class="inline sm:hidden" data-i18n="pwa_install_btn_short">Install</span>
         </button>
@@ -2967,10 +2993,16 @@ HTML_CONTENT = r"""<!DOCTYPE html>
       <!-- Right: Family PIN, Push Alerts Status, and Share Button -->
       <div class="flex items-center gap-2 flex-wrap justify-between sm:justify-end">
         
-        <!-- Security Status Badge (Hashed PIN Protected) -->
-        <div id="header-pin-container" class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-white dark:bg-stone-800 border border-stone-200 dark:border-stone-700 text-xs shadow-2xs" title="PIN Protected Fridge Session">
-          <svg class="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
-          <span id="sidebar-fridge-pin" class="text-[11px] font-semibold text-stone-700 dark:text-stone-300" data-i18n="badge_pin_protected">PIN Protected</span>
+        <!-- Family PIN Container with Circle Mask, Eye Toggle & Copy -->
+        <div id="header-pin-container" class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-white dark:bg-stone-800 border border-stone-200 dark:border-stone-700 text-xs font-mono shadow-2xs">
+          <span class="text-[11px] text-stone-400 font-sans font-medium">PIN:</span>
+          <span id="sidebar-fridge-pin" class="font-bold text-stone-700 dark:text-stone-300 tracking-wider">••••</span>
+          <button type="button" id="toggle-pin-btn" class="text-stone-400 hover:text-brand-600 dark:hover:text-brand-400 ml-0.5 p-0.5 cursor-pointer" title="Show / Hide PIN">
+            <svg id="pin-eye-icon" class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path></svg>
+          </button>
+          <button type="button" id="copy-pin-btn" class="text-stone-400 hover:text-brand-600 dark:hover:text-brand-400 p-0.5 cursor-pointer" title="Copy PIN">
+            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>
+          </button>
         </div>
 
         <!-- Quick Push Alerts Button -->
@@ -4038,9 +4070,9 @@ HTML_CONTENT = r"""<!DOCTYPE html>
         </div>
       </div>
 
-      <!-- Native Install Button (if deferred prompt is available) -->
+      <!-- Native Install Button (Only visible when native deferredPrompt is available) -->
       <div id="pwa-native-prompt-container" class="hidden">
-        <button type="button" id="pwa-trigger-install-btn" class="w-full py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-bold text-xs shadow-md transition flex items-center justify-center gap-2">
+        <button type="button" id="pwa-trigger-install-btn" class="w-full py-2.5 rounded-xl bg-gradient-to-r from-brand-600 to-amber-600 hover:from-brand-700 hover:to-amber-700 text-white font-bold text-xs shadow-md transition flex items-center justify-center gap-2 cursor-pointer">
           <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
           <span data-i18n="pwa_trigger_btn">Click Here to Install Now</span>
         </button>
@@ -4061,7 +4093,7 @@ HTML_CONTENT = r"""<!DOCTYPE html>
     let inventory = [];
     let currentFilter = 'all';
     let currentFridge = null;
-    // PIN is never stored in browser memory or localStorage
+    let currentFridgePin = '';
     let pinRevealed = false;
     let currentLang = localStorage.getItem('fi_lang') || localStorage.getItem('rasoi_lang') || 'en';
     let selectedItemsForRescue = new Set();
@@ -4362,25 +4394,115 @@ HTML_CONTENT = r"""<!DOCTYPE html>
       renderInventory();
     });
 
-        // PWA & Add to Home Screen Handlers
+    // Progressive Web App (PWA) & Add to Home Screen Engine
     let deferredInstallPrompt = null;
+
+    function isAppInstalled() {
+      return window.matchMedia('(display-mode: standalone)').matches ||
+             window.navigator.standalone === true ||
+             document.referrer.includes('android-app://');
+    }
+
+    function detectPlatform() {
+      const ua = navigator.userAgent || '';
+      // Support iOS including iPadOS where navigator.platform is MacIntel with touch points
+      const isIOS = /iPhone|iPad|iPod/i.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+      const isAndroid = /Android/i.test(ua);
+      if (isIOS) return 'ios';
+      if (isAndroid) return 'android';
+      return 'desktop';
+    }
+
+    function updateInstallButtonVisibility() {
+      const btn = document.getElementById('pwa-install-btn');
+      if (!btn) return;
+      if (isAppInstalled()) {
+        btn.classList.add('hidden');
+      } else {
+        btn.classList.remove('hidden');
+      }
+    }
+
     window.addEventListener('beforeinstallprompt', (e) => {
       e.preventDefault();
       deferredInstallPrompt = e;
+      updateInstallButtonVisibility();
       const promptContainer = document.getElementById('pwa-native-prompt-container');
       if (promptContainer) promptContainer.classList.remove('hidden');
     });
 
+    window.addEventListener('appinstalled', () => {
+      deferredInstallPrompt = null;
+      document.getElementById('home-screen-modal')?.classList.add('hidden');
+      updateInstallButtonVisibility();
+      showToast(
+        currentLang === 'hi' ? 'FridgeInventory सफलतापूर्वक इंस्टॉल हो गया!' : 'FridgeInventory successfully installed!',
+        'success'
+      );
+    });
+
+    async function handlePwaInstallClick() {
+      if (isAppInstalled()) {
+        showToast(
+          currentLang === 'hi' ? 'ऐप पहले से इंस्टॉल है!' : 'FridgeInventory is already running as an installed app!',
+          'info'
+        );
+        updateInstallButtonVisibility();
+        return;
+      }
+      if (deferredInstallPrompt) {
+        // Native install prompt available (Chromium on Android / Desktop)
+        await triggerNativeInstallPrompt();
+      } else {
+        // Show platform-specific guidance
+        openHomeScreenModal();
+      }
+    }
+
+    async function triggerNativeInstallPrompt() {
+      if (!deferredInstallPrompt) {
+        openHomeScreenModal();
+        return;
+      }
+      try {
+        deferredInstallPrompt.prompt();
+        const choice = await deferredInstallPrompt.userChoice;
+        if (choice && choice.outcome === 'accepted') {
+          showToast(
+            currentLang === 'hi' ? 'ऐप इंस्टॉल किया जा रहा है...' : 'Installing FridgeInventory...',
+            'success'
+          );
+        } else {
+          showToast(
+            currentLang === 'hi' ? 'इंस्टॉलेशन रद्द किया गया' : 'Installation dismissed',
+            'info'
+          );
+        }
+      } catch (err) {
+        console.warn('Install prompt error:', err);
+      } finally {
+        deferredInstallPrompt = null;
+        const promptContainer = document.getElementById('pwa-native-prompt-container');
+        if (promptContainer) promptContainer.classList.add('hidden');
+        document.getElementById('home-screen-modal')?.classList.add('hidden');
+        updateInstallButtonVisibility();
+      }
+    }
+
     function openHomeScreenModal() {
       const modal = document.getElementById('home-screen-modal');
       if (modal) modal.classList.remove('hidden');
-      const ua = navigator.userAgent || '';
-      if (/iPhone|iPad|iPod/i.test(ua)) {
-        switchPwaTab('ios');
-      } else if (/Android/i.test(ua)) {
-        switchPwaTab('android');
-      } else {
-        switchPwaTab('desktop');
+      const platform = detectPlatform();
+      switchPwaTab(platform);
+
+      // Only display the direct native install button if a real deferred prompt event exists
+      const promptContainer = document.getElementById('pwa-native-prompt-container');
+      if (promptContainer) {
+        if (deferredInstallPrompt) {
+          promptContainer.classList.remove('hidden');
+        } else {
+          promptContainer.classList.add('hidden');
+        }
       }
     }
 
@@ -4409,16 +4531,8 @@ HTML_CONTENT = r"""<!DOCTYPE html>
     document.getElementById('pwa-dismiss-btn')?.addEventListener('click', () => {
       document.getElementById('home-screen-modal')?.classList.add('hidden');
     });
-    document.getElementById('pwa-trigger-install-btn')?.addEventListener('click', async () => {
-      if (deferredInstallPrompt) {
-        deferredInstallPrompt.prompt();
-        const { outcome } = await deferredInstallPrompt.userChoice;
-        if (outcome === 'accepted') {
-          showToast('FridgeInventory installed successfully!', 'success', 'ऐप सफलतापूर्वक इंस्टॉल किया गया!');
-        }
-        deferredInstallPrompt = null;
-        document.getElementById('home-screen-modal')?.classList.add('hidden');
-      }
+    document.getElementById('pwa-trigger-install-btn')?.addEventListener('click', () => {
+      triggerNativeInstallPrompt();
     });
 
     // Manual Food Entry Modal Handler
@@ -4612,6 +4726,8 @@ HTML_CONTENT = r"""<!DOCTYPE html>
 
     function setLoggedOutState() {
       currentFridge = null;
+      currentFridgePin = '';
+      pinRevealed = false;
       try {
         localStorage.removeItem('fi_token');
         const keysToRemove = [];
@@ -4640,17 +4756,45 @@ HTML_CONTENT = r"""<!DOCTYPE html>
 
     function updateSidebarPinDisplay() {
       const pinEl = document.getElementById('sidebar-fridge-pin');
-      if (pinEl) {
-        pinEl.textContent = currentLang === 'hi' ? 'PIN द्वारा सुरक्षित' : 'PIN Protected';
+      const eyeIcon = document.getElementById('pin-eye-icon');
+      if (!pinEl) return;
+      if (!currentFridgePin) {
+        pinEl.textContent = '••••';
+        if (eyeIcon) {
+          eyeIcon.innerHTML = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path>';
+        }
+        return;
+      }
+      if (pinRevealed) {
+        pinEl.textContent = currentFridgePin;
+        if (eyeIcon) {
+          eyeIcon.innerHTML = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l18 18"></path>';
+        }
+      } else {
+        pinEl.textContent = '•'.repeat(Math.max(4, currentFridgePin.length));
+        if (eyeIcon) {
+          eyeIcon.innerHTML = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path>';
+        }
       }
     }
 
     document.getElementById('toggle-pin-btn')?.addEventListener('click', () => {
-      showToast(currentLang === 'hi' ? 'परिवार PIN सुरक्षित रूप से एन्क्रिप्टेड है' : 'Family PIN is securely hashed & encrypted.', 'info');
+      if (!currentFridgePin) {
+        showToast(currentLang === 'hi' ? 'इस सत्र में पिन दर्ज नहीं किया गया (पेज रीफ्रेश के बाद पिन छुपा रहता है)' : 'PIN is protected in session. Log in again to view/copy.', 'info');
+        return;
+      }
+      pinRevealed = !pinRevealed;
+      updateSidebarPinDisplay();
     });
 
     document.getElementById('copy-pin-btn')?.addEventListener('click', () => {
-      showToast(currentLang === 'hi' ? 'सुरक्षा कारणों से PIN कॉपी नहीं किया जा सकता' : 'PIN cannot be copied for security reasons.', 'info');
+      if (currentFridgePin) {
+        navigator.clipboard.writeText(currentFridgePin).then(() => {
+          showToast(currentLang === 'hi' ? 'पिन कॉपी किया गया!' : 'PIN copied to clipboard!', 'success');
+        });
+      } else {
+        showToast(currentLang === 'hi' ? 'कोई पिन उपलब्ध नहीं' : 'No PIN available in current session', 'warning');
+      }
     });
 
     document.getElementById('copy-fid-btn')?.addEventListener('click', () => {
@@ -4663,9 +4807,9 @@ HTML_CONTENT = r"""<!DOCTYPE html>
 
     document.getElementById('share-fridge-btn').addEventListener('click', () => {
       if (currentFridge) {
-        const text = `FridgeInventory Family Access:\nFridge ID: ${currentFridge}\nURL: ${window.location.origin}\n(Enter your family PIN to connect)`;
+        const text = `FridgeInventory Login Details:\nFridge ID: ${currentFridge}\nPIN / Password: ${currentFridgePin || '(Your Family PIN)'}\nURL: ${window.location.origin}`;
         navigator.clipboard.writeText(text).then(() => {
-          showToast(currentLang === 'hi' ? 'परिवार के साथ शेयर करने हेतु लिंक कॉपी किया गया!' : 'Family link copied! Enter family PIN to connect.', 'success');
+          showToast(currentLang === 'hi' ? 'फ्रिज विवरण शेयर करने के लिए कॉपी किया गया!' : 'Fridge details copied to share with family!', 'success');
         });
       }
     });
@@ -4775,6 +4919,8 @@ HTML_CONTENT = r"""<!DOCTYPE html>
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.detail || 'Login failed');
+        currentFridgePin = pin;
+        pinRevealed = false;
         authModal.classList.add('hidden');
         setAuthenticatedState(data.fridge_id);
         updateLiveClock();
@@ -4811,6 +4957,8 @@ HTML_CONTENT = r"""<!DOCTYPE html>
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.detail || 'Fridge creation failed');
+        currentFridgePin = pin;
+        pinRevealed = false;
         authModal.classList.add('hidden');
         setAuthenticatedState(data.fridge_id);
         updateLiveClock();
@@ -6908,6 +7056,7 @@ HTML_CONTENT = r"""<!DOCTYPE html>
       checkAuth();
       initPushNotifications();
       initOfflineNetworkListeners();
+      updateInstallButtonVisibility();
 
       // Live Real-Time Clock Ticker (Updates every second with zero refresh needed)
       updateLiveClock();
@@ -6940,12 +7089,18 @@ HTML_CONTENT = r"""<!DOCTYPE html>
 """
 
 SERVICE_WORKER_JS = """
-// Service Worker for FridgeInventory Web Push & Offline Notifications
-const CACHE_NAME = 'fridge-inventory-v2.3';
+// Service Worker for FridgeInventory Progressive Web App, Web Push & Offline Support
+const CACHE_NAME = 'fridge-inventory-v2.5';
 
 const OFFLINE_SHELL_ASSETS = [
   '/',
+  '/manifest.json',
   '/favicon.ico',
+  '/static/icons/icon-192.png',
+  '/static/icons/icon-512.png',
+  '/static/icons/icon-maskable-512.png',
+  '/static/icons/apple-touch-icon.png',
+  '/static/icons/icon.svg',
 ];
 
 // Install: Cache essential app shell
@@ -7071,16 +7226,37 @@ self.addEventListener('notificationclick', (event) => {
 
 @app.get("/manifest.json", summary="PWA Web App Manifest")
 def serve_manifest():
-    """Serve progressive web app manifest for Add to Home Screen."""
+    """Serve progressive web app manifest for Add to Home Screen with full PWA icon suite."""
     manifest = {
-        "name": "FridgeInventory - Smart Kitchen & Expiry Tracker",
+        "name": "FridgeInventory",
         "short_name": "FridgeInventory",
         "description": "Smart Household Food Inventory, Expiry Tracking & Zero-Waste Recipe Generator",
         "start_url": "/",
+        "scope": "/",
         "display": "standalone",
-        "background_color": "#1c1917",
-        "theme_color": "#10b981",
+        "orientation": "any",
+        "background_color": "#F59E0B",
+        "theme_color": "#F59E0B",
+        "categories": ["food", "utilities", "lifestyle"],
         "icons": [
+            {
+                "src": "/static/icons/icon-192.png",
+                "sizes": "192x192",
+                "type": "image/png",
+                "purpose": "any"
+            },
+            {
+                "src": "/static/icons/icon-512.png",
+                "sizes": "512x512",
+                "type": "image/png",
+                "purpose": "any"
+            },
+            {
+                "src": "/static/icons/icon-maskable-512.png",
+                "sizes": "512x512",
+                "type": "image/png",
+                "purpose": "maskable"
+            },
             {
                 "src": "/favicon.ico",
                 "sizes": "64x64 32x32 24x24 16x16",
@@ -7089,9 +7265,9 @@ def serve_manifest():
         ]
     }
     return Response(
-        content=json.dumps(manifest),
+        content=json.dumps(manifest, indent=2),
         media_type="application/manifest+json",
-        headers={"Cache-Control": "public, max-age=86400"}
+        headers={"Cache-Control": "no-cache, no-store, must-revalidate"}
     )
 
 

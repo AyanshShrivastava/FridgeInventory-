@@ -1,120 +1,120 @@
 {
-  "timestamp": 1792588514.3747258,
-  "timestamp_str": "2026-10-21 13:15:14 UTC",
+  "timestamp": 1792590564.119151,
+  "timestamp_str": "2026-10-21 13:49:24 UTC",
   "ordinary_inventory": {
     "operation_category": "Ordinary Inventory (CRUD + NLP Command)",
     "total_requests": 200,
     "concurrency": 5,
-    "duration_seconds": 2.948,
-    "requests_per_second": 67.85,
+    "duration_seconds": 3.3,
+    "requests_per_second": 60.61,
     "error_count": 0,
     "error_rate_percent": 0.0,
     "error_details": {},
     "overall_latency_ms": {
-      "min_ms": 37.84,
-      "max_ms": 149.28,
-      "mean_ms": 73.47,
-      "p50_ms": 62.86,
-      "p90_ms": 118.04,
-      "p95_ms": 121.68,
-      "p99_ms": 146.41
+      "min_ms": 43.36,
+      "max_ms": 171.68,
+      "mean_ms": 81.41,
+      "p50_ms": 72.0,
+      "p90_ms": 131.57,
+      "p95_ms": 141.59,
+      "p99_ms": 153.43
     },
     "read_latency_ms": {
-      "min_ms": 62.86,
-      "max_ms": 103.13,
-      "mean_ms": 73.13,
-      "p50_ms": 70.64,
-      "p90_ms": 81.07,
-      "p95_ms": 97.5,
-      "p99_ms": 103.13
+      "min_ms": 68.97,
+      "max_ms": 171.68,
+      "mean_ms": 82.91,
+      "p50_ms": 76.09,
+      "p90_ms": 85.24,
+      "p95_ms": 146.82,
+      "p99_ms": 171.68
     },
     "add_latency_ms": {
-      "min_ms": 45.7,
-      "max_ms": 61.88,
-      "mean_ms": 52.53,
-      "p50_ms": 51.93,
-      "p90_ms": 57.79,
-      "p95_ms": 58.82,
-      "p99_ms": 61.88
+      "min_ms": 49.79,
+      "max_ms": 76.96,
+      "mean_ms": 56.87,
+      "p50_ms": 56.11,
+      "p90_ms": 61.64,
+      "p95_ms": 63.64,
+      "p99_ms": 76.96
     },
     "command_latency_ms": {
-      "min_ms": 104.61,
-      "max_ms": 149.28,
-      "mean_ms": 118.89,
-      "p50_ms": 115.02,
-      "p90_ms": 126.0,
-      "p95_ms": 146.41,
-      "p99_ms": 149.28
+      "min_ms": 117.56,
+      "max_ms": 153.43,
+      "mean_ms": 130.63,
+      "p50_ms": 129.48,
+      "p90_ms": 141.96,
+      "p95_ms": 151.04,
+      "p99_ms": 153.43
     },
     "delete_latency_ms": {
-      "min_ms": 37.84,
-      "max_ms": 58.02,
-      "mean_ms": 49.33,
-      "p50_ms": 49.17,
-      "p90_ms": 53.59,
-      "p95_ms": 57.13,
-      "p99_ms": 58.02
+      "min_ms": 43.36,
+      "max_ms": 87.37,
+      "mean_ms": 55.23,
+      "p50_ms": 54.37,
+      "p90_ms": 61.95,
+      "p95_ms": 64.01,
+      "p99_ms": 87.37
     },
     "resources": {
-      "initial_memory_rss_mb": 133.28,
-      "final_memory_rss_mb": 134.83,
-      "memory_delta_mb": 1.55,
-      "peak_memory_rss_mb": 135.69,
-      "avg_cpu_percent": 32.29,
-      "peak_cpu_percent": 107.7
+      "initial_memory_rss_mb": 135.08,
+      "final_memory_rss_mb": 136.53,
+      "memory_delta_mb": 1.45,
+      "peak_memory_rss_mb": 137.39,
+      "avg_cpu_percent": 30.04,
+      "peak_cpu_percent": 105.9
     }
   },
   "photo_scans": {
     "operation_category": "AI Photo Scans (Gemini Vision Pipeline)",
     "total_requests": 4,
-    "duration_seconds": 0.098,
-    "requests_per_second": 40.72,
+    "duration_seconds": 0.105,
+    "requests_per_second": 38.2,
     "gemini_api_failures": 0,
     "scanner_unidentified_count": 4,
     "scanner_failure_rate_percent": 100.0,
     "error_details": {},
     "latency_ms": {
-      "min_ms": 22.34,
-      "max_ms": 26.71,
-      "mean_ms": 24.52,
-      "p50_ms": 24.86,
-      "p90_ms": 26.71,
-      "p95_ms": 26.71,
-      "p99_ms": 26.71
+      "min_ms": 24.9,
+      "max_ms": 27.79,
+      "mean_ms": 26.14,
+      "p50_ms": 26.09,
+      "p90_ms": 27.79,
+      "p95_ms": 27.79,
+      "p99_ms": 27.79
     },
     "resources": {
-      "initial_memory_rss_mb": 134.83,
-      "final_memory_rss_mb": 134.88,
-      "memory_delta_mb": 0.05,
-      "peak_memory_rss_mb": 134.95,
-      "avg_cpu_percent": 69.05,
-      "peak_cpu_percent": 108.6
+      "initial_memory_rss_mb": 136.53,
+      "final_memory_rss_mb": 136.56,
+      "memory_delta_mb": 0.03,
+      "peak_memory_rss_mb": 136.64,
+      "avg_cpu_percent": 67.25,
+      "peak_cpu_percent": 106.9
     }
   },
   "recipe_generation": {
     "operation_category": "AI Recipe Generation (Zero-Waste Rescue Chef)",
     "total_requests": 2,
-    "duration_seconds": 0.018,
-    "requests_per_second": 113.35,
+    "duration_seconds": 0.017,
+    "requests_per_second": 119.37,
     "gemini_api_failures": 0,
     "offline_fallback_count": 0,
     "error_details": {},
     "latency_ms": {
-      "min_ms": 8.03,
-      "max_ms": 9.56,
-      "mean_ms": 8.79,
-      "p50_ms": 8.03,
-      "p90_ms": 9.56,
-      "p95_ms": 9.56,
-      "p99_ms": 9.56
+      "min_ms": 7.62,
+      "max_ms": 9.08,
+      "mean_ms": 8.35,
+      "p50_ms": 7.62,
+      "p90_ms": 9.08,
+      "p95_ms": 9.08,
+      "p99_ms": 9.08
     },
     "resources": {
-      "initial_memory_rss_mb": 134.88,
-      "final_memory_rss_mb": 134.97,
-      "memory_delta_mb": 0.09,
-      "peak_memory_rss_mb": 134.91,
-      "avg_cpu_percent": 105.2,
-      "peak_cpu_percent": 105.2
+      "initial_memory_rss_mb": 136.56,
+      "final_memory_rss_mb": 136.64,
+      "memory_delta_mb": 0.08,
+      "peak_memory_rss_mb": 136.59,
+      "avg_cpu_percent": 106.0,
+      "peak_cpu_percent": 106.0
     }
   }
 }

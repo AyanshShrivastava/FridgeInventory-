@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
+  <defs>
+    <!-- Background Gradient -->
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#F59E0B"/>
+      <stop offset="100%" stop-color="#D97706"/>
+    </linearGradient>
+    <!-- Fridge Shadow -->
+    <filter id="dropShadow" x="-10%" y="-10%" width="130%" height="130%">
+      <feDropShadow dx="0" dy="8" stdDeviation="12" flood-color="#92400E" flood-opacity="0.35"/>
+    </filter>
+  </defs>
+
+  <!-- Canvas Background -->
+  <rect width="512" height="512" rx="108" fill="url(#bgGrad)"/>
+
+  <!-- Refrigerator Group -->
+  <g filter="url(#dropShadow)">
+    <!-- Fridge Feet -->
+    <rect x="175" y="405" width="26" height="12" rx="4" fill="#B45309"/>
+    <rect x="311" y="405" width="26" height="12" rx="4" fill="#B45309"/>
+
+    <!-- Refrigerator Main Body -->
+    <rect x="156" y="130" width="200" height="280" rx="24" fill="#FFFFFF"/>
+
+    <!-- Door Divider Line -->
+    <rect x="156" y="235" width="200" height="5" fill="#D97706"/>
+
+    <!-- Inset Panels -->
+    <rect x="166" y="140" width="180" height="86" rx="14" fill="none" stroke="#F1F5F9" stroke-width="2"/>
+    <rect x="166" y="249" width="180" height="151" rx="14" fill="none" stroke="#F1F5F9" stroke-width="2"/>
+
+    <!-- Door Handles -->
+    <rect x="325" y="185" width="10" height="34" rx="5" fill="#B45309"/>
+    <rect x="325" y="252" width="10" height="52" rx="5" fill="#B45309"/>
+
+    <!-- Fresh Mint-Green Leaf Accent -->
+    <path d="M 335 140 C 320 115 330 85 375 68 C 390 100 370 125 335 140 Z" fill="#34D399"/>
+    <path d="M 335 140 Q 355 105 375 68" stroke="#A7F3D0" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+    <path d="M 350 115 Q 338 108 332 106" stroke="#A7F3D0" stroke-width="1.8" fill="none" stroke-linecap="round"/>
+    <path d="M 360 95 Q 370 100 374 102" stroke="#A7F3D0" stroke-width="1.8" fill="none" stroke-linecap="round"/>
+  </g>
+</svg>
