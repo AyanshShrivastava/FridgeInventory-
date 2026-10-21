@@ -4029,10 +4029,10 @@ HTML_CONTENT = r"""<!DOCTYPE html>
 
     <!-- ADD TO HOME SCREEN / PWA INSTALL GUIDE MODAL -->
   <div id="home-screen-modal" class="fixed inset-0 bg-stone-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
-    <div class="bg-white dark:bg-stone-900 rounded-3xl max-w-lg w-full p-6 sm:p-7 shadow-2xl border border-stone-200 dark:border-stone-800 text-stone-800 dark:text-stone-100 space-y-5 animate-scale-in">
+    <div class="bg-white dark:bg-stone-900 rounded-3xl max-w-lg w-full max-h-[90vh] overflow-y-auto p-5 sm:p-7 shadow-2xl border border-stone-200 dark:border-stone-800 text-stone-800 dark:text-stone-100 space-y-4 animate-scale-in">
       
       <!-- Modal Header -->
-      <div class="flex items-center justify-between border-b border-stone-100 dark:border-stone-800 pb-3.5">
+      <div class="flex items-center justify-between border-b border-stone-100 dark:border-stone-800 pb-3">
         <div class="flex items-center gap-2.5">
           <img src="/static/icons/icon-192.png?v=3" alt="FridgeInventory" class="w-9 h-9 rounded-xl shadow-sm shrink-0 object-contain">
           <div>
@@ -4040,86 +4040,150 @@ HTML_CONTENT = r"""<!DOCTYPE html>
             <p class="text-[11px] text-stone-500 dark:text-stone-400" data-i18n="pwa_modal_subtitle">1-tap app launch with offline alerts</p>
           </div>
         </div>
-        <button id="close-pwa-modal-btn" type="button" class="text-stone-400 hover:text-stone-600 dark:hover:text-stone-200 text-2xl font-bold leading-none">&times;</button>
+        <button id="close-pwa-modal-btn" type="button" class="text-stone-400 hover:text-stone-600 dark:hover:text-stone-200 text-2xl font-bold leading-none p-1 cursor-pointer">&times;</button>
       </div>
 
       <!-- Platform Switcher Tabs -->
       <div class="flex items-center p-1 rounded-2xl bg-stone-100 dark:bg-stone-800 border border-stone-200 dark:border-stone-700 text-xs font-semibold">
-        <button type="button" id="pwa-tab-ios" onclick="switchPwaTab('ios')" class="flex-1 py-1.5 rounded-xl transition text-center bg-white dark:bg-stone-900 text-brand-600 dark:text-brand-400 shadow-xs">
+        <button type="button" id="pwa-tab-ios" onclick="switchPwaTab('ios')" class="flex-1 py-1.5 rounded-xl transition text-center bg-white dark:bg-stone-900 text-brand-600 dark:text-brand-400 shadow-xs cursor-pointer">
           🍏 iPhone / iPad
         </button>
-        <button type="button" id="pwa-tab-android" onclick="switchPwaTab('android')" class="flex-1 py-1.5 rounded-xl transition text-center text-stone-600 dark:text-stone-400 hover:text-stone-900 dark:hover:text-stone-100">
+        <button type="button" id="pwa-tab-android" onclick="switchPwaTab('android')" class="flex-1 py-1.5 rounded-xl transition text-center text-stone-600 dark:text-stone-400 hover:text-stone-900 dark:hover:text-stone-100 cursor-pointer">
           🤖 Android
         </button>
-        <button type="button" id="pwa-tab-desktop" onclick="switchPwaTab('desktop')" class="flex-1 py-1.5 rounded-xl transition text-center text-stone-600 dark:text-stone-400 hover:text-stone-900 dark:hover:text-stone-100">
+        <button type="button" id="pwa-tab-desktop" onclick="switchPwaTab('desktop')" class="flex-1 py-1.5 rounded-xl transition text-center text-stone-600 dark:text-stone-400 hover:text-stone-900 dark:hover:text-stone-100 cursor-pointer">
           💻 Computer
         </button>
       </div>
 
       <!-- Tab 1: iOS Safari Steps -->
-      <div id="pwa-content-ios" class="space-y-3 text-xs">
-        <div class="p-3.5 rounded-2xl bg-stone-50 dark:bg-stone-800/60 border border-stone-200 dark:border-stone-700/80 flex items-start gap-3">
+      <div id="pwa-content-ios" class="space-y-2.5 text-xs">
+        <div class="p-3 rounded-2xl bg-stone-50 dark:bg-stone-800/60 border border-stone-200 dark:border-stone-700/80 flex items-start gap-3">
           <span class="w-6 h-6 rounded-full bg-brand-500 text-white font-bold text-xs flex items-center justify-center shrink-0">1</span>
           <div>
             <div class="font-bold text-stone-900 dark:text-stone-100" data-i18n="pwa_ios_step1_title">Tap the Share Button in Safari</div>
-            <p class="text-stone-500 dark:text-stone-400 text-[11px] mt-0.5" data-i18n="pwa_ios_step1_desc">At the bottom of your iPhone screen (or top on iPad), tap the Share icon (<span class="font-mono text-brand-600 font-bold">⎋ / Share</span>).</p>
+            <p class="text-stone-500 dark:text-stone-400 text-[11px] mt-0.5" data-i18n="pwa_ios_step1_desc">At the bottom of your iPhone screen (or top toolbar on iPad), tap the Share icon (<span class="font-mono text-brand-600 font-bold">⎋ / Share</span>).</p>
           </div>
         </div>
-        <div class="p-3.5 rounded-2xl bg-stone-50 dark:bg-stone-800/60 border border-stone-200 dark:border-stone-700/80 flex items-start gap-3">
+        <div class="p-3 rounded-2xl bg-stone-50 dark:bg-stone-800/60 border border-stone-200 dark:border-stone-700/80 flex items-start gap-3">
           <span class="w-6 h-6 rounded-full bg-brand-500 text-white font-bold text-xs flex items-center justify-center shrink-0">2</span>
           <div>
             <div class="font-bold text-stone-900 dark:text-stone-100" data-i18n="pwa_ios_step2_title">Select "Add to Home Screen"</div>
-            <p class="text-stone-500 dark:text-stone-400 text-[11px] mt-0.5" data-i18n="pwa_ios_step2_desc">Scroll down the sharing sheet options and tap <span class="font-semibold text-stone-800 dark:text-stone-200">"Add to Home Screen" ([+] icon)</span>.</p>
+            <p class="text-stone-500 dark:text-stone-400 text-[11px] mt-0.5" data-i18n="pwa_ios_step2_desc">Scroll down the share sheet and tap <span class="font-semibold text-stone-800 dark:text-stone-200">"Add to Home Screen" ([+] icon)</span>.</p>
           </div>
         </div>
-        <div class="p-3.5 rounded-2xl bg-stone-50 dark:bg-stone-800/60 border border-stone-200 dark:border-stone-700/80 flex items-start gap-3">
+        <div class="p-3 rounded-2xl bg-stone-50 dark:bg-stone-800/60 border border-stone-200 dark:border-stone-700/80 flex items-start gap-3">
           <span class="w-6 h-6 rounded-full bg-brand-500 text-white font-bold text-xs flex items-center justify-center shrink-0">3</span>
           <div>
             <div class="font-bold text-stone-900 dark:text-stone-100" data-i18n="pwa_ios_step3_title">Tap "Add" in the Top Right</div>
-            <p class="text-stone-500 dark:text-stone-400 text-[11px] mt-0.5" data-i18n="pwa_ios_step3_desc">Tap Add to confirm. FridgeInventory will appear right on your iPhone home screen!</p>
+            <p class="text-stone-500 dark:text-stone-400 text-[11px] mt-0.5" data-i18n="pwa_ios_step3_desc">Tap <span class="font-semibold text-stone-800 dark:text-stone-200">"Add"</span> to confirm. FridgeInventory will appear right on your iPhone home screen!</p>
           </div>
+        </div>
+        <div class="p-2.5 rounded-xl bg-amber-50/70 dark:bg-amber-950/20 border border-amber-200/80 dark:border-amber-800/40 text-[11px] text-amber-900 dark:text-amber-200 flex items-start gap-2">
+          <span class="text-xs shrink-0">💡</span>
+          <span data-i18n="pwa_ios_note">Note: Must be opened in Apple Safari. In-app browsers (Instagram, WhatsApp) do not support home screen installation.</span>
         </div>
       </div>
 
       <!-- Tab 2: Android Chrome Steps -->
-      <div id="pwa-content-android" class="space-y-3 text-xs hidden">
-        <div class="p-3.5 rounded-2xl bg-stone-50 dark:bg-stone-800/60 border border-stone-200 dark:border-stone-700/80 flex items-start gap-3">
+      <div id="pwa-content-android" class="space-y-2.5 text-xs hidden">
+        <div class="p-3 rounded-2xl bg-stone-50 dark:bg-stone-800/60 border border-stone-200 dark:border-stone-700/80 flex items-start gap-3">
           <span class="w-6 h-6 rounded-full bg-emerald-500 text-white font-bold text-xs flex items-center justify-center shrink-0">1</span>
           <div>
             <div class="font-bold text-stone-900 dark:text-stone-100" data-i18n="pwa_android_step1_title">Tap the Chrome Menu (⋮)</div>
-            <p class="text-stone-500 dark:text-stone-400 text-[11px] mt-0.5" data-i18n="pwa_android_step1_desc">In Chrome or Samsung Internet, tap the 3 vertical dots in the top-right corner.</p>
+            <p class="text-stone-500 dark:text-stone-400 text-[11px] mt-0.5" data-i18n="pwa_android_step1_desc">In Chrome, Samsung Internet, or Brave, tap the 3 vertical dots (<span class="font-bold">⋮</span>) in the top-right corner.</p>
           </div>
         </div>
-        <div class="p-3.5 rounded-2xl bg-stone-50 dark:bg-stone-800/60 border border-stone-200 dark:border-stone-700/80 flex items-start gap-3">
+        <div class="p-3 rounded-2xl bg-stone-50 dark:bg-stone-800/60 border border-stone-200 dark:border-stone-700/80 flex items-start gap-3">
           <span class="w-6 h-6 rounded-full bg-emerald-500 text-white font-bold text-xs flex items-center justify-center shrink-0">2</span>
           <div>
             <div class="font-bold text-stone-900 dark:text-stone-100" data-i18n="pwa_android_step2_title">Tap "Install App" or "Add to Home screen"</div>
-            <p class="text-stone-500 dark:text-stone-400 text-[11px] mt-0.5" data-i18n="pwa_android_step2_desc">Select <span class="font-semibold text-stone-800 dark:text-stone-200">"Install app"</span> or <span class="font-semibold text-stone-800 dark:text-stone-200">"Add to Home screen"</span>.</p>
+            <p class="text-stone-500 dark:text-stone-400 text-[11px] mt-0.5" data-i18n="pwa_android_step2_desc">Select <span class="font-semibold text-stone-800 dark:text-stone-200">"Install app"</span> (or <span class="font-semibold text-stone-800 dark:text-stone-200">"Add to Home screen"</span>).</p>
           </div>
         </div>
-        <div class="p-3.5 rounded-2xl bg-stone-50 dark:bg-stone-800/60 border border-stone-200 dark:border-stone-700/80 flex items-start gap-3">
+        <div class="p-3 rounded-2xl bg-stone-50 dark:bg-stone-800/60 border border-stone-200 dark:border-stone-700/80 flex items-start gap-3">
           <span class="w-6 h-6 rounded-full bg-emerald-500 text-white font-bold text-xs flex items-center justify-center shrink-0">3</span>
           <div>
             <div class="font-bold text-stone-900 dark:text-stone-100" data-i18n="pwa_android_step3_title">Confirm Installation</div>
-            <p class="text-stone-500 dark:text-stone-400 text-[11px] mt-0.5" data-i18n="pwa_android_step3_desc">Click "Install". The app will be installed to your home screen with offline push support!</p>
+            <p class="text-stone-500 dark:text-stone-400 text-[11px] mt-0.5" data-i18n="pwa_android_step3_desc">Tap <span class="font-semibold text-stone-800 dark:text-stone-200">"Install"</span>. The app will be added to your home screen with offline push support!</p>
           </div>
+        </div>
+        <div class="p-2.5 rounded-xl bg-emerald-50/70 dark:bg-emerald-950/20 border border-emerald-200/80 dark:border-emerald-800/40 text-[11px] text-emerald-900 dark:text-emerald-200 flex items-start gap-2">
+          <span class="text-xs shrink-0">💡</span>
+          <span data-i18n="pwa_android_tip">Tip: If a banner appears at the bottom asking to add FridgeInventory to Home screen, you can also tap that directly!</span>
         </div>
       </div>
 
       <!-- Tab 3: Desktop Steps -->
       <div id="pwa-content-desktop" class="space-y-3 text-xs hidden">
-        <div class="p-3.5 rounded-2xl bg-stone-50 dark:bg-stone-800/60 border border-stone-200 dark:border-stone-700/80 flex items-start gap-3">
-          <span class="w-6 h-6 rounded-full bg-cyan-600 text-white font-bold text-xs flex items-center justify-center shrink-0">1</span>
-          <div>
-            <div class="font-bold text-stone-900 dark:text-stone-100" data-i18n="pwa_desk_step1_title">Click the Install Icon in the URL Bar</div>
-            <p class="text-stone-500 dark:text-stone-400 text-[11px] mt-0.5" data-i18n="pwa_desk_step1_desc">In Chrome, Edge, or Brave, click the desktop install icon (⊕ or 💻) on the right side of the address bar.</p>
+        <!-- Method 1: Chrome 3-Dots Menu -->
+        <div class="p-3.5 rounded-2xl bg-stone-50 dark:bg-stone-800/60 border border-cyan-200 dark:border-cyan-800/50 space-y-2.5">
+          <div class="flex items-center gap-2 font-bold text-stone-900 dark:text-stone-100">
+            <span class="px-2 py-0.5 rounded-md bg-cyan-600 text-white font-extrabold text-[10px] tracking-wide" data-i18n="pwa_desk_method1_badge">Method 1</span>
+            <span class="text-cyan-800 dark:text-cyan-300 font-bold" data-i18n="pwa_desk_method1_title">Chrome Menu: "Cast, save, and share"</span>
+          </div>
+          <div class="space-y-2 text-stone-700 dark:text-stone-300">
+            <div class="flex items-start gap-2.5">
+              <span class="w-5 h-5 rounded-full bg-cyan-600 text-white font-bold text-[10px] flex items-center justify-center shrink-0">1</span>
+              <div>
+                <span class="font-semibold text-stone-900 dark:text-stone-100" data-i18n="pwa_desk_m1_s1_title">Click the Three Dots (⋮):</span>
+                <span class="text-stone-500 dark:text-stone-400 text-[11px]" data-i18n="pwa_desk_m1_s1_desc">In the top-right corner of Google Chrome, click the 3 vertical dots (⋮).</span>
+              </div>
+            </div>
+            <div class="flex items-start gap-2.5">
+              <span class="w-5 h-5 rounded-full bg-cyan-600 text-white font-bold text-[10px] flex items-center justify-center shrink-0">2</span>
+              <div>
+                <span class="font-semibold text-stone-900 dark:text-stone-100" data-i18n="pwa_desk_m1_s2_title">Select "Cast, save, and share":</span>
+                <span class="text-stone-500 dark:text-stone-400 text-[11px]" data-i18n="pwa_desk_m1_s2_desc">Hover or click "Cast, save, and share" (or "Save and share" in some Chrome versions).</span>
+              </div>
+            </div>
+            <div class="flex items-start gap-2.5">
+              <span class="w-5 h-5 rounded-full bg-cyan-600 text-white font-bold text-[10px] flex items-center justify-center shrink-0">3</span>
+              <div>
+                <span class="font-semibold text-stone-900 dark:text-stone-100" data-i18n="pwa_desk_m1_s3_title">Click "Install FridgeInventory...":</span>
+                <span class="text-stone-500 dark:text-stone-400 text-[11px]" data-i18n="pwa_desk_m1_s3_desc">Click "Install FridgeInventory..." (or "Install page as app...").</span>
+              </div>
+            </div>
+            <div class="flex items-start gap-2.5">
+              <span class="w-5 h-5 rounded-full bg-cyan-600 text-white font-bold text-[10px] flex items-center justify-center shrink-0">4</span>
+              <div>
+                <span class="font-semibold text-stone-900 dark:text-stone-100" data-i18n="pwa_desk_m1_s4_title">Click "Install" to Confirm:</span>
+                <span class="text-stone-500 dark:text-stone-400 text-[11px]" data-i18n="pwa_desk_m1_s4_desc">In the confirmation popup, click "Install". The app will open in its own clean window!</span>
+              </div>
+            </div>
           </div>
         </div>
-        <div class="p-3.5 rounded-2xl bg-stone-50 dark:bg-stone-800/60 border border-stone-200 dark:border-stone-700/80 flex items-start gap-3">
-          <span class="w-6 h-6 rounded-full bg-cyan-600 text-white font-bold text-xs flex items-center justify-center shrink-0">2</span>
+
+        <!-- Method 2: Address Bar Quick Shortcut -->
+        <div class="p-3.5 rounded-2xl bg-stone-50 dark:bg-stone-800/60 border border-stone-200 dark:border-stone-700/80 space-y-2.5">
+          <div class="flex items-center gap-2 font-bold text-stone-900 dark:text-stone-100">
+            <span class="px-2 py-0.5 rounded-md bg-stone-600 text-white font-extrabold text-[10px] tracking-wide" data-i18n="pwa_desk_method2_badge">Method 2</span>
+            <span class="font-bold" data-i18n="pwa_desk_method2_title">URL Address Bar Quick Shortcut</span>
+          </div>
+          <div class="space-y-2 text-stone-700 dark:text-stone-300">
+            <div class="flex items-start gap-2.5">
+              <span class="w-5 h-5 rounded-full bg-stone-600 text-white font-bold text-[10px] flex items-center justify-center shrink-0">1</span>
+              <div>
+                <span class="font-semibold text-stone-900 dark:text-stone-100" data-i18n="pwa_desk_m2_s1_title">Click the Install Icon:</span>
+                <span class="text-stone-500 dark:text-stone-400 text-[11px]" data-i18n="pwa_desk_m2_s1_desc">On the right side of the address bar, look for the install icon (💻 or ⊕).</span>
+              </div>
+            </div>
+            <div class="flex items-start gap-2.5">
+              <span class="w-5 h-5 rounded-full bg-stone-600 text-white font-bold text-[10px] flex items-center justify-center shrink-0">2</span>
+              <div>
+                <span class="font-semibold text-stone-900 dark:text-stone-100" data-i18n="pwa_desk_m2_s2_title">Click "Install":</span>
+                <span class="text-stone-500 dark:text-stone-400 text-[11px]" data-i18n="pwa_desk_m2_s2_desc">Click "Install" in the confirmation popup.</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Other Browsers Hint -->
+        <div class="p-2.5 rounded-xl bg-amber-50/70 dark:bg-amber-950/20 border border-amber-200/80 dark:border-amber-800/40 text-[11px] text-amber-900 dark:text-amber-200 flex items-start gap-2">
+          <span class="text-xs shrink-0">💡</span>
           <div>
-            <div class="font-bold text-stone-900 dark:text-stone-100" data-i18n="pwa_desk_step2_title">Confirm "Install"</div>
-            <p class="text-stone-500 dark:text-stone-400 text-[11px] mt-0.5" data-i18n="pwa_desk_step2_desc">Click Install to run FridgeInventory in its own distraction-free standalone desktop window.</p>
+            <span class="font-bold" data-i18n="pwa_desk_other_title">Other Browsers:</span>
+            <span class="text-stone-600 dark:text-stone-400 block mt-0.5" data-i18n="pwa_desk_other_desc"><b>Edge:</b> Click "..." &rarr; Apps &rarr; "Install FridgeInventory". <br><b>Mac Safari:</b> In top menu bar, click File &rarr; "Add to Dock...".</span>
           </div>
         </div>
       </div>
@@ -4132,7 +4196,7 @@ HTML_CONTENT = r"""<!DOCTYPE html>
         </button>
       </div>
 
-      <button type="button" id="pwa-dismiss-btn" class="w-full py-2.5 rounded-xl border border-stone-200 dark:border-stone-700 text-stone-700 dark:text-stone-300 font-semibold text-xs hover:bg-stone-50 dark:hover:bg-stone-800 transition" data-i18n="pwa_close_btn">
+      <button type="button" id="pwa-dismiss-btn" class="w-full py-2.5 rounded-xl border border-stone-200 dark:border-stone-700 text-stone-700 dark:text-stone-300 font-semibold text-xs hover:bg-stone-50 dark:hover:bg-stone-800 transition cursor-pointer" data-i18n="pwa_close_btn">
         Got It, Thanks!
       </button>
     </div>
@@ -4278,17 +4342,37 @@ HTML_CONTENT = r"""<!DOCTYPE html>
         pwa_modal_title: "Add to Home Screen",
         pwa_modal_subtitle: "1-tap app launch with offline alerts",
         pwa_ios_step1_title: "Tap the Share Button in Safari",
-        pwa_ios_step1_desc: "At the bottom of your iPhone screen (or top on iPad), tap the Share icon (⎋ / Share).",
+        pwa_ios_step1_desc: "At the bottom of your iPhone screen (or top toolbar on iPad), tap the Share icon (⎋ / Share).",
         pwa_ios_step2_title: "Select 'Add to Home Screen'",
-        pwa_ios_step2_desc: "Scroll down the sharing sheet options and tap 'Add to Home Screen' ([+] icon).",
+        pwa_ios_step2_desc: "Scroll down the share sheet and tap 'Add to Home Screen' ([+] icon).",
         pwa_ios_step3_title: "Tap 'Add' in the Top Right",
-        pwa_ios_step3_desc: "Tap Add to confirm. FridgeInventory will appear right on your iPhone home screen!",
+        pwa_ios_step3_desc: "Tap 'Add' to confirm. FridgeInventory will appear right on your iPhone home screen!",
+        pwa_ios_note: "Note: Must be opened in Apple Safari. In-app browsers (Instagram, WhatsApp) do not support home screen installation.",
         pwa_android_step1_title: "Tap the Chrome Menu (⋮)",
-        pwa_android_step1_desc: "In Chrome or Samsung Internet, tap the 3 vertical dots in the top-right corner.",
+        pwa_android_step1_desc: "In Chrome, Samsung Internet, or Brave, tap the 3 vertical dots (⋮) in the top-right corner.",
         pwa_android_step2_title: "Tap 'Install App' or 'Add to Home screen'",
-        pwa_android_step2_desc: "Select 'Install app' or 'Add to Home screen'.",
+        pwa_android_step2_desc: "Select 'Install app' (or 'Add to Home screen').",
         pwa_android_step3_title: "Confirm Installation",
-        pwa_android_step3_desc: "Click 'Install'. The app will be installed to your home screen with offline push support!",
+        pwa_android_step3_desc: "Tap 'Install'. The app will be added to your home screen with offline push support!",
+        pwa_android_tip: "Tip: If a banner appears at the bottom asking to add FridgeInventory to Home screen, you can also tap that directly!",
+        pwa_desk_method1_badge: "Method 1",
+        pwa_desk_method1_title: "Chrome Menu: 'Cast, save, and share'",
+        pwa_desk_m1_s1_title: "Click the Three Dots (⋮):",
+        pwa_desk_m1_s1_desc: "In the top-right corner of Google Chrome, click the 3 vertical dots (⋮).",
+        pwa_desk_m1_s2_title: "Select 'Cast, save, and share':",
+        pwa_desk_m1_s2_desc: "Hover or click 'Cast, save, and share' (or 'Save and share' in some Chrome versions).",
+        pwa_desk_m1_s3_title: "Click 'Install FridgeInventory...':",
+        pwa_desk_m1_s3_desc: "Click 'Install FridgeInventory...' (or 'Install page as app...').",
+        pwa_desk_m1_s4_title: "Click 'Install' to Confirm:",
+        pwa_desk_m1_s4_desc: "In the confirmation popup, click 'Install'. The app will open in its own clean window!",
+        pwa_desk_method2_badge: "Method 2",
+        pwa_desk_method2_title: "URL Address Bar Quick Shortcut",
+        pwa_desk_m2_s1_title: "Click the Install Icon:",
+        pwa_desk_m2_s1_desc: "On the right side of the address bar, look for the install icon (💻 or ⊕).",
+        pwa_desk_m2_s2_title: "Click 'Install':",
+        pwa_desk_m2_s2_desc: "Click 'Install' in the confirmation popup.",
+        pwa_desk_other_title: "Other Browsers:",
+        pwa_desk_other_desc: "Edge: Click '...' > Apps > 'Install FridgeInventory'. Mac Safari: In top menu bar, click File > 'Add to Dock...'.",
         pwa_desk_step1_title: "Click the Install Icon in the URL Bar",
         pwa_desk_step1_desc: "In Chrome, Edge, or Brave, click the desktop install icon (⊕ or 💻) on the right side of the address bar.",
         pwa_desk_step2_title: "Confirm 'Install'",
@@ -4395,12 +4479,32 @@ HTML_CONTENT = r"""<!DOCTYPE html>
         pwa_ios_step2_desc: "नीचे स्क्रॉल करें और 'Add to Home Screen' ([+] चिह्न) पर टैप करें।",
         pwa_ios_step3_title: "ऊपर दाएँ 'जोड़ें' (Add) पर टैप करें",
         pwa_ios_step3_desc: "'Add' पर टैप करें। FridgeInventory अब आपके iPhone की होम स्क्रीन पर आ जाएगा!",
+        pwa_ios_note: "सुझाव: सफ़ारी (Safari) ब्राउज़र में ही खोलें। अन्य ऐप्स (WhatsApp, Instagram) के अंदर होम स्क्रीन का विकल्प नहीं मिलता।",
         pwa_android_step1_title: "क्रोम के 3 डॉट्स मेनू (⋮) पर टैप करें",
-        pwa_android_step1_desc: "Chrome या Samsung Internet में ऊपर दाएँ कोने में 3 डॉट्स पर टैप करें।",
+        pwa_android_step1_desc: "Chrome या Samsung Internet में ऊपर दाएँ कोने में 3 डॉट्स (⋮) पर टैप करें।",
         pwa_android_step2_title: "'ऐप इंस्टॉल करें' या 'होम स्क्रीन पर जोड़ें' चुनें",
         pwa_android_step2_desc: "'Install app' या 'Add to Home screen' विकल्प पर टैप करें।",
         pwa_android_step3_title: "इंस्टॉलेशन की पुष्टि करें",
         pwa_android_step3_desc: "'Install' पर क्लिक करें। ऐप आपकी होम स्क्रीन और ऐप ड्रॉअर में जुड़ जाएगा!",
+        pwa_android_tip: "सुझाव: यदि स्क्रीन के नीचे 'Add FridgeInventory to Home screen' का बैनर दिखे, तो सीधे उस पर टैप कर सकते हैं।",
+        pwa_desk_method1_badge: "तरीका 1",
+        pwa_desk_method1_title: "क्रोम मेनू: 'Cast, save, and share'",
+        pwa_desk_m1_s1_title: "3 डॉट्स (⋮) पर क्लिक करें:",
+        pwa_desk_m1_s1_desc: "Chrome में ऊपर दाएँ कोने में 3 डॉट्स मेनू (⋮) पर क्लिक करें।",
+        pwa_desk_m1_s2_title: "'Cast, save, and share' चुनें:",
+        pwa_desk_m1_s2_desc: "'Cast, save, and share' (या 'Save and share') विकल्प पर माउस ले जाएँ या क्लिक करें।",
+        pwa_desk_m1_s3_title: "'Install FridgeInventory...' पर क्लिक करें:",
+        pwa_desk_m1_s3_desc: "'Install FridgeInventory...' (या 'Install page as app...') विकल्प चुनें।",
+        pwa_desk_m1_s4_title: "'Install' पर क्लिक करके पुष्टि करें:",
+        pwa_desk_m1_s4_desc: "पॉपअप में 'Install' बटन दबाएँ। ऐप एक अलग डेस्कटॉप विंडो में खुल जाएगा!",
+        pwa_desk_method2_badge: "तरीका 2",
+        pwa_desk_method2_title: "एड्रेस बार शॉर्टकट से इंस्टॉल करें",
+        pwa_desk_m2_s1_title: "एड्रेस बार में इंस्टॉल आइकन दबाएँ:",
+        pwa_desk_m2_s1_desc: "ब्राउज़र के URL एड्रेस बार के दाईं ओर स्थित ऐप इंस्टॉल आइकन (💻 या ⊕) पर क्लिक करें।",
+        pwa_desk_m2_s2_title: "'Install' पर क्लिक करें:",
+        pwa_desk_m2_s2_desc: "दिखाई देने वाले पॉपअप में 'Install' दबाएँ।",
+        pwa_desk_other_title: "अन्य ब्राउज़र:",
+        pwa_desk_other_desc: "Edge: '...' मेनू > Apps > 'Install FridgeInventory'। Mac Safari: मेनू बार में File > 'Add to Dock...' > Add।",
         pwa_desk_step1_title: "ब्राउज़र एड्रेस बार में इंस्टॉल आइकन दबाएँ",
         pwa_desk_step1_desc: "Chrome या Edge में एड्रेस बार के दाईं ओर स्थित इंस्टॉल चिह्न (⊕ या 💻) पर क्लिक करें।",
         pwa_desk_step2_title: "'Install' पर क्लिक करें",
