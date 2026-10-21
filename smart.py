@@ -1483,6 +1483,291 @@ def classify_food_photo(
     )
 
 
+HOWTO_RECIPE_PROMPT_TEMPLATE = """You are an expert master chef and cooking instructor for 'FridgeInventory'.
+A user is asking: "How to make {dish}?".
+Provide an authentic, mouth-watering, homestyle step-by-step recipe to make {dish}.
+
+Requirements:
+- recipe_name: Authentic dish name in English (e.g. 'Restaurant-Style Paneer Butter Masala')
+- recipe_name_hi: In authentic Hindi Devanagari script (e.g. 'शाही पनीर बटर मसाला')
+- meal_type: Dish type in English ('Main Course', 'Street Food Snack', 'Beverage / Drink', 'Traditional Dessert', 'Breakfast Special')
+- meal_type_hi: Dish type in Hindi ('मुख्य भोजन', 'स्वादिष्ट स्नैक', 'ताज़ा पेय', 'पारंपरिक मिठाई', 'खास नाश्ता')
+- pairing_notes: What this dish pairs best with (e.g. 'Serve hot with garlic naan, tandoori roti, or jeera rice.')
+- pairing_notes_hi: Pairing notes in Hindi Devanagari
+- prep_time_minutes: Realistic cooking time integer (10 to 45 mins)
+- ingredients_used: Key primary ingredients needed for {dish}
+- ingredients_used_hi: Key primary ingredients in Hindi Devanagari
+- corrected_ingredients: Key ingredients list
+- pantry_items_needed: Spices, oils, aromatics, and seasoning needed with measurements
+- pantry_items_needed_hi: Spices and staples in Hindi with measurements
+- steps: Detailed step-by-step instructions on how to cook this recipe in English
+- steps_hi: Complete step-by-step instructions in natural, fluent Hindi (Devanagari script)
+- chef_tip: Grandma's secret culinary tip ('दादी माँ का सीक्रेट नुस्खा') for making this recipe perfect
+- chef_tip_hi: Secret culinary tip in Hindi
+"""
+
+def detect_recipe_dish_query(items: List[str]) -> Tuple[bool, str]:
+    """Detects if user is asking how to make a specific recipe (e.g. 'how to make paneer butter masala', 'biryani recipe')."""
+    joined = " ".join([str(i).strip() for i in items if str(i).strip()]).strip()
+    if not joined:
+        return False, ""
+    joined_clean = joined.lower()
+
+    # Prefixes like 'how to make', 'how to cook', 'recipe of'
+    prefixes = [
+        "how to make", "how to cook", "how to prepare", "how to bake",
+        "how do i make", "how can i make", "how do you make", "how to do",
+        "tell me how to make", "tell me how to cook", "tell me recipe of",
+        "tell me the recipe of", "recipe of", "recipe for",
+        "give me recipe of", "give me recipe for", "what is the recipe of",
+        "recipe", "vidhi"
+    ]
+    for p in prefixes:
+        if joined_clean.startswith(p):
+            dish = joined[len(p):].strip()
+            dish = re.sub(r'^(a|an|the|please)\s+', '', dish, flags=re.I).strip(" ?.,!:")
+            if dish:
+                return True, dish
+
+    # Suffixes like 'recipe', 'kaise banaye', 'banane ki vidhi'
+    suffixes = [
+        "recipe", "ki recipe", "kaise banaye", "kaise banayein", "kaise banate hain",
+        "kaise banta hai", "banane ki vidhi", "banana sikhayein", "sikhao"
+    ]
+    for s in suffixes:
+        if joined_clean.endswith(s):
+            dish = joined[:len(joined) - len(s)].strip()
+            dish = re.sub(r'^(a|an|the|please)\s+', '', dish, flags=re.I).strip(" ?.,!:")
+            if dish:
+                return True, dish
+
+    # Known popular composite dishes asked directly
+    known_dishes = [
+        "paneer butter masala", "shahi paneer", "kadai paneer", "palak paneer", "matar paneer", "paneer tikka",
+        "biryani", "chicken biryani", "veg biryani", "mutton biryani", "pulao", "jeera rice",
+        "dal tadka", "dal makhani", "yellow dal", "sambar", "chole", "chana masala", "rajma",
+        "pav bhaji", "samosa", "pakoda", "pakora", "maggi", "noodles", "chowmein", "fried rice",
+        "kheer", "halwa", "sooji halwa", "gajar halwa", "gulab jamun", "cake", "chocolate cake",
+        "masala chai", "tea", "cold coffee", "coffee", "lassi", "mango lassi", "lemonade",
+        "aloo paratha", "paratha", "poha", "upma", "dosa", "idli", "pasta", "pizza",
+        "butter chicken", "chicken curry", "egg curry", "fish curry"
+    ]
+    for kd in known_dishes:
+        if kd == joined_clean or re.search(rf'\b{re.escape(kd)}\b', joined_clean):
+            return True, joined.strip(" ?.,!:")
+
+    return False, ""
+
+def get_dish_recipe_fallback(dish: str) -> RescueRecipe:
+    """Provides authentic homestyle recipes for popular dishes when Gemini API is offline or not configured."""
+    dl = dish.lower().strip()
+    
+    # 1. PANEER BUTTER MASALA / SHAHI PANEER
+    if any(k in dl for k in ["paneer butter", "shahi paneer", "paneer makhani", "butter paneer"]):
+        return RescueRecipe(
+            recipe_name="Restaurant-Style Paneer Butter Masala",
+            recipe_name_hi="शाही पनीर बटर मसाला",
+            meal_type="Main Course",
+            meal_type_hi="मुख्य भोजन",
+            pairing_notes="Rich, velvety tomato-cashew butter gravy pairs perfectly with hot garlic naan, tandoori roti, or fragrant jeera rice.",
+            pairing_notes_hi="मखमली काजू-टमाटर की मक्खन ग्रेवी गरमा-गरम बटर नान, तंदूरी रोटी या खुशबूदार जीरा राइस के साथ बेहद स्वादिष्ट लगती है।",
+            prep_time_minutes=25,
+            ingredients_used=["Fresh Paneer (250g)", "Butter (2 tbsp)", "Tomatoes (3 pureed)", "Cashew Paste / Fresh Cream (3 tbsp)", "Ginger-Garlic Paste (1 tbsp)"],
+            ingredients_used_hi=["ताज़ा पनीर (250 ग्राम)", "मक्खन (2 बड़े चम्मच)", "टमाटर प्यूरी (3 बड़े टमाटर)", "काजू पेस्ट / मलाई (3 बड़े चम्मच)", "अदरक-लहसुन पेस्ट (1 बड़ा चम्मच)"],
+            corrected_ingredients=["Paneer", "Butter", "Tomatoes", "Cashews", "Ginger-Garlic"],
+            pantry_items_needed=["1/2 tsp Cumin seeds", "1 tsp Kashmiri Red Chilli powder", "1/2 tsp Turmeric", "1 tsp Garam Masala", "1 tsp Kasuri Methi (crushed)", "1/2 tsp Sugar", "Salt to taste"],
+            pantry_items_needed_hi=["1/2 छोटा चम्मच जीरा", "1 छोटा चम्मच कश्मीरी लाल मिर्च", "1/2 छोटा चम्मच हल्दी", "1 छोटा चम्मच गरम मसाला", "1 छोटा चम्मच भुनी कसूरी मेथी", "1/2 छोटा चम्मच चीनी", "स्वादानुसार नमक"],
+            steps=[
+                "Melt 1 tbsp butter and 1 tsp oil in a pan. Add cumin seeds, finely chopped onion, and ginger-garlic paste; sauté until fragrant and lightly golden.",
+                "Pour in fresh tomato puree with Kashmiri red chilli powder, turmeric, and salt. Cook on medium heat for 7-8 minutes until butter begins to separate from the masala.",
+                "Stir in smooth cashew paste (or fresh cream) along with 1/2 cup warm water to create a velvety, glossy gravy. Simmer gently for 3 minutes.",
+                "Gently add soft paneer cubes. Sprinkle crushed kasuri methi, garam masala, and a pinch of sugar to balance the tomato acidity.",
+                "Simmer covered on low heat for 3-4 minutes so paneer absorbs the rich flavors. Top with extra butter and coriander. Serve hot!"
+            ],
+            steps_hi=[
+                "कड़ाही में 1 बड़ा चम्मच मक्खन और थोड़ा तेल गरम करें। जीरा, बारीक कटा प्याज और अदरक-लहसुन पेस्ट डालकर सुनहरा होने तक भूनें।",
+                "टमाटर की ताज़ी प्यूरी, कश्मीरी लाल मिर्च, हल्दी और स्वादानुसार नमक डालें। मध्यम आंच पर 7-8 मिनट तक मसाला तेल छोड़ने तक पकाएं।",
+                "काजू का पेस्ट या ताज़ी मलाई और 1/2 कप गुनगुना पानी मिलाकर क्रीमी ग्रेवी बनाएं। 3 मिनट तक धीमी आंच पर उबलने दें।",
+                "पनीर के टुकड़े डालें। ऊपर से भुनी हुई कसूरी मेथी, गरम मसाला और हल्की मिठास के लिए चुटकी भर चीनी मिलाएं।",
+                "धीमी आंच पर ढककर 3-4 मिनट तक पकाएं ताकि पनीर में ग्रेवी का स्वाद समा जाए। ऊपर से थोड़ा मक्खन और हरा धनिया डालकर गरमा-गरम परोसें!"
+            ],
+            chef_tip="Soak paneer cubes in warm salted water for 10 minutes before adding to the gravy to keep them exceptionally soft and spongy!",
+            chef_tip_hi="पनीर को ग्रेवी में डालने से पहले 10 मिनट गुनगुने नमकीन पानी में भिगोकर रखें, इससे पनीर एकदम सॉफ्ट और मखमली बनता है!"
+        )
+
+    # 2. BIRYANI (VEG / CHICKEN)
+    if "biryani" in dl or "pulao" in dl:
+        is_chk = "chicken" in dl or "mutton" in dl
+        p_name = "Royal Chicken Dum Biryani" if is_chk else "Royal Awadhi Veg Dum Biryani"
+        p_hi = "शाही चिकन दम बिरयानी" if is_chk else "शाही नवाबी वेज दम बिरयानी"
+        m_ing = ["Chicken (500g)" if is_chk else "Mixed Veggies & Paneer (2 cups)", "Aged Basmati Rice (2 cups)", "Thick Curd / Yogurt (1/2 cup)", "Crispy Fried Onions (Birista, 1/2 cup)", "Ghee & Mint Leaves"]
+        m_hi = ["चिकन (500 ग्राम)" if is_chk else "सब्जियां व पनीर (2 कप)", "बासमती चावल (2 कप)", "गाढ़ा दही (1/2 कप)", "तले हुए सुनहरे प्याज (बिरिस्ता)", "शुद्ध देसी घी और पुदीना पत्ता"]
+        return RescueRecipe(
+            recipe_name=p_name,
+            recipe_name_hi=p_hi,
+            meal_type="Main Course",
+            meal_type_hi="मुख्य शाही भोजन",
+            pairing_notes="Aromatic spiced rice layered over rich marinade. Serve with chilled cucumber boondi raita, sliced onions, and lemon wedges.",
+            pairing_notes_hi="खुशबूदार खड़े मसालों के चावल और मैरिनेड की परतें। इसे ठंडे बूंदी रायते, प्याज के छल्लों और नींबू के साथ परोसें।",
+            prep_time_minutes=35,
+            ingredients_used=m_ing,
+            ingredients_used_hi=m_hi,
+            corrected_ingredients=["Basmati Rice", "Marinade", "Crispy Onions", "Ghee", "Mint"],
+            pantry_items_needed=["Whole spices (bay leaf, cloves, cardamom, cinnamon)", "1 tbsp Biryani Masala", "1 tsp Chilli powder", "Saffron soaked in warm milk", "Salt"],
+            pantry_items_needed_hi=["साबुत खड़े मसाले (तेजपत्ता, लौंग, इलायची, दालचीनी)", "1 बड़ा चम्मच बिरयानी मसाला", "1 चम्मच लाल मिर्च", "केसर वाला गुनगुना दूध", "स्वादानुसार नमक"],
+            steps=[
+                "Soak basmati rice for 30 minutes, then boil in salted water with whole spices until 70% cooked (grain breaks into 3 pieces). Drain completely.",
+                f"Marinate {m_ing[0]} with curd, biryani masala, ginger-garlic paste, red chilli, turmeric, and salt for 15 minutes.",
+                "In a heavy-bottomed pot, sear the marinated base in ghee and oil until cooked through and aromatic.",
+                "Layer the 70% cooked rice over the masala base. Top generously with golden fried onions (birista), fresh mint, ghee, and saffron milk.",
+                "Seal the pot with dough or foil and a tight lid. Cook on 'Dum' over low flame for 15-18 minutes. Rest 10 minutes, fluff gently, and serve!"
+            ],
+            steps_hi=[
+                "बासमती चावल को 30 मिनट भिगोएं, फिर खड़े मसालों वाले उबलते पानी में 70% (चावल में एक कनी रहे) पकने तक उबालें और छान लें।",
+                f"{m_hi[0]} को दही, बिरयानी मसाला, अदरक-लहसुन पेस्ट, मिर्च और नमक के साथ 15 मिनट मैरीनेट करें।",
+                "एक भारी तले के बर्तन में घी गरम करें और मैरीनेट किए मिश्रण को अच्छी तरह भूनकर पका लें।",
+                "मसाले के ऊपर उबले चावल की परत बिछाएं। ऊपर से सुनहरा तला प्याज (बिरिस्ता), हरा पुदीना, देसी घी और केसर वाला दूध डालें।",
+                "बर्तन को फॉइल या आटे से सील करके धीमी आंच पर 15-18 मिनट 'दम' दें। 10 मिनट बाद हल्के हाथों से खोलें और परोसें!"
+            ],
+            chef_tip="Boil the rice with 1 tsp of vinegar and whole spices; this keeps each grain separate, extra long, and dazzling white!",
+            chef_tip_hi="चावल उबालते समय पानी में 1 छोटा चम्मच सिरका और खड़े मसाले डालें, इससे चावल का हर दाना लंबा, खिला-खिला और चमकदार बनता है!"
+        )
+
+    # 3. DAL TADKA / DAL MAKHANI
+    if "dal" in dl or "daal" in dl:
+        is_makhani = "makhani" in dl
+        p_name = "Restaurant-Style Dal Makhani" if is_makhani else "Dhaba-Style Double Tadka Dal"
+        p_hi = "क्रीमी दाल मखनी" if is_makhani else "ढाबा स्टाइल डबल तड़का दाल"
+        return RescueRecipe(
+            recipe_name=p_name,
+            recipe_name_hi=p_hi,
+            meal_type="Main Course",
+            meal_type_hi="मुख्य भोजन",
+            pairing_notes="Comforting, velvety lentils tempered with sizzling garlic-cumin ghee. Enjoy with steamed basmati rice or tawa rotis.",
+            pairing_notes_hi="देसी घी और लहसुन-जीरे के तड़के वाली स्वादिष्ट दाल। इसे गरमा-गरम सादे चावल या तवा रोटी के साथ खाएं।",
+            prep_time_minutes=20,
+            ingredients_used=["Toor / Moong Dal (1 cup)" if not is_makhani else "Whole Black Urad & Rajma (1 cup)", "Tomatoes (2 chopped)", "Garlic (6 cloves crushed)", "Ghee (2 tbsp)", "Fresh Coriander"],
+            ingredients_used_hi=["तूर / मूंग दाल (1 कप)", "बारीक कटे टमाटर (2)", "कुटा हुआ लहसुन (6 कलियां)", "शुद्ध देसी घी (2 बड़े चम्मच)", "ताज़ा हरा धनिया"],
+            corrected_ingredients=["Lentils", "Tomatoes", "Garlic", "Ghee", "Spices"],
+            pantry_items_needed=["1 tsp Cumin seeds", "1/2 tsp Mustard seeds", "1/2 tsp Turmeric", "1 tsp Kashmiri Red Chilli powder", "Pinch of Hing (Asafoetida)", "Dry Red Chillies (2)"],
+            pantry_items_needed_hi=["1 छोटा चम्मच जीरा", "1/2 छोटा चम्मच राई", "1/2 छोटा चम्मच हल्दी", "1 छोटा चम्मच कश्मीरी लाल मिर्च", "एक चुटकी हींग", "2 साबुत सूखी लाल मिर्च"],
+            steps=[
+                "Pressure cook washed dal with turmeric, salt, chopped tomatoes, and 3 cups water for 4-5 whistles until soft and creamy. Whisk gently.",
+                "Prepare First Tadka: Heat 1 tbsp ghee in a pan, add cumin, chopped onions, and ginger. Sauté until golden, pour into cooked dal, and simmer for 5 minutes.",
+                "Prepare Sizzling Second Tadka: In a small tadka pan, heat 1 tbsp pure desi ghee. Add hing, crushed garlic cloves, and whole red chillies until garlic turns nutty brown.",
+                "Turn off the heat, stir in Kashmiri red chilli powder for brilliant color, and immediately pour the sizzling tadka over the dal. Cover with lid for 2 minutes to trap aroma.",
+                "Garnish with chopped fresh coriander and serve piping hot!"
+            ],
+            steps_hi=[
+                "दाल को हल्दी, नमक, कटे टमाटर और 3 कप पानी के साथ कुकर में 4-5 सीटी आने तक अच्छी तरह पकाएं। मथानी से हल्का घोंट लें।",
+                "पहला तड़का: कड़ाही में 1 चम्मच घी गरम करें, जीरा, कटा प्याज और अदरक भूनें। उबली दाल में मिलाकर 5 मिनट धीमी आंच पर पकाएं।",
+                "दूसरा स्पेशल तड़का: तड़का पैन में 1 बड़ा चम्मच शुद्ध देसी घी गरम करें। हींग, कुटी लहसुन और साबुत लाल मिर्च डालकर लहसुन को सुनहरा भूरा होने दें।",
+                "गैस बंद करके कश्मीरी लाल मिर्च डालें और खौलता हुआ तड़का सीधे दाल पर डालकर तुरंत 2 मिनट के लिए ढक्कन बंद कर दें ताकि खुशबू अंदर समा जाए।",
+                "ताज़ा हरा धनिया डालकर गरमा-गरम चावल या फुल्के के साथ परोसें!"
+            ],
+            chef_tip="Pouring the sizzling garlic-ghee tadka and immediately clamping the lid on for 2 minutes locks the smoky dhaba aroma directly into the dal!",
+            chef_tip_hi="तड़का लगाते ही तुरंत 2 मिनट के लिए बर्तन को ढक दें, इससे ढाबे जैसी असली सौंधी देसी घी की खुशबू दाल के अंदर पूरी तरह समा जाती है!"
+        )
+
+    # 4. PAV BHAJI
+    if "pav bhaji" in dl or "bhaji" in dl:
+        return RescueRecipe(
+            recipe_name="Mumbai Street-Style Buttery Pav Bhaji",
+            recipe_name_hi="मुंबई स्ट्रीट-स्टाइल बटर पाव भाजी",
+            meal_type="Street Food Snack",
+            meal_type_hi="स्ट्रीट फूड स्नैक",
+            pairing_notes="Tangy, spiced mashed vegetable bhaji loaded with melting Amul butter. Serve with soft toasted pav, crunchy raw onions, and fresh lemon wedges.",
+            pairing_notes_hi="मक्खन से लबालब चटपटी मैश की हुई भाजी और तवे पर सिके मुलायम पाव, प्याज और नींबू के साथ।",
+            prep_time_minutes=25,
+            ingredients_used=["Potatoes, Cauliflower, Green Peas (boiled, 2 cups)", "Pav Buns (6-8)", "Tomatoes (3 finely chopped)", "Capsicum (1 finely chopped)", "Butter (3 tbsp)"],
+            ingredients_used_hi=["उबले आलू, गोभी, हरी मटर (2 कप)", "पाव बन (6-8)", "बारीक कटे टमाटर (3)", "बारीक कटी शिमला मिर्च (1)", "मक्खन (3 बड़े चम्मच)"],
+            corrected_ingredients=["Veggies", "Pav", "Tomatoes", "Capsicum", "Butter"],
+            pantry_items_needed=["2 tbsp Pav Bhaji Masala", "1 tsp Kashmiri Red Chilli powder", "1 tbsp Ginger-Garlic paste", "1 tsp Kasuri Methi", "Salt to taste"],
+            pantry_items_needed_hi=["2 बड़े चम्मच पाव भाजी मसाला", "1 चम्मच कश्मीरी लाल मिर्च", "1 चम्मच अदरक-लहसुन पेस्ट", "1 चम्मच कसूरी मेथी", "स्वादानुसार नमक"],
+            steps=[
+                "Boil potatoes, cauliflower, carrots, and green peas until fork-tender. Mash thoroughly with a potato masher.",
+                "On a wide tawa or pan, melt 2 tbsp butter. Sauté finely chopped onions, capsicum, and ginger-garlic paste until soft.",
+                "Add chopped tomatoes, pav bhaji masala, Kashmiri chilli powder, and salt. Cook until tomatoes turn completely pulpy and butter separates.",
+                "Add the mashed boiled veggies with 1/2 cup warm water. Using the masher, mash continuously on the tawa on medium heat for 6-8 minutes until smooth and thick.",
+                "Finish bhaji with a generous slab of butter, crushed kasuri methi, and lemon juice. Slit pav buns, toast on the buttered tawa with a pinch of pav bhaji masala, and serve together hot!"
+            ],
+            steps_hi=[
+                "आलू, गोभी और हरी मटर को उबालकर मैशर से अच्छी तरह मैश कर लें।",
+                "तवे पर 2 बड़े चम्मच मक्खन गरम करें। बारीक कटा प्याज, शिमला मिर्च और अदरक-लहसुन पेस्ट डालकर भूनें।",
+                "टमाटर, पाव भाजी मसाला, कश्मीरी लाल मिर्च और नमक डालकर टमाटर के गलने तक अच्छी तरह पकाएं।",
+                "उबली मैश की हुई सब्जियां और 1/2 कप पानी डालें। तवे पर ही मैशर से 6-8 मिनट तक लगातार दबाते हुए स्मूथ भाजी तैयार करें।",
+                "ऊपर से ढेर सारा मक्खन, कसूरी मेथी और नींबू का रस निचोड़ें। पाव को बीच से काटकर तवे पर मक्खन और हल्के मसाले के साथ सेंकें और गरमा-गरम परोसें!"
+            ],
+            chef_tip="Toast the pav on the same tawa where the bhaji was prepared with a pinch of pav bhaji masala and chopped coriander for street-vendor taste!",
+            chef_tip_hi="पाव को उसी तवे पर सेकें जिस पर भाजी बनी हो, थोड़ा सा भाजी मसाला और हरा धनिया डालकर सेकने से असली मुंबई चौपाटी वाला स्वाद आता है!"
+        )
+
+    # 5. KHEER / DESSERT
+    if any(k in dl for k in ["kheer", "payasam", "pudding", "halwa", "gulab jamun", "dessert"]):
+        return RescueRecipe(
+            recipe_name="Royal Creamy Rice Kheer (Indian Rice Pudding)",
+            recipe_name_hi="शाही मलाईदार चावल की खीर",
+            meal_type="Traditional Dessert",
+            meal_type_hi="पारंपरिक मिठाई",
+            pairing_notes="Slow-simmered rich condensed milk kheer infused with cardamom and saffron. Serve warm or chilled garnished with slivered almonds and pistachios.",
+            pairing_notes_hi="धीमी आंच पर पकी गाढ़ी मलाईदार केसर-इलायची वाली खीर। बादाम-पिस्ता की कतरन के साथ गरमा-गरम या ठंडी परोसें।",
+            prep_time_minutes=30,
+            ingredients_used=["Full Cream Milk (1 litre)", "Basmati Rice (1/4 cup, soaked & coarsely crushed)", "Sugar (1/2 cup)", "Almonds & Cashews (sliced, 2 tbsp)", "Saffron strands"],
+            ingredients_used_hi=["फुल क्रीम दूध (1 लीटर)", "बासमती चावल (1/4 कप, भीगे व हल्के कुटे)", "चीनी (1/2 कप)", "काजू व बादाम कतरन (2 चम्मच)", "केसर के धागे"],
+            corrected_ingredients=["Full Cream Milk", "Rice", "Sugar", "Nuts", "Saffron"],
+            pantry_items_needed=["1/2 tsp Cardamom powder (Elaichi)", "1 tbsp Ghee", "Chironji / Raisins (optional)"],
+            pantry_items_needed_hi=["1/2 छोटा चम्मच इलायची पाउडर", "1 चम्मच शुद्ध देसी घी", "चिरौंजी या किशमिश"],
+            steps=[
+                "Wash basmati rice, soak in water for 20 minutes, then coarsely crush between fingers with 1/2 tsp ghee.",
+                "In a heavy-bottomed pan, bring 1 litre full-cream milk to a rolling boil. Lower heat and let it simmer for 5 minutes.",
+                "Add the crushed rice into the boiling milk. Cook on low-medium flame, stirring continuously and scraping milk solids from pan sides.",
+                "Simmer for 20 minutes until the rice is completely tender and milk has reduced to a thick, creamy consistency.",
+                "Stir in sugar, cardamom powder, saffron strands, and roasted nuts. Simmer for 3 more minutes until sugar is fully dissolved. Serve chilled or warm!"
+            ],
+            steps_hi=[
+                "बासमती चावल को धोकर 20 मिनट भिगोएं, फिर उंगलियों से हल्का सा दरदरा मसल लें और आधा चम्मच घी मिलाएँ।",
+                "भारी तले के बर्तन में 1 लीटर फुल क्रीम दूध उबालें। उबाल आने पर आंच धीमी कर दें।",
+                "दरदरा कुटा चावल दूध में डालें। धीमी आंच पर लगातार चलाते हुए पकाएं और किनारों पर जमने वाली मलाई को दूध में मिलाते रहें।",
+                "20 मिनट तक पकाएं जब तक चावल पूरी तरह गल न जाए और दूध गाढ़ा व मलाईदार न हो जाए।",
+                "चीनी, इलायची पाउडर, केसर और भुने मेवे डालें। 3 मिनट और पकाएं ताकि चीनी घुल जाए। ठंडा करके या गरमा-गरम परोसें!"
+            ],
+            chef_tip="Coarsely crushing the soaked rice with a drop of ghee before boiling releases rice starch uniformly, creating that rich rabdi-like creaminess without adding condensed milk!",
+            chef_tip_hi="चावल को पकाने से पहले हल्के हाथ से मसलकर थोड़ा घी मिला लेने से दूध में स्टार्च समान रूप से घुलता है और बिना मावा डाले भी खीर एकदम रबड़ी जैसी गाढ़ी बनती है!"
+        )
+
+    # 6. UNIVERSAL DYNAMIC DISH CHEF (For any custom dish asked)
+    clean_title = dish.title().strip()
+    return RescueRecipe(
+        recipe_name=f"Chef's Special Homestyle {clean_title}",
+        recipe_name_hi=f"स्वादिष्ट होमस्टाइल {clean_title}",
+        meal_type="Homestyle Special",
+        meal_type_hi="घर का खास व्यंजन",
+        pairing_notes=f"Authentic step-by-step master recipe for {clean_title}, seasoned with harmonious aromatics and home kitchen staples.",
+        pairing_notes_hi=f"{clean_title} बनाने की आसान और प्रमाणिक होमस्टाइल विधि, घर की रसोई के ताज़ा मसालों के साथ।",
+        prep_time_minutes=25,
+        ingredients_used=[f"Primary ingredients for {clean_title}", "Cooking Oil / Butter (2 tbsp)", "Aromatics (Onion, Ginger, Garlic)", "Fresh Herbs"],
+        ingredients_used_hi=[f"{clean_title} की मुख्य सामग्री", "तेल या मक्खन (2 बड़े चम्मच)", "अदरक, लहसुन, प्याज", "ताज़ा हरा धनिया"],
+        corrected_ingredients=[clean_title, "Spices", "Oil", "Aromatics"],
+        pantry_items_needed=["1 tsp Cumin or Mustard seeds", "1 tsp Ground Spices (Coriander, Garam Masala)", "1/2 tsp Turmeric & Chilli", "Salt to taste"],
+        pantry_items_needed_hi=["1 छोटा चम्मच जीरा या राई", "1 चम्मच धनिया व गरम मसाला", "1/2 चम्मच हल्दी व लाल मिर्च", "स्वादानुसार नमक"],
+        steps=[
+            f"Preparation: Gather all fresh ingredients for {clean_title}. Wash, chop, and measure seasonings before starting.",
+            "Base Tempering: Heat oil or butter in a suitable pan. Add whole spices, aromatics (onions, ginger, garlic), and sauté over medium flame until fragrant and golden.",
+            f"Cooking Main Elements: Add the primary {clean_title} ingredients. Season with turmeric, coriander, chilli powder, and salt. Sauté well to coat each piece.",
+            "Simmer & Blend: Pour in required water, broth, or gravy base. Cover with lid and simmer on low-medium flame for 12-15 minutes until tender and deeply flavorful.",
+            "Finishing Touch: Uncover, stir in a dash of garam masala and fresh herbs. Serve piping hot with your favorite accompaniments!"
+        ],
+        steps_hi=[
+            f"तैयारी: {clean_title} की सभी आवश्यक सामग्रियों को धोकर, काटकर और मसालों को नापकर रख लें।",
+            "तड़का लगाएं: कड़ाही में तेल या मक्खन गरम करें। खड़े मसाले, बारीक कटा प्याज, अदरक और लहसुन डालकर सुनहरा होने तक भूनें।",
+            f"सामग्री पकाएं: {clean_title} की मुख्य सामग्री डालें। हल्दी, धनिया पाउडर, लाल मिर्च और स्वादानुसार नमक डालकर अच्छी तरह मिलाएँ।",
+            "धीमी आंच पर पकाएं: आवश्यकतानुसार पानी या ग्रेवी डालकर ढक्कन लगाएं और 12-15 मिनट धीमी आंच पर सभी स्वादों के मिलने तक पकाएं।",
+            "अंतिम स्पर्श: ढक्कन खोलें, थोड़ा गरम मसाला और ताज़ा हरा धनिया मिलाएं। गरमा-गरम परोसें और आनंद लें!"
+        ],
+        chef_tip=f"For maximum depth of flavor in {clean_title}, roast your ground spices on low heat for 30 seconds before adding liquids!",
+        chef_tip_hi=f"{clean_title} में बेहतरीन स्वाद और खुशबू के लिए पिसे मसालों को पानी डालने से पहले 30 सेकंड धीमी आंच पर सूखा भून लें!"
+    )
+
 RESCUE_PROMPT_TEMPLATE = """You are an expert master chef and zero-waste kitchen culinary genius for 'FridgeInventory'.
 A household has these specific expiring items or leftovers that MUST be used today to prevent food waste:
 {ingredients}
@@ -1525,10 +1810,36 @@ Output Schema:
 """
 
 def generate_rescue_recipe(items: List[str]) -> RescueRecipe:
-    """Generate an Indian zero-waste rescue recipe using Gemini GenAI with graceful culinary fallback and drink/food pairing."""
+    """Generate an Indian zero-waste rescue recipe or tell how to make any requested recipe."""
     raw_clean = [str(i).strip() for i in items if str(i).strip()]
     if not raw_clean:
-        raise HTTPException(status_code=400, detail="Provide at least one expiring food item.")
+        raise HTTPException(status_code=400, detail="Provide at least one expiring food item or ask how to make a recipe.")
+
+    # Check if user is asking how to make a specific recipe / dish!
+    is_recipe_ask, target_dish = detect_recipe_dish_query(raw_clean)
+    if is_recipe_ask:
+        # Try Gemini GenAI with HOWTO_RECIPE_PROMPT_TEMPLATE
+        client = get_gemini_client()
+        if client is not None and types is not None:
+            for model_name in GEMINI_MODELS:
+                try:
+                    response = client.models.generate_content(
+                        model=model_name,
+                        contents=HOWTO_RECIPE_PROMPT_TEMPLATE.format(dish=target_dish),
+                        config=types.GenerateContentConfig(
+                            response_mime_type="application/json",
+                            response_schema=RescueRecipe,
+                            temperature=0.3,
+                        ),
+                    )
+                    raw_text = (response.text or "").strip()
+                    recipe = RescueRecipe.model_validate_json(raw_text)
+                    return recipe
+                except Exception as exc:
+                    logger.warning(f"Recipe how-to generation failed on {model_name}: {exc}")
+                    continue
+        # Fallback to authentic dish preset
+        return get_dish_recipe_fallback(target_dish)
 
     # 1. Automatic culinary spelling and typo correction
     clean_items, corrections = correct_ingredients_list(raw_clean)
@@ -1920,6 +2231,16 @@ def api_process_command(payload: CommandRequest, request: Request, fridge: Optio
             "action": "clear",
             "message_en": "All items cleared from your fridge.",
             "message_hi": "फ्रिज पूरी तरह से साफ़ कर दिया गया है।",
+        }
+
+    # Check if user asked 'how to make ...' or for a recipe directly in the command bar!
+    is_rec, rec_dish = detect_recipe_dish_query([raw_cmd])
+    if is_rec:
+        return {
+            "action": "recipe",
+            "dish": rec_dish or raw_cmd,
+            "message_en": f"Opening recipe for '{rec_dish or raw_cmd}'...",
+            "message_hi": f"'{rec_dish or raw_cmd}' की रेसिपी तैयार की जा रही है...",
         }
 
     # 2. Tokenize & detect intent
@@ -3528,7 +3849,7 @@ HTML_CONTENT = r"""<!DOCTYPE html>
               <input 
                 type="text" 
                 id="rescue-items-input" 
-                placeholder="e.g. milk, chocolate, bread, cheese, peri peri, leftover dal..." 
+                placeholder="Ask 'how to make biryani', 'paneer butter masala', or enter leftovers: milk, bread, cheese..." data-i18n-placeholder="custom_rescue_placeholder" 
                 class="w-full pl-4 pr-12 py-2.5 rounded-xl border border-stone-200 dark:border-stone-700 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 bg-stone-50 dark:bg-stone-800 text-stone-800 dark:text-stone-100 font-medium"
               />
               <button 
@@ -3544,7 +3865,17 @@ HTML_CONTENT = r"""<!DOCTYPE html>
             </div>
 
             <!-- SPELLING CORRECTION FEEDBACK BANNER -->
-            <div id="rescue-spell-badge" class="hidden mt-2 p-2.5 rounded-xl bg-amber-50 dark:bg-stone-800 border border-amber-200 dark:border-stone-700 text-xs text-amber-900 dark:text-amber-200 flex items-center justify-between gap-2">
+            <!-- QUICK HOW-TO RECIPE INSPIRATION CHIPS -->
+            <div class="mt-2.5 flex items-center gap-1.5 flex-wrap text-xs text-stone-500 dark:text-stone-400">
+              <span class="font-medium" data-i18n="recipe_quick_try">Quick Recipes:</span>
+              <button type="button" class="recipe-quick-chip hover:bg-stone-200 dark:hover:bg-stone-700 bg-stone-100 dark:bg-stone-800 text-stone-700 dark:text-stone-300 px-2.5 py-1 rounded-lg transition cursor-pointer" data-query="how to make paneer butter masala">🍲 Paneer Butter Masala</button>
+              <button type="button" class="recipe-quick-chip hover:bg-stone-200 dark:hover:bg-stone-700 bg-stone-100 dark:bg-stone-800 text-stone-700 dark:text-stone-300 px-2.5 py-1 rounded-lg transition cursor-pointer" data-query="how to make biryani">🍚 Biryani</button>
+              <button type="button" class="recipe-quick-chip hover:bg-stone-200 dark:hover:bg-stone-700 bg-stone-100 dark:bg-stone-800 text-stone-700 dark:text-stone-300 px-2.5 py-1 rounded-lg transition cursor-pointer" data-query="how to make dal tadka">🥣 Dal Tadka</button>
+              <button type="button" class="recipe-quick-chip hover:bg-stone-200 dark:hover:bg-stone-700 bg-stone-100 dark:bg-stone-800 text-stone-700 dark:text-stone-300 px-2.5 py-1 rounded-lg transition cursor-pointer" data-query="how to make kheer">🍮 Kheer</button>
+              <button type="button" class="recipe-quick-chip hover:bg-stone-200 dark:hover:bg-stone-700 bg-stone-100 dark:bg-stone-800 text-stone-700 dark:text-stone-300 px-2.5 py-1 rounded-lg transition cursor-pointer" data-query="how to make pav bhaji">🍛 Pav Bhaji</button>
+            </div>
+
+            <div id="rescue-spell-badge"  class="hidden mt-2 p-2.5 rounded-xl bg-amber-50 dark:bg-stone-800 border border-amber-200 dark:border-stone-700 text-xs text-amber-900 dark:text-amber-200 flex items-center justify-between gap-2">
               <div class="flex items-center gap-1.5">
                 <svg class="w-3.5 h-3.5 text-amber-600 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
                 <span id="rescue-spell-text" class="font-medium"></span>
@@ -3569,7 +3900,11 @@ HTML_CONTENT = r"""<!DOCTYPE html>
                       <svg class="w-3.5 h-3.5 text-stone-400 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
                       <span id="recipe-time-text">20 mins</span>
                     </span>
-                    <button id="copy-recipe-btn" class="px-2.5 py-1 bg-white dark:bg-stone-900 hover:bg-stone-100 dark:hover:bg-stone-750 border border-stone-200 dark:border-stone-700 rounded-xl text-stone-600 dark:text-stone-300 text-xs font-medium inline-flex items-center gap-1 shrink-0" title="Copy">
+                    <button id="speak-recipe-btn" onclick="toggleRecipeSpeech()" class="px-2.5 py-1 bg-white dark:bg-stone-900 hover:bg-stone-100 dark:hover:bg-stone-750 border border-stone-200 dark:border-stone-700 rounded-xl text-stone-600 dark:text-stone-300 text-xs font-semibold inline-flex items-center gap-1.5 shrink-0 transition cursor-pointer" title="Listen to recipe spoken out loud">
+                      <svg id="speak-icon-idle" class="w-3.5 h-3.5 text-brand-600 dark:text-brand-400 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z"/></svg>
+                      <span id="speak-recipe-btn-text" data-i18n="btn_speak_recipe">🔊 Listen Recipe</span>
+                    </button>
+                    <button id="copy-recipe-btn"  class="px-2.5 py-1 bg-white dark:bg-stone-900 hover:bg-stone-100 dark:hover:bg-stone-750 border border-stone-200 dark:border-stone-700 rounded-xl text-stone-600 dark:text-stone-300 text-xs font-medium inline-flex items-center gap-1 shrink-0" title="Copy">
                       <svg class="w-3.5 h-3.5 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>
                       <span data-i18n="btn_copy">Copy</span>
                     </button>
@@ -4301,10 +4636,10 @@ HTML_CONTENT = r"""<!DOCTYPE html>
         push_guide_title: "How to allow notifications in Google Chrome",
         push_guide_desc: "If your browser blocks notifications: click the lock / tune icon next to the web address at the top > Site settings > set Notifications to Allow.",
         push_guide_btn: "Google Help Guide",
-        rescue_title: "Zero-Waste Rescue Chef",
-        rescue_desc: "Select expiring ingredients from your fridge or specify custom leftovers to create an authentic homestyle dish.",
+        rescue_title: "Zero-Waste Rescue & Recipe Chef",
+        rescue_desc: "Ask how to make any dish (e.g. 'how to make paneer butter masala') or select expiring leftovers to create an authentic homestyle dish.",
         rescue_run_btn: "Generate Rescue Recipe",
-        custom_rescue_label: "Custom Ingredients / Leftovers to Rescue (Comma-separated):",
+        custom_rescue_label: "Ask How to Make Any Recipe or Enter Ingredients to Rescue:",
         close_recipe_btn: "Close Recipe",
         recipe_card_tag: "Zero-Waste Homestyle Recipe",
         rescued_items_hdr: "Rescued Ingredients",
@@ -4380,6 +4715,10 @@ HTML_CONTENT = r"""<!DOCTYPE html>
         pwa_trigger_btn: "Click Here to Install Now",
         pwa_close_btn: "Got It, Thanks!",
         badge_pin_protected: "PIN Protected",
+        btn_speak_recipe: "🔊 Listen Recipe",
+        btn_stop_speech: "⏹️ Stop Voice",
+        recipe_quick_try: "Quick Recipes:",
+        custom_rescue_placeholder: "Ask 'how to make biryani', 'paneer butter masala', or enter leftovers: milk, bread, cheese...",
         header_alerts_label: "Alerts:",
         header_alerts_off: "OFF",
         header_alerts_on: "ON",
@@ -4475,10 +4814,10 @@ HTML_CONTENT = r"""<!DOCTYPE html>
         push_guide_title: "गूगल क्रोम में नोटिफिकेशन कैसे चालू करें",
         push_guide_desc: "यदि नोटिफिकेशन ब्लॉक हैं: ऊपर वेबसाइट पते के पास ताले के निशान पर क्लिक करें > Site settings > Notifications को Allow करें।",
         push_guide_btn: "गूगल हेल्प गाइड",
-        rescue_title: "रेस्क्यू शेफ़",
-        rescue_desc: "बर्बादी रोकने के लिए अपने फ्रिज से समाप्त होने वाले सामान चुनें और स्वादिष्ट होमस्टाइल रेसिपी बनाएँ।",
+        rescue_title: "ज़ीरो-वेस्ट रेस्क्यू एवं रेसिपी शेफ़",
+        rescue_desc: "कोई भी रेसिपी पूछें (जैसे: 'पनीर बटर मसाला कैसे बनाएं') या फ्रिज में बचे हुए सामान से स्वादिष्ट होमस्टाइल रेसिपी बनाएँ।",
         rescue_run_btn: "रेस्क्यू रेसिपी बनाएँ",
-        custom_rescue_label: "रेस्क्यू के लिए बचे हुए सामान (अल्पविराम से अलग करें):",
+        custom_rescue_label: "कोई भी रेसिपी पूछें (जैसे: कैसे बनाएं) या सामग्री दर्ज करें:",
         close_recipe_btn: "रेसिपी बंद करें",
         recipe_card_tag: "जीरो-वेस्ट होमस्टाइल रेसिपी",
         rescued_items_hdr: "बचाई गई सामग्री",
@@ -4554,6 +4893,10 @@ HTML_CONTENT = r"""<!DOCTYPE html>
         pwa_trigger_btn: "अभी इंस्टॉल करने के लिए यहाँ क्लिक करें",
         pwa_close_btn: "समझ गया, धन्यवाद!",
         badge_pin_protected: "PIN द्वारा सुरक्षित",
+        btn_speak_recipe: "🔊 रेसिपी सुनें",
+        btn_stop_speech: "⏹️ आवाज़ रोकें",
+        recipe_quick_try: "त्वरित रेसिपी:",
+        custom_rescue_placeholder: "पूछें 'पनीर बटर मसाला कैसे बनाएं', 'बिरयानी', या सामग्री दर्ज करें: दूध, ब्रेड...",
         header_alerts_label: "अलर्ट:",
         header_alerts_off: "बंद",
         header_alerts_on: "चालू",
@@ -5732,6 +6075,17 @@ HTML_CONTENT = r"""<!DOCTYPE html>
         const data = await res.json();
 
         // 1. Clear action
+        if (data.action === 'recipe') {
+          const tabRescueBtn = document.getElementById('tab-rescue-btn');
+          if (tabRescueBtn) tabRescueBtn.click();
+          const rescueInput = document.getElementById('rescue-items-input');
+          if (rescueInput) rescueInput.value = data.dish || rawInput;
+          stopRecipeSpeech();
+          triggerRecipeGeneration([data.dish || rawInput]);
+          showToast(currentLang === 'hi' ? `'${data.dish}' की रेसिपी तैयार हो रही है!` : `Generating recipe for '${data.dish}'!`, 'info');
+          return;
+        }
+
         if (data.action === 'clear') {
           inventory = [];
           try { localStorage.setItem('fi_cached_inventory', JSON.stringify(inventory)); } catch(e){}
@@ -6242,6 +6596,107 @@ HTML_CONTENT = r"""<!DOCTYPE html>
 
       recipeContainer.classList.remove('hidden');
     }
+
+        // ========================================================
+    // VOICE AUDIO RECIPE NARRATOR (SPEECH SYNTHESIS ENGINE)
+    // ========================================================
+    let isRecipeSpeaking = false;
+
+    function updateSpeechButtonUI(speaking) {
+      isRecipeSpeaking = speaking;
+      const btnText = document.getElementById('speak-recipe-btn-text');
+      const iconIdle = document.getElementById('speak-icon-idle');
+      const btn = document.getElementById('speak-recipe-btn');
+      if (!btnText) return;
+
+      if (speaking) {
+        btnText.textContent = currentLang === 'hi' ? '⏹️ आवाज़ रोकें' : '⏹️ Stop Voice';
+        if (btn) btn.className = 'px-2.5 py-1 bg-amber-50 dark:bg-amber-950/60 border border-amber-300 dark:border-amber-700 rounded-xl text-brand-700 dark:text-brand-300 text-xs font-bold inline-flex items-center gap-1.5 shrink-0 transition cursor-pointer shadow-sm';
+      } else {
+        btnText.textContent = currentLang === 'hi' ? '🔊 रेसिपी सुनें' : '🔊 Listen Recipe';
+        if (btn) btn.className = 'px-2.5 py-1 bg-white dark:bg-stone-900 hover:bg-stone-100 dark:hover:bg-stone-750 border border-stone-200 dark:border-stone-700 rounded-xl text-stone-600 dark:text-stone-300 text-xs font-semibold inline-flex items-center gap-1.5 shrink-0 transition cursor-pointer';
+      }
+    }
+
+    function stopRecipeSpeech() {
+      if ('speechSynthesis' in window) {
+        window.speechSynthesis.cancel();
+      }
+      updateSpeechButtonUI(false);
+    }
+    window.stopRecipeSpeech = stopRecipeSpeech;
+
+    function toggleRecipeSpeech() {
+      if (!('speechSynthesis' in window)) {
+        showToast('Voice narration is not supported in this browser.', 'warning', 'इस ब्राउज़र में ऑडियो आवाज़ समर्थित नहीं है।');
+        return;
+      }
+
+      if (isRecipeSpeaking) {
+        stopRecipeSpeech();
+        return;
+      }
+
+      const recipe = latestRecipe;
+      if (!recipe) return;
+
+      const isHindi = currentLang === 'hi';
+      const name = isHindi ? (recipe.recipe_name_hi || recipe.recipe_name) : recipe.recipe_name;
+      const time = isHindi ? `${recipe.prep_time_minutes} मिनट` : `${recipe.prep_time_minutes} minutes`;
+      
+      const ingredients = isHindi && recipe.ingredients_used_hi && recipe.ingredients_used_hi.length > 0
+        ? recipe.ingredients_used_hi.join(', ')
+        : (recipe.ingredients_used || []).join(', ');
+
+      const steps = isHindi && recipe.steps_hi && recipe.steps_hi.length > 0
+        ? recipe.steps_hi.map((s, idx) => `कदम ${idx + 1}: ${s}`).join('. ')
+        : (recipe.steps || []).map((s, idx) => `Step ${idx + 1}: ${s}`).join('. ');
+
+      const tip = isHindi ? (recipe.chef_tip_hi || recipe.chef_tip || '') : (recipe.chef_tip || recipe.chef_tip_hi || '');
+
+      let textToSpeak = '';
+      if (isHindi) {
+        textToSpeak = `${name} बनाने की विधि। पकाने का अनुमानित समय लगभग ${time} है। आवश्यक सामग्री: ${ingredients}। पकाने के निर्देश: ${steps}। शेफ़ का सीक्रेट नुस्खा: ${tip}।`;
+      } else {
+        textToSpeak = `Here is how to make ${name}. Estimated cooking time is ${time}. Main ingredients: ${ingredients}. Cooking instructions: ${steps}. Chef's secret tip: ${tip}.`;
+      }
+
+      window.speechSynthesis.cancel();
+      const utter = new SpeechSynthesisUtterance(textToSpeak);
+      utter.rate = 0.95;
+      utter.lang = isHindi ? 'hi-IN' : 'en-US';
+
+      // Pick localized voice if available
+      try {
+        const voices = window.speechSynthesis.getVoices();
+        if (isHindi) {
+          const hiVoice = voices.find(v => v.lang.startsWith('hi') || v.lang.includes('Hindi'));
+          if (hiVoice) utter.voice = hiVoice;
+        } else {
+          const enVoice = voices.find(v => v.lang.startsWith('en-IN') || v.lang.startsWith('en-US') || v.lang.startsWith('en-GB'));
+          if (enVoice) utter.voice = enVoice;
+        }
+      } catch (e) {}
+
+      utter.onstart = () => updateSpeechButtonUI(true);
+      utter.onend = () => updateSpeechButtonUI(false);
+      utter.onerror = () => updateSpeechButtonUI(false);
+
+      updateSpeechButtonUI(true);
+      window.speechSynthesis.speak(utter);
+    }
+    window.toggleRecipeSpeech = toggleRecipeSpeech;
+
+    // Quick Recipe Inspiration Chips click handler
+    document.querySelectorAll('.recipe-quick-chip').forEach(chip => {
+      chip.addEventListener('click', () => {
+        const query = chip.getAttribute('data-query');
+        const input = document.getElementById('rescue-items-input');
+        if (input) input.value = query;
+        stopRecipeSpeech();
+        triggerRecipeGeneration([query]);
+      });
+    });
 
     document.getElementById('generate-recipe-btn').addEventListener('click', async () => {
       const customText = document.getElementById('rescue-items-input').value.trim();
