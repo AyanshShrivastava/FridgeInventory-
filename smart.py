@@ -347,6 +347,11 @@ GEMINI_MODELS = list(dict.fromkeys([
     "gemini-3.6-flash",
     "gemini-3.7-flash",
     "gemini-3.8-flash",
+    "gemini-2.5-flash",
+    "gemini-2.0-flash",
+    "gemini-2.0-flash-lite",
+    "gemini-1.5-flash",
+    "gemini-1.5-pro",
 ]))
 
 def get_gemini_client() -> Optional[Any]:
@@ -387,10 +392,17 @@ except ImportError:
 
 _groq_client: Optional[Any] = None
 
-GROQ_TEXT_MODELS = [
-    os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile"),
+_primary_groq = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
+GROQ_TEXT_MODELS = list(dict.fromkeys([
+    _primary_groq,
+    "llama-3.3-70b-versatile",
     "llama-3.1-8b-instant",
-]
+    "mixtral-8x7b-32768",
+    "llama3-70b-8192",
+    "llama3-8b-8192",
+    "gemma2-9b-it",
+    "deepseek-r1-distill-llama-70b",
+]))
 
 GROQ_VISION_MODELS = [
     "llama-3.2-11b-vision-preview",
@@ -2011,7 +2023,7 @@ def generate_rescue_recipe(items: List[str]) -> RescueRecipe:
     # Check if user is asking how to make a specific recipe / dish!
     is_recipe_ask, target_dish = detect_recipe_dish_query(raw_clean)
     if is_recipe_ask:
-        # Try Gemini GenAI with HOWTO_RECIPE_PROMPT_TEMPLATE
+        # 1. Cascade through ALL Gemini models for how-to recipe
         client = get_gemini_client()
         if client is not None and types is not None:
             for model_name in GEMINI_MODELS:
@@ -2029,9 +2041,37 @@ def generate_rescue_recipe(items: List[str]) -> RescueRecipe:
                     recipe = RescueRecipe.model_validate_json(raw_text)
                     return recipe
                 except Exception as exc:
-                    logger.warning(f"Recipe how-to generation failed on {model_name}: {exc}")
+                    logger.warning(f"Recipe how-to generation failed on Gemini {model_name}: {exc}. Trying next model...")
                     continue
-        # Fallback to authentic dish preset
+
+        # 2. Fallback: Cascade through ALL Groq models for how-to recipe
+        groq_client = get_groq_client()
+        if groq_client is not None:
+            for g_model in GROQ_TEXT_MODELS:
+                try:
+                    g_chat = groq_client.chat.completions.create(
+                        model=g_model,
+                        messages=[
+                            {
+                                "role": "system",
+                                "content": "You are a master Indian culinary chef. Output strictly valid JSON conforming to the recipe schema with English and Hindi fields."
+                            },
+                            {
+                                "role": "user",
+                                "content": HOWTO_RECIPE_PROMPT_TEMPLATE.format(dish=target_dish)
+                            }
+                        ],
+                        response_format={"type": "json_object"},
+                        temperature=0.3,
+                    )
+                    g_raw = g_chat.choices[0].message.content or ""
+                    recipe = RescueRecipe.model_validate_json(g_raw)
+                    return recipe
+                except Exception as g_err:
+                    logger.warning(f"Groq how-to recipe failed on {g_model}: {g_err}. Trying next model...")
+                    continue
+
+        # 3. Final Fallback: Authentic homestyle preset database
         return get_dish_recipe_fallback(target_dish)
 
     # 1. Automatic culinary spelling and typo correction
@@ -2060,32 +2100,34 @@ def generate_rescue_recipe(items: List[str]) -> RescueRecipe:
                 logger.warning(f"Rescue recipe generation failed on {model_name}: {exc}")
                 continue
 
-    # 2b. Try Groq Culinary Fallback if Gemini is unavailable
+    # 2b. Fallback: Cascade through ALL Groq models if Gemini is unavailable
     groq_client = get_groq_client()
     if groq_client is not None:
-        try:
-            formatted_list = ", ".join(clean_items)
-            g_chat = groq_client.chat.completions.create(
-                model="llama-3.3-70b-versatile",
-                messages=[
-                    {
-                        "role": "system",
-                        "content": "You are an expert chef specializing in Indian home cooking, pairing intelligence, and zero-waste recipes. Output strictly valid JSON conforming to the recipe schema with English and Hindi fields."
-                    },
-                    {
-                        "role": "user",
-                        "content": RESCUE_PROMPT_TEMPLATE.format(ingredients=formatted_list)
-                    }
-                ],
-                response_format={"type": "json_object"},
-                temperature=0.3,
-            )
-            g_raw = g_chat.choices[0].message.content or ""
-            recipe = RescueRecipe.model_validate_json(g_raw)
-            recipe.corrected_ingredients = clean_items
-            return recipe
-        except Exception as g_err:
-            logger.warning(f"Groq rescue recipe fallback failed: {g_err}")
+        for g_model in GROQ_TEXT_MODELS:
+            try:
+                formatted_list = ", ".join(clean_items)
+                g_chat = groq_client.chat.completions.create(
+                    model=g_model,
+                    messages=[
+                        {
+                            "role": "system",
+                            "content": "You are an expert chef specializing in Indian home cooking, pairing intelligence, and zero-waste recipes. Output strictly valid JSON conforming to the recipe schema with English and Hindi fields."
+                        },
+                        {
+                            "role": "user",
+                            "content": RESCUE_PROMPT_TEMPLATE.format(ingredients=formatted_list)
+                        }
+                    ],
+                    response_format={"type": "json_object"},
+                    temperature=0.3,
+                )
+                g_raw = g_chat.choices[0].message.content or ""
+                recipe = RescueRecipe.model_validate_json(g_raw)
+                recipe.corrected_ingredients = clean_items
+                return recipe
+            except Exception as g_err:
+                logger.warning(f"Groq rescue recipe fallback failed on {g_model}: {g_err}. Trying next model...")
+                continue
 
     # 3. Intelligent Culinary Fallback (Supports Drink + Food Combos)
     drink_kw = {"milk", "chocolate", "cocoa", "curd", "dahi", "yogurt", "shake", "smoothie",
