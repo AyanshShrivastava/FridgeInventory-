@@ -92,7 +92,8 @@ _load_env_file()
 # 1. COMMAND PARSING CONSTANTS & SECURITY CONFIGURATION
 # ============================================================================
 
-FRIDGE_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{2,29}$")
+FRIDGE_RE = re.compile(r"^[a-zA-Z0-9]{3,30}$")
+PIN_RE = re.compile(r"^[a-zA-Z0-9]{4,30}$")
 PIN_ITERATIONS = 200_000
 SESSION_COOKIE_NAME = "fi_session_v2"
 SESSION_DAYS = 30
@@ -376,6 +377,21 @@ class FoodCategory(str, Enum):
     NOT_FOOD = "not_food"
 
 
+class FoodItemVerdict(BaseModel):
+    name_en: str = Field(default="", description="Clean, standardized English food name (e.g. 'Fresh Tomato', 'Lays Chips', 'Paneer Curry', 'Banana').")
+    name_hi: str = Field(default="", description="Clean Hindi name in Devanagari script (e.g. 'ताज़ा टमाटर', 'लेज़ चिप्स', 'पनीर करी', 'केला').")
+    category: FoodCategory = Field(default=FoodCategory.COOKED_DISH, description="Culinary category.")
+    shelf_life_days: int = Field(default=2, description="Estimated shelf life days for fresh items/produce/cooked food. Set to 0 if packaged item requiring printed expiry date.")
+    requires_expiry_date: bool = Field(default=False, description="Set to true ONLY for manufactured, packaged goods, sealed commercial snacks/drinks/cans that have printed expiry dates. Set to false for fresh produce, fruits, fresh milk, vegetables, cooked meals, dishes made before.")
+    storage_tip: str = Field(default="", description="Practical household refrigerator storage advice.")
+
+
+class MultiFoodClassificationVerdict(BaseModel):
+    is_food: bool = Field(default=True, description="True if photo contains at least one food, grocery, produce, or kitchen item.")
+    items: List[FoodItemVerdict] = Field(default_factory=list, description="List of all distinct food items recognized in the photo.")
+    message: str = Field(default="", description="Brief description of what was identified.")
+
+
 class FoodClassificationVerdict(BaseModel):
     is_food: bool = Field(description="True if this is an edible kitchen food, drink, grocery, produce, or cooked dish.")
     corrected_item: str = Field(default="", description="The item the user meant, spelled correctly in English.")
@@ -398,19 +414,8 @@ class ClassifyRequest(BaseModel):
 class PhotoScanRequest(BaseModel):
     image: str = Field(..., description="Base64 encoded data URI or raw base64 string of the food photo")
     mime_type: Optional[str] = Field(default="image/jpeg", description="MIME type of the photo (e.g. image/jpeg, image/png, image/webp)")
-
-
-
-class ClassifyResponse(BaseModel):
-    is_food: bool
-    name_en: str
-    name_hi: str
-    category: str
-    shelf_life_days: Optional[int]
-    requires_expiry_date: bool
-    storage_tip: str = ""
-    message: Optional[str] = None
-    analyzed_by: str = "Gemini AI"
+    fridge_id: Optional[str] = Field(default=None, description="Active fridge ID to auto-add fresh items to")
+    timezone: Optional[str] = Field(default=None, description="Client timezone for freshness calculation")
 
 
 class CommandRequest(BaseModel):
@@ -425,13 +430,19 @@ class RescueRecipe(BaseModel):
     recipe_name: str = Field(description="Appetizing, authentic recipe title in English")
     recipe_name_hi: str = Field(description="Recipe title in Hindi (Devanagari script)")
     meal_type: str = Field(default="Homestyle Meal", description="Category: 'Food & Drink Combo', 'Savory Food', 'Beverage / Drink', or 'Homestyle Meal'")
+    meal_type_hi: Optional[str] = Field(default="घर का भोजन", description="Meal type category in Hindi")
     pairing_notes: Optional[str] = Field(default="", description="Explanation of culinary pairing or rationale for separating drink and food items")
+    pairing_notes_hi: Optional[str] = Field(default="", description="Explanation of culinary pairing or rationale in Hindi (Devanagari script)")
     prep_time_minutes: int = Field(default=20, description="Total preparation and cooking time in minutes")
     ingredients_used: List[str] = Field(default_factory=list, description="Expiring ingredients incorporated into the dish")
+    ingredients_used_hi: List[str] = Field(default_factory=list, description="Expiring ingredients in Hindi (Devanagari script)")
     corrected_ingredients: List[str] = Field(default_factory=list, description="Corrected ingredient names resolving user typos")
     pantry_items_needed: List[str] = Field(default_factory=list, description="Common kitchen pantry spices/staples needed")
-    steps: List[str] = Field(default_factory=list, description="Clear, numbered step-by-step cooking instructions")
-    chef_tip: str = Field(default="", description="Pro home chef tip for zero-waste or flavor enhancement ('दादी माँ का नुस्खा')")
+    pantry_items_needed_hi: List[str] = Field(default_factory=list, description="Common kitchen pantry spices/staples needed in Hindi (Devanagari script)")
+    steps: List[str] = Field(default_factory=list, description="Clear, numbered step-by-step cooking instructions in English")
+    steps_hi: List[str] = Field(default_factory=list, description="Clear, numbered step-by-step cooking instructions in authentic Hindi (Devanagari script)")
+    chef_tip: str = Field(default="", description="Pro home chef tip for zero-waste or flavor enhancement in English")
+    chef_tip_hi: str = Field(default="", description="Pro home chef tip for zero-waste or flavor enhancement in Hindi ('दादी माँ का नुस्खा')")
 
 
 class InventoryItemCreate(BaseModel):
@@ -458,6 +469,21 @@ class InventoryItem(BaseModel):
     requires_expiry_date: bool
     storage_tip: str
     last_synced_at: Optional[str] = None
+
+
+class ClassifyResponse(BaseModel):
+    is_food: bool
+    name_en: str = ""
+    name_hi: str = ""
+    category: str = "cooked_dish"
+    shelf_life_days: Optional[int] = None
+    requires_expiry_date: bool = False
+    storage_tip: str = ""
+    message: Optional[str] = None
+    analyzed_by: str = "Gemini AI"
+    items: List[dict] = Field(default_factory=list)
+    auto_added: List[InventoryItem] = Field(default_factory=list)
+    needs_expiry: List[dict] = Field(default_factory=list)
 
 
 class AuthLoginRequest(BaseModel):
@@ -1210,24 +1236,34 @@ PHOTO_CLASSIFY_PROMPT = """You are an expert culinary AI and food safety inspect
 Analyze this food/grocery photo carefully.
 
 Instructions:
-1. Identify the food item clearly. It could be fresh produce (vegetable/fruit), fresh dairy (milk, paneer, curd, cream, butter), fresh cooked meal (dal, curry, sabzi, rice, roti, paratha, biryani, snack), raw meat/fish/poultry, egg, pantry staple, beverage, or a packaged snack.
-2. If it is NOT food (e.g., electronic gadget, toy, furniture, human, vehicle, animal, medicine, cleaner, document):
-   - Set is_food=false, category=not_food, shelf_life_days=0, requires_expiry_date=false, name_en="", name_hi="", storage_tip="".
+1. Identify all distinct food items, produce, groceries, cooked dishes, snacks, or beverages present in the photo.
+2. If the photo does NOT contain food (e.g., electronic gadget, toy, furniture, human, animal, medicine, cleaner, document):
+   - Set is_food=false, items=[], message="The photo does not appear to contain an edible food or kitchen grocery item."
 3. If it IS food:
-   - Provide standard English name in `name_en` (e.g. "Paneer Butter Masala", "Fresh Tomato", "Aloo Paratha", "Apples", "Cooked Dal", "Amul Butter").
-   - Provide Hindi translation in Devanagari script in `name_hi` (e.g. "पनीर बटर मसाला", "टमाटर", "आलू पराठा", "सेब", "पकी हुई दाल", "अमुल मक्खन").
-   - Categorize into one of: 'dairy', 'produce', 'vegetable', 'fruit', 'cooked_dish', 'meat_fish_egg', 'grain_pulse_flour', 'snack_bakery', 'beverage', 'spice_condiment', 'packaged_grocery', 'oil_sugar_fat'.
-   - Determine `requires_expiry_date`:
-     * Set requires_expiry_date=true ONLY for commercial sealed manufactured packaged snacks/cans/bottles that have printed manufacturer expiration dates.
-     * Set requires_expiry_date=false for all fresh produce, fruits, fresh dairy, eggs, breads, homemade dishes, cooked meals, opened leftovers.
-   - Determine `shelf_life_days`:
-     * Accurate estimated refrigerator shelf life in days from today (e.g. freshly cooked dal/curry/rice: 2 days, fresh milk: 2 days, paneer: 3 days, leafy greens: 3 days, apples: 21 days, eggs: 21 days).
-     * If requires_expiry_date=true, set shelf_life_days=0.
-   - Provide practical Indian household refrigerator `storage_tip` (e.g. "Keep refrigerated in an airtight container. Consume within 2 days.").
+   - Set is_food=true.
+   - For EACH food item detected:
+     * Provide standard English name in `name_en` (e.g. "Paneer Butter Masala", "Fresh Tomato", "Aloo Paratha", "Apples", "Cooked Dal", "Lays Chips", "Amul Butter").
+     * Provide Hindi translation in Devanagari script in `name_hi` (e.g. "पनीर बटर मसाला", "टमाटर", "आलू पराठा", "सेब", "पकी हुई दाल", "लेज़ चिप्स", "अमुल मक्खन").
+     * Categorize into one of: 'dairy', 'produce', 'vegetable', 'fruit', 'cooked_dish', 'meat_fish_egg', 'grain_pulse_flour', 'snack_bakery', 'beverage', 'spice_condiment', 'packaged_grocery', 'oil_sugar_fat'.
+     * Determine `requires_expiry_date`:
+       - Set requires_expiry_date=true ONLY for commercial sealed manufactured packaged snacks/cans/bottles that have printed manufacturer expiration dates.
+       - Set requires_expiry_date=false for all fresh produce, fruits, fresh vegetables, fresh dairy, eggs, breads, homemade dishes, cooked meals, opened leftovers.
+     * Determine `shelf_life_days`:
+       - If requires_expiry_date=false: Accurate estimated refrigerator shelf life in days from today (e.g. freshly cooked dal/curry/rice: 2 days, fresh milk: 2 days, paneer: 3 days, leafy greens: 3 days, apples: 21 days, eggs: 21 days).
+       - If requires_expiry_date=true: Set shelf_life_days=0.
+     * Provide practical Indian household refrigerator `storage_tip` (e.g. "Keep refrigerated in an airtight container. Consume within 2 days.").
 """
 
-def classify_food_photo(image_data: str, mime_type: Optional[str] = "image/jpeg") -> ClassifyResponse:
-    """Classify a food photo using Google GenAI vision with fallback to smart food inspector."""
+def classify_food_photo(
+    image_data: str,
+    mime_type: Optional[str] = "image/jpeg",
+    fridge_id: Optional[str] = None,
+    client_tz: Optional[str] = None,
+) -> ClassifyResponse:
+    """Classify a food photo using Google GenAI vision with fallback to smart food inspector.
+    Fresh food items without printed expiry dates are automatically added to the active fridge.
+    Packaged snacks or items requiring printed expiry dates are queued for date confirmation.
+    """
     clean_data = (image_data or "").strip()
     if not clean_data:
         raise HTTPException(status_code=400, detail="Photo data cannot be empty.")
@@ -1260,14 +1296,34 @@ def classify_food_photo(image_data: str, mime_type: Optional[str] = "image/jpeg"
                         contents=[part, PHOTO_CLASSIFY_PROMPT],
                         config=types.GenerateContentConfig(
                             response_mime_type="application/json",
-                            response_schema=FoodClassificationVerdict,
+                            response_schema=MultiFoodClassificationVerdict,
                             temperature=0.1,
                         ),
                     )
                     raw_text = (response.text or "").strip()
-                    verdict = FoodClassificationVerdict.model_validate_json(raw_text)
+                    verdict = MultiFoodClassificationVerdict.model_validate_json(raw_text)
 
-                    if not verdict.is_food or verdict.category == FoodCategory.NOT_FOOD or not verdict.name_en:
+                    if not verdict.is_food or not verdict.items:
+                        return ClassifyResponse(
+                            is_food=False,
+                            name_en="",
+                            name_hi="",
+                            category="not_food",
+                            shelf_life_days=None,
+                            requires_expiry_date=False,
+                            storage_tip="",
+                            message=verdict.message or "The photo does not appear to contain an edible food or kitchen grocery item.",
+                            analyzed_by="Gemini Vision AI",
+                            items=[],
+                            auto_added=[],
+                            needs_expiry=[],
+                        )
+
+                    valid_items = [
+                        it for it in verdict.items
+                        if it.name_en and it.category != FoodCategory.NOT_FOOD
+                    ]
+                    if not valid_items:
                         return ClassifyResponse(
                             is_food=False,
                             name_en="",
@@ -1278,33 +1334,131 @@ def classify_food_photo(image_data: str, mime_type: Optional[str] = "image/jpeg"
                             storage_tip="",
                             message="The photo does not appear to contain an edible food or kitchen grocery item.",
                             analyzed_by="Gemini Vision AI",
+                            items=[],
+                            auto_added=[],
+                            needs_expiry=[],
                         )
+
+                    auto_added: List[InventoryItem] = []
+                    needs_expiry: List[dict] = []
+                    all_items_dicts: List[dict] = []
+
+                    for it in valid_items:
+                        cat_str = it.category.value if hasattr(it.category, "value") else str(it.category)
+                        item_dict = {
+                            "name_en": it.name_en,
+                            "name_hi": it.name_hi or it.name_en,
+                            "category": cat_str,
+                            "shelf_life_days": it.shelf_life_days if not it.requires_expiry_date else None,
+                            "requires_expiry_date": it.requires_expiry_date,
+                            "storage_tip": it.storage_tip or "Store refrigerated.",
+                        }
+                        all_items_dicts.append(item_dict)
+
+                        if not it.requires_expiry_date:
+                            # Fresh items without printed expiry date are auto-added!
+                            if fridge_id:
+                                try:
+                                    item_create = InventoryItemCreate(
+                                        name_en=it.name_en,
+                                        name_hi=it.name_hi or it.name_en,
+                                        category=cat_str,
+                                        shelf_life_days=it.shelf_life_days if it.shelf_life_days > 0 else 2,
+                                        requires_expiry_date=False,
+                                        expiry_date=None,
+                                        storage_tip=it.storage_tip or "Keep refrigerated in an airtight container.",
+                                    )
+                                    saved = save_fridge_inventory_item(fridge_id, item_create, client_tz=client_tz)
+                                    auto_added.append(saved)
+                                except Exception as save_err:
+                                    logger.error(f"Failed to auto-add fresh item {it.name_en}: {save_err}")
+                                    needs_expiry.append(item_dict)
+                            else:
+                                needs_expiry.append(item_dict)
+                        else:
+                            # Packaged items requiring printed expiry date
+                            needs_expiry.append(item_dict)
+
+                    primary = valid_items[0]
+                    cat_primary = primary.category.value if hasattr(primary.category, "value") else str(primary.category)
+
+                    if auto_added and needs_expiry:
+                        msg = f"Auto-added {len(auto_added)} fresh item(s) to fridge. {len(needs_expiry)} item(s) require package expiry date."
+                    elif auto_added:
+                        msg = f"Successfully analyzed photo and auto-added {len(auto_added)} fresh item(s) to your fridge!"
+                    elif needs_expiry:
+                        msg = f"Analyzed {len(needs_expiry)} item(s). Please verify the printed expiry dates."
+                    else:
+                        msg = "Visual analysis complete."
 
                     return ClassifyResponse(
                         is_food=True,
-                        name_en=verdict.name_en,
-                        name_hi=verdict.name_hi or verdict.name_en,
-                        category=verdict.category.value,
-                        shelf_life_days=None if verdict.requires_expiry_date else verdict.shelf_life_days,
-                        requires_expiry_date=verdict.requires_expiry_date,
-                        storage_tip=verdict.storage_tip or "Keep refrigerated in an airtight container.",
+                        name_en=primary.name_en,
+                        name_hi=primary.name_hi or primary.name_en,
+                        category=cat_primary,
+                        shelf_life_days=None if primary.requires_expiry_date else primary.shelf_life_days,
+                        requires_expiry_date=primary.requires_expiry_date,
+                        storage_tip=primary.storage_tip or "Keep refrigerated in an airtight container.",
                         analyzed_by="Gemini Vision AI",
+                        items=all_items_dicts,
+                        auto_added=auto_added,
+                        needs_expiry=needs_expiry,
+                        message=msg,
                     )
                 except Exception as exc:
                     logger.warning(f"Gemini vision model {model_name} failed: {exc}")
                     continue
 
     # Graceful fallback if Gemini Vision is unavailable or offline
+    fallback_items = [
+        FoodItemVerdict(
+            name_en="Fresh Cooked Dish",
+            name_hi="ताज़ा भोजन",
+            category=FoodCategory.COOKED_DISH,
+            shelf_life_days=2,
+            requires_expiry_date=False,
+            storage_tip="Store in an airtight container in refrigerator. Reheat before serving.",
+        )
+    ]
+    auto_added_fb: List[InventoryItem] = []
+    if fridge_id:
+        try:
+            fb = fallback_items[0]
+            item_create = InventoryItemCreate(
+                name_en=fb.name_en,
+                name_hi=fb.name_hi,
+                category=fb.category.value,
+                shelf_life_days=fb.shelf_life_days,
+                requires_expiry_date=False,
+                expiry_date=None,
+                storage_tip=fb.storage_tip,
+            )
+            saved = save_fridge_inventory_item(fridge_id, item_create, client_tz=client_tz)
+            auto_added_fb.append(saved)
+        except Exception as save_err:
+            logger.warning(f"Fallback auto-add item failed: {save_err}")
+
+    fb_item = fallback_items[0]
     return ClassifyResponse(
         is_food=True,
-        name_en="Fresh Cooked Dish",
-        name_hi="ताज़ा भोजन",
-        category="cooked_dish",
-        shelf_life_days=2,
+        name_en=fb_item.name_en,
+        name_hi=fb_item.name_hi,
+        category=fb_item.category.value,
+        shelf_life_days=fb_item.shelf_life_days,
         requires_expiry_date=False,
-        storage_tip="Store in an airtight container in refrigerator. Reheat before serving.",
-        message="Visual analysis completed. Shelf life set for freshly prepared food made today.",
+        storage_tip=fb_item.storage_tip,
+        message="Visual analysis completed. Fresh food auto-added to your fridge inventory." if auto_added_fb else "Visual analysis completed.",
         analyzed_by="Visual Food Inspector",
+        items=[{
+            "name_en": fb_item.name_en,
+            "name_hi": fb_item.name_hi,
+            "category": fb_item.category.value,
+            "shelf_life_days": fb_item.shelf_life_days,
+            "requires_expiry_date": False,
+            "storage_tip": fb_item.storage_tip,
+        }],
+        auto_added=auto_added_fb,
+        needs_expiry=[],
     )
 
 
@@ -1319,26 +1473,34 @@ CRITICAL CULINARY RULES & PAIRING INTELLIGENCE:
      DO NOT combine chocolate and peri-peri cheese into a single weird concoction!
      Instead, make a delightful Food & Drink Zero-Waste Combo (e.g. 'Peri-Peri Grilled Cheese Toast' paired with a 'Chilled Creamy Chocolate Milkshake / Hot Cocoa').
    - If ingredients include drink bases or sweet beverages (milk, chocolate, cocoa, lemons/citrus, mint, roohafza, mango, coffee, tea, soda, yogurt/curd for lassi, fruit juice) alongside savory items (bread, cheese, peri-peri, vegetables, chicken, eggs, rice, savoury spices):
-     Set meal_type to 'Food & Drink Combo' and provide a paired menu!
-   - In pairing_notes, explain clearly to the home cook how and why these items were paired into complementary food and drink courses.
+     Set meal_type to 'Food & Drink Combo' and meal_type_hi to 'भोजन और पेय कॉम्बो' and provide a paired menu!
+   - In pairing_notes (English) and pairing_notes_hi (Hindi Devanagari), explain clearly to the home cook how and why these items were paired into complementary courses.
 2. HARMONIOUS SINGLE-DISH COMBINATIONS:
-   - If all ingredients naturally cook together (e.g., potatoes, onions, tomatoes, spinach, paneer, vegetables, dal, rice), set meal_type to 'Homestyle Meal' or 'Savory Food' and create one delicious, authentic, easy Indian dish (curry, dry sabzi, paratha, pulao, or snacks).
-   - If only beverage/drink ingredients are provided (e.g. milk, chocolate, bananas, honey), set meal_type to 'Beverage / Drink' and make an extraordinary drink.
-3. INSTRUCTIONS:
-   - If creating a combo, clearly label which steps are for the Food item (e.g. 'Food Step 1:', 'Food Step 2:') and which are for the Beverage (e.g. 'Drink Step 1:', 'Drink Step 2:').
-   - Keep steps concise, practical, and everyday homestyle.
+   - If all ingredients naturally cook together (e.g., potatoes, onions, tomatoes, spinach, paneer, vegetables, dal, rice), set meal_type to 'Homestyle Meal' (meal_type_hi: 'घर का भोजन') or 'Savory Food' (meal_type_hi: 'स्वादिष्ट भोजन') and create one delicious, authentic, easy Indian dish (curry, dry sabzi, paratha, pulao, or snacks).
+   - If only beverage/drink ingredients are provided (e.g. milk, chocolate, bananas, honey), set meal_type to 'Beverage / Drink' (meal_type_hi: 'ताज़ा पेय / शेक') and make an extraordinary drink.
+3. COMPLETE DUAL-LANGUAGE OUTPUT (ENGLISH & AUTHENTIC HINDI):
+   - You MUST provide every single field in English AND in authentic, natural Hindi (Devanagari script)!
+   - 'steps_hi' MUST contain every step of the cooking instructions translated into fluent, natural Hindi. Do NOT leave steps_hi empty or in English!
+   - 'pantry_items_needed_hi' MUST list all required pantry spices and items in Hindi (e.g. '1 चम्मच जीरा', 'स्वादानुसार नमक', 'हल्दी पाउडर').
+   - 'chef_tip_hi' MUST be a traditional Indian culinary tip ('दादी माँ का नुस्खा').
 
 Output Schema:
 - recipe_name in English
 - recipe_name_hi in Hindi (Devanagari script)
 - meal_type ('Food & Drink Combo', 'Savory Food', 'Beverage / Drink', or 'Homestyle Meal')
-- pairing_notes (explanation of pairing rationale or flavor harmony)
+- meal_type_hi in Hindi ('भोजन और पेय कॉम्बो', 'स्वादिष्ट भोजन', 'ताज़ा पेय / शेक', or 'घर का भोजन')
+- pairing_notes in English
+- pairing_notes_hi in Hindi (Devanagari script)
 - prep_time_minutes (realistic integer, 10 to 30 mins)
 - ingredients_used (list)
+- ingredients_used_hi (list in Hindi)
 - corrected_ingredients (list)
-- pantry_items_needed (list)
-- steps (list of clear step-by-step cooking steps)
-- chef_tip (pro zero-waste tip)
+- pantry_items_needed (list in English)
+- pantry_items_needed_hi (list in Hindi with quantities)
+- steps (list of clear step-by-step cooking steps in English)
+- steps_hi (list of clear, complete step-by-step cooking instructions in natural Hindi in Devanagari script)
+- chef_tip (pro zero-waste tip in English)
+- chef_tip_hi (authentic Indian kitchen tip in Hindi: 'दादी माँ का नुस्खा')
 """
 
 def generate_rescue_recipe(items: List[str]) -> RescueRecipe:
@@ -1392,9 +1554,12 @@ def generate_rescue_recipe(items: List[str]) -> RescueRecipe:
             recipe_name=f"Zero-Waste Combo: Toasted {savory_title} & Chilled {drink_title} Shake",
             recipe_name_hi=f"जीरो-वेस्ट कॉम्बो: क्रिस्पी {savory_title} टोस्ट और ठंडा {drink_title} शेक",
             meal_type="Food & Drink Combo",
+            meal_type_hi="भोजन और पेय कॉम्बो",
             pairing_notes="To avoid clashing savory seasonings with sweet cocoa or milk, these ingredients are crafted into a café-style hot melt and cold beverage pairing.",
+            pairing_notes_hi="मीठी और नमकीन चीज़ों का बेहतरीन स्वाद संतुलन बनाए रखने के लिए, इन्हें एक गरमा-गरम क्रिस्पी टोस्ट और ठंडे रिफ्रेशिंग शेक के कॉम्बो में तैयार किया गया है।",
             prep_time_minutes=15,
             ingredients_used=clean_items,
+            ingredients_used_hi=clean_items,
             corrected_ingredients=clean_items,
             pantry_items_needed=[
                 "1 tbsp Butter or Cooking Oil",
@@ -1403,6 +1568,13 @@ def generate_rescue_recipe(items: List[str]) -> RescueRecipe:
                 "1 tsp Sugar or Honey (for drink)",
                 "Ice cubes",
             ],
+            pantry_items_needed_hi=[
+                "1 बड़ा चम्मच मक्खन या कुकिंग ऑयल",
+                "1/2 छोटा चम्मच भुना जीरा या मिक्स्ड हर्ब्स",
+                "एक चुटकी नमक और काली मिर्च पाउडर",
+                "1 चम्मच चीनी या शहद (ड्रिंक के लिए)",
+                "बर्फ के टुकड़े (Ice cubes)",
+            ],
             steps=[
                 f"Savory Course: Place {', '.join(savory_items)} between bread slices or onto a pan with butter and seasoning.",
                 "Toast over medium heat on a tawa until golden, crispy, and cheese is smoothly melted.",
@@ -1410,7 +1582,15 @@ def generate_rescue_recipe(items: List[str]) -> RescueRecipe:
                 "Blend or shake vigorously for 30 seconds until frothy and chilled.",
                 "Serve the piping hot savory sandwich immediately alongside the refreshing chilled drink for a satisfying zero-waste meal!",
             ],
+            steps_hi=[
+                f"नमकीन व्यंजन: ब्रेड स्लाइस के बीच में {', '.join(savory_items)} रखें और ऊपर से थोड़ा मक्खन व पसंदीदा मसाला लगाएं।",
+                "तवे पर मध्यम आंच पर दोनों तरफ से तब तक सेकें जब तक कि टोस्ट सुनहरा, क्रिस्पी न हो जाए और चीज़ पिघल न जाए।",
+                f"ठंडा पेय: मिक्सर जार या शेकर में {', '.join(drink_items)}, बर्फ के टुकड़े और स्वादानुसार थोड़ा शहद या चीनी डालें।",
+                "30 सेकंड तक तेज़ी से ब्लेंड करें जब तक कि ऊपर बढ़िया झाग और गाढ़ा ठंडा शेक न बन जाए।",
+                "गरमा-गरम क्रिस्पी टोस्ट को तुरंत ठंडे ताज़ा शेक के साथ परोसें और ज़ीरो-वेस्ट स्वादिष्ट नाश्ते का आनंद लें!",
+            ],
             chef_tip="Pairing a spicy or savory toasted snack with a cold creamy milkshake or fruit drink balances the palate and utilizes both sweet and savory fridge perishables!",
+            chef_tip_hi="तीखे या नमकीन स्नैक के साथ ठंडा क्रीमी शेक स्वाद का बेहतरीन संतुलन बनाता है और फ्रिज में रखी दोनों तरह की सामग्रियों की पूरी बर्बादी रोकता है!",
         )
 
     # Case B: Beverage Only
@@ -1420,18 +1600,29 @@ def generate_rescue_recipe(items: List[str]) -> RescueRecipe:
             recipe_name=f"Refreshing Homestyle {primary_drink} Cooler / Shake",
             recipe_name_hi=f"ताज़ा होमस्टाइल {primary_drink} शेक",
             meal_type="Beverage / Drink",
+            meal_type_hi="ताज़ा पेय / शेक",
             pairing_notes="Perishable drink bases blended into a nutritious, refreshing homemade beverage.",
+            pairing_notes_hi="फ्रिज में रखे जल्दी खराब होने वाले पेय पदार्थों से बना ताज़ा और पौष्टिक होमस्टाइल शेक।",
             prep_time_minutes=10,
             ingredients_used=clean_items,
+            ingredients_used_hi=clean_items,
             corrected_ingredients=clean_items,
             pantry_items_needed=["1-2 tsp Honey or Sugar", "Pinch of Cardamom / Cinnamon", "Ice cubes"],
+            pantry_items_needed_hi=["1-2 चम्मच शहद या चीनी", "एक चुटकी इलायची या दालचीनी पाउडर", "बर्फ के टुकड़े"],
             steps=[
                 f"Wash and measure the beverage ingredients ({', '.join(clean_items)}).",
                 "Add to a blender with ice cubes and a dash of cardamom or honey to taste.",
                 "Blend on high for 45 seconds until silky smooth and frothy.",
                 "Pour into tall glasses and serve chilled.",
             ],
+            steps_hi=[
+                f"पेय सामग्री ({', '.join(clean_items)}) को अच्छी तरह नापकर मिक्सर जार में डालें।",
+                "जार में बर्फ के टुकड़े, एक चुटकी इलायची पाउडर और स्वादानुसार शहद या चीनी मिलाएँ।",
+                "तेज़ गति पर 45 सेकंड तक अच्छी तरह ब्लेंड करें जब तक कि शेक एकदम स्मूथ और झागदार न हो जाए।",
+                "ठंडे गिलासों में डालें, ऊपर से थोड़ी सी इलायची छिड़कें और तुरंत ठंडा-ठंडा परोसें।",
+            ],
             chef_tip="Add a pinch of roasted cinnamon or cardamom powder to elevate dairy drinks and bring out natural sweetness!",
+            chef_tip_hi="दूध या फल वाले शेक में एक चुटकी भुनी हुई इलायची या दालचीनी पाउडर डालने से प्राकृतिक खुशबू और मिठास कई गुना बढ़ जाती है!",
         )
 
     # Case C: Homestyle Savory Dish / Masala Stir-Fry
@@ -1441,9 +1632,12 @@ def generate_rescue_recipe(items: List[str]) -> RescueRecipe:
         recipe_name=f"Homestyle Kitchen Masala Bhurji / Stir-Fry ({primary})",
         recipe_name_hi=f"झटपट मसाला {primary} भुर्जी",
         meal_type="Homestyle Meal",
+        meal_type_hi="घर का स्वादिष्ट भोजन",
         pairing_notes="Perishable ingredients harmoniously sautéed with everyday Indian spices.",
+        pairing_notes_hi="फ्रिज में बची हुई सामग्री को रोज़मर्रा के भारतीय मसालों के साथ मिलाकर बनाई गई स्वादिष्ट झटपट सब्ज़ी।",
         prep_time_minutes=20,
         ingredients_used=clean_items,
+        ingredients_used_hi=clean_items,
         corrected_ingredients=clean_items,
         pantry_items_needed=[
             "1-2 tbsp Cooking Mustard or Sunflower Oil",
@@ -1454,6 +1648,15 @@ def generate_rescue_recipe(items: List[str]) -> RescueRecipe:
             "Salt to taste",
             "1 green chilli & fresh coriander leaves (finely chopped)",
         ],
+        pantry_items_needed_hi=[
+            "1-2 बड़े चम्मच सरसों या रिफाइंड तेल",
+            "1/2 छोटा चम्मच साबुत जीरा",
+            "1/4 छोटा चम्मच हल्दी पाउडर",
+            "1/2 छोटा चम्मच लाल मिर्च पाउडर",
+            "1/2 छोटा चम्मच धनिया पाउडर",
+            "स्वादानुसार नमक",
+            "1 बारीक कटी हरी मिर्च और ताज़ा हरा धनिया",
+        ],
         steps=[
             f"Thoroughly inspect and wash the expiring ingredients ({all_items_str}). Cut into uniform small pieces.",
             "Heat 1.5 tablespoons of oil in a kadai or pan over medium flame. Add cumin seeds and let them crackle.",
@@ -1462,7 +1665,16 @@ def generate_rescue_recipe(items: List[str]) -> RescueRecipe:
             "Add softer ingredients (such as paneer, boiled potatoes, greens, or cooked rice) and cook for another 2-3 minutes.",
             "Turn off the heat, garnish with fresh chopped coriander and a squeeze of fresh lemon juice. Serve hot with rotis, parathas, or toast.",
         ],
+        steps_hi=[
+            f"फ्रिज के सामान ({all_items_str}) को अच्छी तरह धोकर एकसमान छोटे टुकड़ों में काट लें।",
+            "कड़ाही या पैन में 1.5 बड़े चम्मच तेल मध्यम आंच पर गर्म करें। जीरा डालें और चटकने दें।",
+            f"पहले सख्त सब्ज़ियों या {primary} को डालें और 4-5 मिनट तक नरम होने तक भूनें।",
+            "आंच धीमी करें और हल्दी, लाल मिर्च, धनिया पाउडर व नमक डालकर अच्छी तरह मिलाएँ ताकि मसाला लिपट जाए।",
+            "अब बाकी नरम सामग्री (जैसे पनीर, उबले आलू, हरी पत्तियाँ या पके चावल) डालें और 2-3 मिनट तक भूनें।",
+            "गैस बंद करें, ऊपर से ताज़ा हरा धनिया और थोड़ा सा नींबू का रस निचोड़ें। गरमा-गरम रोटी, पराठे या टोस्ट के साथ परोसें!",
+        ],
         chef_tip="To revive vegetables that have lost their crispness, soak them in chilled water for 10 minutes before chopping. A pinch of amchur (dry mango powder) or chaat masala balances flavors beautifully!",
+        chef_tip_hi="मुरझाई हुई सब्ज़ियों को काटने से पहले 10 मिनट ठंडे पानी में भिगोकर रखें, वे एकदम ताज़ा हो जाएँगी। अंत में थोड़ा अमचूर या चाट मसाला डालने से स्वाद लाजवाब हो जाता है!",
     )
 
 
@@ -1657,7 +1869,7 @@ def api_process_command(payload: CommandRequest, request: Request, fridge: Optio
     if not raw_cmd:
         raise HTTPException(status_code=400, detail="Command cannot be empty.")
 
-    fid = get_current_fridge_id(request) or (fridge.strip().lower() if fridge else None)
+    fid = get_current_fridge_id(request) or (fridge.strip() if fridge else None)
     inv = get_fridge_inventory(fid) if fid else []
     cmd_lower = raw_cmd.lower()
 
@@ -1910,11 +2122,21 @@ def api_auth_me(request: Request):
 @app.post("/api/auth/login", summary="Login to existing family fridge")
 def api_auth_login(payload: AuthLoginRequest, request: Request, response: Response):
     """Authenticate with Fridge ID and PIN; sets 30-day cryptographically signed cookie."""
-    fid = payload.fridge_id.strip().lower()
+    fid = payload.fridge_id.strip()
     pin = payload.pin.strip()
 
     if not fid or not pin:
         raise HTTPException(status_code=400, detail="Fridge ID and PIN are required.")
+    if not FRIDGE_RE.fullmatch(fid):
+        raise HTTPException(
+            status_code=422,
+            detail="Fridge ID must be 3-30 characters long with letters (a-z, A-Z) and numbers (0-9) only (case-sensitive).",
+        )
+    if not PIN_RE.fullmatch(pin):
+        raise HTTPException(
+            status_code=422,
+            detail="Family PIN must be 4-30 characters long with letters (a-z, A-Z) and numbers (0-9) only (case-sensitive).",
+        )
 
     db, _ = init_firestore()
     authenticated = False
@@ -2012,7 +2234,7 @@ def api_auth_login(payload: AuthLoginRequest, request: Request, response: Respon
 @app.post("/api/auth/create", summary="Create a new family fridge")
 def api_auth_create(payload: AuthCreateRequest, request: Request, response: Response):
     """Creates a new fridge entry with a hashed family PIN and sets signed session cookie."""
-    fid = payload.fridge_id.strip().lower()
+    fid = payload.fridge_id.strip()
     pin = payload.pin.strip()
 
     if not fid or not pin:
@@ -2020,10 +2242,13 @@ def api_auth_create(payload: AuthCreateRequest, request: Request, response: Resp
     if not FRIDGE_RE.fullmatch(fid):
         raise HTTPException(
             status_code=422,
-            detail="Fridge ID must be 3-30 lowercase characters (letters, numbers, hyphens, underscores). Example: 'sharma-kitchen'.",
+            detail="Fridge ID must be 3-30 alphanumeric characters (letters a-z, A-Z and numbers 0-9 only, case-sensitive). No symbols, hyphens, or spaces allowed.",
         )
-    if len(pin) < 4:
-        raise HTTPException(status_code=422, detail="PIN must be at least 4 digits long for security.")
+    if not PIN_RE.fullmatch(pin):
+        raise HTTPException(
+            status_code=422,
+            detail="Family PIN must be 4-30 alphanumeric characters (letters a-z, A-Z and numbers 0-9 only, case-sensitive). No symbols or spaces allowed.",
+        )
 
     db, _ = init_firestore()
     salt = secrets.token_hex(16)
@@ -2360,14 +2585,19 @@ def api_classify(payload: ClassifyRequest):
 
 @app.post("/api/scanner/photo", response_model=ClassifyResponse, summary="Scan Food Photo with AI Vision")
 @app.post("/classify/photo", response_model=ClassifyResponse, summary="Scan Food Photo with AI Vision (Alias)")
-def api_classify_photo(payload: PhotoScanRequest):
-    """Scan and identify food in an uploaded photo or camera snapshot using Gemini AI Vision."""
+def api_classify_photo(payload: PhotoScanRequest, request: Request, fridge: Optional[str] = None):
+    """Scan and identify food in an uploaded photo or camera snapshot using Gemini AI Vision.
+    Fresh food items without printed expiry dates are automatically added to the active fridge inventory.
+    Packaged snacks or items requiring printed expiry dates are returned in needs_expiry for user confirmation.
+    """
     if not payload.image or not payload.image.strip():
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="Photo image data cannot be empty.",
         )
-    return classify_food_photo(payload.image, payload.mime_type)
+    fid = get_current_fridge_id(request) or (payload.fridge_id.strip() if payload.fridge_id else None) or (fridge.strip() if fridge else None)
+    client_tz = payload.timezone or request.headers.get("X-Client-Timezone")
+    return classify_food_photo(payload.image, payload.mime_type, fridge_id=fid, client_tz=client_tz)
 
 
 
@@ -2401,7 +2631,7 @@ def api_rescue(payload: RescueRequest):
 @app.get("/api/inventory", response_model=List[InventoryItem], summary="Get All Inventory Items")
 def api_get_inventory(request: Request, fridge: Optional[str] = None):
     """Retrieve all tracked items for the active fridge, dynamically syncing freshness with local timezone."""
-    fid = get_current_fridge_id(request) or (fridge.strip().lower() if fridge else None)
+    fid = get_current_fridge_id(request) or (fridge.strip() if fridge else None)
     if not fid:
         return []
     client_tz = request.headers.get("X-Client-Timezone")
@@ -2411,7 +2641,7 @@ def api_get_inventory(request: Request, fridge: Optional[str] = None):
 @app.post("/api/inventory", response_model=InventoryItem, summary="Add Item to Inventory")
 def api_add_inventory(item: InventoryItemCreate, request: Request, fridge: Optional[str] = None):
     """Add a verified food item into the active fridge inventory."""
-    fid = get_current_fridge_id(request) or (fridge.strip().lower() if fridge else None)
+    fid = get_current_fridge_id(request) or (fridge.strip() if fridge else None)
     if not fid:
         raise HTTPException(status_code=401, detail="Please login to your fridge to add items.")
     client_tz = request.headers.get("X-Client-Timezone")
@@ -2421,7 +2651,7 @@ def api_add_inventory(item: InventoryItemCreate, request: Request, fridge: Optio
 @app.delete("/api/inventory/{item_id}", summary="Delete / Consume Inventory Item")
 def api_delete_inventory(item_id: str, request: Request, fridge: Optional[str] = None):
     """Remove an item from the active fridge inventory."""
-    fid = get_current_fridge_id(request) or (fridge.strip().lower() if fridge else None)
+    fid = get_current_fridge_id(request) or (fridge.strip() if fridge else None)
     if not fid:
         raise HTTPException(status_code=401, detail="Please login to your fridge to delete items.")
     removed = remove_fridge_inventory_item(fid, item_id)
@@ -2524,9 +2754,45 @@ HTML_CONTENT = r"""<!DOCTYPE html>
     .animate-scan-pulse {
       animation: scanPulse 2s ease-in-out infinite;
     }
+    @keyframes voiceTintPulse {
+      0% {
+        box-shadow: inset 0 0 70px 25px rgba(249, 115, 22, 0.45), inset 0 0 130px 50px rgba(234, 88, 12, 0.3);
+        opacity: 0.85;
+      }
+      100% {
+        box-shadow: inset 0 0 105px 40px rgba(249, 115, 22, 0.85), inset 0 0 200px 90px rgba(234, 88, 12, 0.65);
+        opacity: 1;
+      }
+    }
+    .voice-edge-tint {
+      box-shadow: inset 0 0 85px 30px rgba(249, 115, 22, 0.7), inset 0 0 160px 65px rgba(234, 88, 12, 0.5);
+      background: 
+        radial-gradient(circle at 0% 0%, rgba(249, 115, 22, 0.6) 0%, transparent 45%),
+        radial-gradient(circle at 100% 0%, rgba(249, 115, 22, 0.6) 0%, transparent 45%),
+        radial-gradient(circle at 0% 100%, rgba(249, 115, 22, 0.6) 0%, transparent 45%),
+        radial-gradient(circle at 100% 100%, rgba(249, 115, 22, 0.6) 0%, transparent 45%),
+        radial-gradient(circle at center, transparent 52%, rgba(249, 115, 22, 0.22) 82%, rgba(234, 88, 12, 0.45) 100%);
+      animation: voiceTintPulse 1.5s ease-in-out infinite alternate;
+      pointer-events: none;
+    }
   </style>
 </head>
 <body class="bg-stone-50 dark:bg-stone-950 text-stone-800 dark:text-stone-100 min-h-screen flex flex-col antialiased selection:bg-brand-500 selection:text-white transition-colors duration-150">
+
+  <!-- ORANGE TINT CORNER & EDGE VIGNETTE ON AUDIO RECORDING -->
+  <div id="voice-recording-tint" class="voice-edge-tint fixed inset-0 z-[9999] transition-opacity duration-300 opacity-0 pointer-events-none hidden"></div>
+
+  <!-- FLOATING VOICE LISTENING BANNER -->
+  <div id="voice-recording-banner" class="fixed top-5 left-1/2 -translate-x-1/2 z-[10000] transition-all duration-300 transform -translate-y-12 opacity-0 pointer-events-none hidden">
+    <div class="px-5 py-2.5 rounded-full bg-gradient-to-r from-orange-500 via-amber-500 to-orange-600 text-white font-bold text-xs sm:text-sm shadow-2xl flex items-center gap-3 border border-orange-300/60 ring-4 ring-orange-500/25">
+      <span class="flex h-3 w-3 relative">
+        <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75"></span>
+        <span class="relative inline-flex rounded-full h-3 w-3 bg-white"></span>
+      </span>
+      <span id="voice-banner-text">🎙️ Listening... Speak now</span>
+      <svg class="w-4 h-4 text-white animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path></svg>
+    </div>
+  </div>
 
   <!-- GITHUB-INSPIRED TOP HEADER (CLEAN & NON-OVERLAPPING) -->
   <header class="bg-white dark:bg-stone-900 border-b border-stone-200 dark:border-stone-800 sticky top-0 z-40 transition-colors">
@@ -2753,39 +3019,72 @@ HTML_CONTENT = r"""<!DOCTYPE html>
                 type="text" 
                 id="cmd-input" 
                 placeholder="Type or speak (e.g. 'bought 2kg palak', 'i ate lays', 'used milk')..." 
-                class="w-full pl-4 pr-12 py-3 rounded-2xl border border-stone-200 dark:border-stone-700 focus:outline-none focus:ring-2 focus:ring-brand-500 text-sm text-stone-800 dark:text-stone-100 bg-stone-50/50 dark:bg-stone-800 font-medium"
-                required
+                class="w-full pl-4 pr-20 sm:pr-24 py-3 rounded-2xl border border-stone-200 dark:border-stone-700 focus:outline-none focus:ring-2 focus:ring-brand-500 text-sm text-stone-800 dark:text-stone-100 bg-stone-50/50 dark:bg-stone-800 font-medium"
               />
+              <div class="absolute right-2 top-2 flex items-center gap-1">
+                <button 
+                  type="button" 
+                  id="cmd-photo-btn" 
+                  title="Snap or upload food photo to auto-add items"
+                  class="p-1.5 rounded-xl text-stone-400 hover:text-emerald-600 dark:hover:text-emerald-400 hover:bg-stone-100 dark:hover:bg-stone-700 transition-colors"
+                >
+                  <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+                </button>
+                <button 
+                  type="button" 
+                  id="mic-btn" 
+                  title="Speak command"
+                  class="p-1.5 rounded-xl text-stone-400 hover:text-brand-600 hover:bg-stone-100 dark:hover:bg-stone-700 transition-colors"
+                >
+                  <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 003-3V5a3 3 0 00-6 0v6a3 3 0 003 3z"></path>
+                  </svg>
+                </button>
+              </div>
+            </div>
+            
+            <!-- Hidden photo capture inputs for command bar -->
+            <input type="file" id="cmd-camera-file" accept="image/*" capture="environment" class="hidden" />
+            <input type="file" id="cmd-gallery-file" accept="image/*" class="hidden" />
+
+            <div class="flex items-center gap-2">
               <button 
                 type="button" 
-                id="mic-btn" 
-                title="Speak command"
-                class="absolute right-2 top-2 p-1.5 rounded-xl text-stone-400 hover:text-brand-600 hover:bg-stone-100 dark:hover:bg-stone-700 transition-colors"
+                id="cmd-camera-btn"
+                class="px-4 py-3 bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 hover:from-emerald-500 hover:to-teal-500 text-white font-semibold rounded-2xl shadow-sm text-sm flex items-center justify-center gap-2 transition-all transform active:scale-95 shrink-0"
+                title="Snap food photo to auto-add items"
               >
-                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 003-3V5a3 3 0 00-6 0v6a3 3 0 003 3z"></path>
-                </svg>
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+                <span data-i18n="cmd_photo_btn">Add by Photo</span>
+              </button>
+              <button 
+                type="submit" 
+                id="cmd-submit-btn"
+                class="px-5 py-3 bg-brand-600 hover:bg-brand-700 text-white font-semibold rounded-2xl shadow-sm text-sm flex items-center justify-center gap-2 transition-all transform active:scale-95 shrink-0"
+              >
+                <span data-i18n="cmd_btn">Process Command</span>
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"></path></svg>
               </button>
             </div>
-            <button 
-              type="submit" 
-              id="cmd-submit-btn"
-              class="px-6 py-3 bg-brand-600 hover:bg-brand-700 text-white font-semibold rounded-2xl shadow-sm text-sm flex items-center justify-center gap-2 transition-all transform active:scale-95"
-            >
-              <span data-i18n="cmd_btn">Process Command</span>
-              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"></path></svg>
-            </button>
           </form>
 
           <!-- SUGGESTION CHIPS -->
           <div class="mt-3.5 flex items-center gap-1.5 flex-wrap text-xs text-stone-500 dark:text-stone-400">
             <span class="font-medium" data-i18n="suggestions_label">Quick Try:</span>
+            <button type="button" id="cmd-photo-chip" class="chip hover:bg-emerald-100 dark:hover:bg-emerald-950/60 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-300/40 px-2.5 py-1 rounded-lg flex items-center gap-1 transition">
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+              <span data-i18n="chip_photo_snap">📷 Snap Food Photo</span>
+            </button>
             <button type="button" class="chip hover:bg-stone-200 dark:hover:bg-stone-700 bg-stone-100 dark:bg-stone-800 text-stone-700 dark:text-stone-300 px-2.5 py-1 rounded-lg">पालक (Palak)</button>
             <button type="button" class="chip hover:bg-stone-200 dark:hover:bg-stone-700 bg-stone-100 dark:bg-stone-800 text-stone-700 dark:text-stone-300 px-2.5 py-1 rounded-lg">पनीर (Paneer)</button>
             <button type="button" class="chip hover:bg-stone-200 dark:hover:bg-stone-700 bg-stone-100 dark:bg-stone-800 text-stone-700 dark:text-stone-300 px-2.5 py-1 rounded-lg">टमाटर (Tomato)</button>
             <button type="button" class="chip hover:bg-stone-200 dark:hover:bg-stone-700 bg-stone-100 dark:bg-stone-800 text-stone-700 dark:text-stone-300 px-2.5 py-1 rounded-lg">i ate lays</button>
             <button type="button" class="chip hover:bg-stone-200 dark:hover:bg-stone-700 bg-stone-100 dark:bg-stone-800 text-stone-700 dark:text-stone-300 px-2.5 py-1 rounded-lg">used milk</button>
           </div>
+        </div>
+
+        <!-- LIVE PHOTO SCANNING & AI FEEDBACK ON INVENTORY TAB -->
+        <div id="inv-photo-status" class="hidden rounded-3xl bg-white dark:bg-stone-900 border border-emerald-200 dark:border-emerald-800/80 p-4 sm:p-5 shadow-sm transition-all">
         </div>
 
         <!-- METRIC STATS STRIP -->
@@ -3317,24 +3616,44 @@ HTML_CONTENT = r"""<!DOCTYPE html>
       <!-- FORM: LOGIN -->
       <form id="login-form" class="mt-4 space-y-3.5">
         <div>
-          <label class="block text-xs font-semibold mb-1" data-i18n="auth_fid_label">Fridge ID:</label>
+          <div class="flex items-center justify-between mb-1">
+            <label class="block text-xs font-semibold" data-i18n="auth_fid_label">Fridge ID:</label>
+            <span class="text-[10px] text-amber-600 dark:text-amber-400 font-semibold px-1.5 py-0.5 rounded bg-amber-50 dark:bg-amber-950/60 border border-amber-200/60 dark:border-amber-800/60">Case-Sensitive</span>
+          </div>
           <input 
             type="text" 
             id="login-fid" 
-            placeholder="e.g. sharma-kitchen or my-fridge" 
-            class="w-full px-4 py-2.5 rounded-xl border border-stone-200 dark:border-stone-700 bg-stone-50 dark:bg-stone-800 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+            placeholder="e.g. SharmaKitchen or test (3-30 letters/numbers)" 
+            pattern="[a-zA-Z0-9]{3,30}"
+            class="w-full px-4 py-2.5 rounded-xl border border-stone-200 dark:border-stone-700 bg-stone-50 dark:bg-stone-800 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 font-mono"
             required
           />
+          <div class="text-[10px] text-stone-400 dark:text-stone-500 mt-1">Letters (a-z, A-Z) and numbers (0-9) only. No symbols or spaces.</div>
         </div>
         <div>
-          <label class="block text-xs font-semibold mb-1" data-i18n="auth_pin_label">Family PIN:</label>
-          <input 
-            type="password" 
-            id="login-pin" 
-            placeholder="Enter fridge PIN..." 
-            class="w-full px-4 py-2.5 rounded-xl border border-stone-200 dark:border-stone-700 bg-stone-50 dark:bg-stone-800 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
-            required
-          />
+          <div class="flex items-center justify-between mb-1">
+            <label class="block text-xs font-semibold" data-i18n="auth_pin_label">Family PIN / Password:</label>
+            <span class="text-[10px] text-amber-600 dark:text-amber-400 font-semibold px-1.5 py-0.5 rounded bg-amber-50 dark:bg-amber-950/60 border border-amber-200/60 dark:border-amber-800/60">Case-Sensitive</span>
+          </div>
+          <div class="relative">
+            <input 
+              type="password" 
+              id="login-pin" 
+              placeholder="Enter fridge PIN (e.g. Secret123)..." 
+              pattern="[a-zA-Z0-9]{4,30}"
+              class="w-full pl-4 pr-10 py-2.5 rounded-xl border border-stone-200 dark:border-stone-700 bg-stone-50 dark:bg-stone-800 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 font-mono"
+              required
+            />
+            <button 
+              type="button" 
+              id="toggle-login-pin-btn" 
+              class="absolute right-2.5 top-1/2 -translate-y-1/2 p-1.5 rounded-lg text-stone-400 hover:text-stone-600 dark:hover:text-stone-200 hover:bg-stone-100 dark:hover:bg-stone-700 transition"
+              title="Show / Hide PIN"
+            >
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
+            </button>
+          </div>
+          <div class="text-[10px] text-stone-400 dark:text-stone-500 mt-1">Letters and numbers only. Exact casing verified (test doesn't equal Test).</div>
         </div>
         <button type="submit" class="w-full py-2.5 bg-brand-600 hover:bg-brand-700 text-white font-semibold rounded-xl text-sm shadow transition" data-i18n="auth_login_submit">
           Open Fridge
@@ -3344,24 +3663,44 @@ HTML_CONTENT = r"""<!DOCTYPE html>
       <!-- FORM: CREATE NEW FRIDGE -->
       <form id="create-form" class="mt-4 space-y-3.5 hidden">
         <div>
-          <label class="block text-xs font-semibold mb-1" data-i18n="auth_create_fid_label">Choose Fridge ID:</label>
+          <div class="flex items-center justify-between mb-1">
+            <label class="block text-xs font-semibold" data-i18n="auth_create_fid_label">Choose Fridge ID:</label>
+            <span class="text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold px-1.5 py-0.5 rounded bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200/60 dark:border-emerald-800/60">Letters & Numbers</span>
+          </div>
           <input 
             type="text" 
             id="create-fid" 
-            placeholder="e.g. gupta-home (3-30 letters/numbers)" 
-            class="w-full px-4 py-2.5 rounded-xl border border-stone-200 dark:border-stone-700 bg-stone-50 dark:bg-stone-800 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+            placeholder="e.g. SharmaKitchen or MyFridge24 (3-30 chars)" 
+            pattern="[a-zA-Z0-9]{3,30}"
+            class="w-full px-4 py-2.5 rounded-xl border border-stone-200 dark:border-stone-700 bg-stone-50 dark:bg-stone-800 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 font-mono"
             required
           />
+          <div class="text-[10px] text-stone-400 dark:text-stone-500 mt-1">Case-sensitive: saved exactly as typed. Allowed: a-z, A-Z, 0-9.</div>
         </div>
         <div>
-          <label class="block text-xs font-semibold mb-1" data-i18n="auth_create_pin_label">Set Family PIN (min 4 digits):</label>
-          <input 
-            type="password" 
-            id="create-pin" 
-            placeholder="e.g. 5678" 
-            class="w-full px-4 py-2.5 rounded-xl border border-stone-200 dark:border-stone-700 bg-stone-50 dark:bg-stone-800 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
-            required
-          />
+          <div class="flex items-center justify-between mb-1">
+            <label class="block text-xs font-semibold" data-i18n="auth_create_pin_label">Set Family PIN / Password:</label>
+            <span class="text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold px-1.5 py-0.5 rounded bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200/60 dark:border-emerald-800/60">Min 4 Alphanumeric</span>
+          </div>
+          <div class="relative">
+            <input 
+              type="password" 
+              id="create-pin" 
+              placeholder="e.g. SecretPin42 (letters & numbers only)" 
+              pattern="[a-zA-Z0-9]{4,30}"
+              class="w-full pl-4 pr-10 py-2.5 rounded-xl border border-stone-200 dark:border-stone-700 bg-stone-50 dark:bg-stone-800 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 font-mono"
+              required
+            />
+            <button 
+              type="button" 
+              id="toggle-create-pin-btn" 
+              class="absolute right-2.5 top-1/2 -translate-y-1/2 p-1.5 rounded-lg text-stone-400 hover:text-stone-600 dark:hover:text-stone-200 hover:bg-stone-100 dark:hover:bg-stone-700 transition"
+              title="Show / Hide PIN"
+            >
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
+            </button>
+          </div>
+          <div class="text-[10px] text-stone-400 dark:text-stone-500 mt-1">Letters (a-z, A-Z) and numbers (0-9) only. Strictly case-sensitive.</div>
         </div>
         <button type="submit" class="w-full py-2.5 bg-leaf-600 hover:bg-leaf-700 text-white font-semibold rounded-xl text-sm shadow transition" data-i18n="auth_create_submit">
           Create & Save Fridge
@@ -3608,7 +3947,9 @@ HTML_CONTENT = r"""<!DOCTYPE html>
         modal_packaged_desc: "Packaged snack or frozen item detected. Please check and enter the printed label date.",
         modal_tip_label: "Kitchen Storage Tip:",
         modal_cancel: "Cancel",
-        modal_save: "Save to Fridge"
+        modal_save: "Save to Fridge",
+        cmd_photo_btn: "Add by Photo",
+        chip_photo_snap: "📷 Snap Food Photo"
       },
       hi: {
         app_title: "FridgeInventory",
@@ -3640,6 +3981,8 @@ HTML_CONTENT = r"""<!DOCTYPE html>
         cmd_sub: "बताएं क्या लाए या खाया। जैसे: '2 किलो पालक लाया', 'i ate lays', 'दूध इस्तेमाल किया', 'सब खत्म'।",
         cmd_placeholder: "टाइप करें या बोलें (जैसे: '2 किलो पालक लाया', 'i ate lays', 'दूध पिया')...",
         cmd_btn: "कमांड चलाएँ",
+        cmd_photo_btn: "फोटो से जोड़ें",
+        chip_photo_snap: "📷 भोजन की फोटो लें",
         suggestions_label: "त्वरित प्रयास:",
         tab_inventory: "फ्रिज सामग्री",
         tab_urgent: "जल्द समाप्त",
@@ -3710,6 +4053,13 @@ HTML_CONTENT = r"""<!DOCTYPE html>
       if (cmdInput) cmdInput.placeholder = texts.cmd_placeholder;
       const langLabel = document.getElementById('lang-label');
       if (langLabel) langLabel.textContent = texts.lang_btn;
+
+      if (typeof latestRecipe !== 'undefined' && latestRecipe) {
+        const rCont = document.getElementById('recipe-container');
+        if (rCont && !rCont.classList.contains('hidden')) {
+          renderRecipe(latestRecipe);
+        }
+      }
     }
 
     document.getElementById('lang-toggle-btn').addEventListener('click', () => {
@@ -3816,7 +4166,7 @@ HTML_CONTENT = r"""<!DOCTYPE html>
       document.getElementById('share-fridge-btn').classList.remove('hidden');
       document.getElementById('share-fridge-btn').classList.add('inline-flex');
 
-      document.getElementById('header-fridge-name').textContent = fid.toUpperCase();
+      document.getElementById('header-fridge-name').textContent = fid;
       const diagFid = document.getElementById('diag-fridge-id');
       if (diagFid) diagFid.textContent = fid;
 
@@ -3946,10 +4296,49 @@ HTML_CONTENT = r"""<!DOCTYPE html>
       loginForm.classList.add('hidden');
     });
 
+    // PIN Visibility Eye Toggles
+    const toggleLoginPinBtn = document.getElementById('toggle-login-pin-btn');
+    if (toggleLoginPinBtn) {
+      toggleLoginPinBtn.addEventListener('click', () => {
+        const pinInput = document.getElementById('login-pin');
+        if (pinInput.type === 'password') {
+          pinInput.type = 'text';
+          toggleLoginPinBtn.innerHTML = '<svg class="w-4 h-4 text-brand-600 dark:text-brand-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l18 18"/></svg>';
+        } else {
+          pinInput.type = 'password';
+          toggleLoginPinBtn.innerHTML = '<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>';
+        }
+      });
+    }
+
+    const toggleCreatePinBtn = document.getElementById('toggle-create-pin-btn');
+    if (toggleCreatePinBtn) {
+      toggleCreatePinBtn.addEventListener('click', () => {
+        const pinInput = document.getElementById('create-pin');
+        if (pinInput.type === 'password') {
+          pinInput.type = 'text';
+          toggleCreatePinBtn.innerHTML = '<svg class="w-4 h-4 text-emerald-600 dark:text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l18 18"/></svg>';
+        } else {
+          pinInput.type = 'password';
+          toggleCreatePinBtn.innerHTML = '<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>';
+        }
+      });
+    }
+
     loginForm.addEventListener('submit', async (e) => {
       e.preventDefault();
-      const fid = document.getElementById('login-fid').value.trim().toLowerCase();
+      const fid = document.getElementById('login-fid').value.trim();
       const pin = document.getElementById('login-pin').value.trim();
+
+      if (!/^[a-zA-Z0-9]{3,30}$/.test(fid)) {
+        showToast('Fridge ID must be 3-30 characters with letters (a-z, A-Z) and numbers (0-9) only (case-sensitive).', 'error');
+        return;
+      }
+      if (!/^[a-zA-Z0-9]{4,30}$/.test(pin)) {
+        showToast('PIN must be 4-30 characters with letters (a-z, A-Z) and numbers (0-9) only (case-sensitive).', 'error');
+        return;
+      }
+
       const activeTz = getEffectiveTimezone();
       try {
         const res = await fetch('/api/auth/login', {
@@ -3973,8 +4362,18 @@ HTML_CONTENT = r"""<!DOCTYPE html>
 
     createForm.addEventListener('submit', async (e) => {
       e.preventDefault();
-      const fid = document.getElementById('create-fid').value.trim().toLowerCase();
+      const fid = document.getElementById('create-fid').value.trim();
       const pin = document.getElementById('create-pin').value.trim();
+
+      if (!/^[a-zA-Z0-9]{3,30}$/.test(fid)) {
+        showToast('Fridge ID must be 3-30 characters with letters (a-z, A-Z) and numbers (0-9) only (case-sensitive).', 'error');
+        return;
+      }
+      if (!/^[a-zA-Z0-9]{4,30}$/.test(pin)) {
+        showToast('PIN must be 4-30 characters with letters (a-z, A-Z) and numbers (0-9) only (case-sensitive).', 'error');
+        return;
+      }
+
       const activeTz = getEffectiveTimezone();
       try {
         const res = await fetch('/api/auth/create', {
@@ -4491,39 +4890,144 @@ HTML_CONTENT = r"""<!DOCTYPE html>
       }
     });
 
-    // Universal Voice Recognition Controller
+    // Universal Voice Recognition Controller with Edge & Corner Orange Tint
+    function showVoiceOrangeTint(buttonEl) {
+      const tint = document.getElementById('voice-recording-tint');
+      const banner = document.getElementById('voice-recording-banner');
+      const bannerText = document.getElementById('voice-banner-text');
+
+      if (tint) {
+        tint.classList.remove('hidden');
+        requestAnimationFrame(() => {
+          tint.classList.remove('opacity-0');
+          tint.classList.add('opacity-100');
+        });
+      }
+
+      if (banner) {
+        if (bannerText) {
+          bannerText.textContent = currentLang === 'hi' 
+            ? '🎙️ सुन रहा हूँ... बोलिए (जैसे "2 किलो पालक लाया")' 
+            : '🎙️ Listening... Speak now (e.g. "bought 2kg palak")';
+        }
+        banner.classList.remove('hidden');
+        requestAnimationFrame(() => {
+          banner.classList.remove('-translate-y-12', 'opacity-0');
+          banner.classList.add('translate-y-0', 'opacity-100');
+        });
+      }
+
+      if (buttonEl) {
+        buttonEl.classList.add('text-orange-500', 'ring-4', 'ring-orange-400/70', 'bg-orange-50', 'dark:bg-orange-950/60', 'scale-110', 'animate-pulse');
+      }
+    }
+
+    function hideVoiceOrangeTint(buttonEl) {
+      const tint = document.getElementById('voice-recording-tint');
+      const banner = document.getElementById('voice-recording-banner');
+
+      if (tint) {
+        tint.classList.remove('opacity-100');
+        tint.classList.add('opacity-0');
+        setTimeout(() => {
+          if (tint.classList.contains('opacity-0')) {
+            tint.classList.add('hidden');
+          }
+        }, 300);
+      }
+
+      if (banner) {
+        banner.classList.remove('translate-y-0', 'opacity-100');
+        banner.classList.add('-translate-y-12', 'opacity-0');
+        setTimeout(() => {
+          if (banner.classList.contains('opacity-0')) {
+            banner.classList.add('hidden');
+          }
+        }, 300);
+      }
+
+      if (buttonEl) {
+        buttonEl.classList.remove('text-orange-500', 'ring-4', 'ring-orange-400/70', 'bg-orange-50', 'dark:bg-orange-950/60', 'scale-110', 'animate-pulse', 'text-rose-600');
+      }
+    }
+
     function setupVoiceRecognition(buttonEl, inputEl, onComplete) {
       if (!buttonEl) return;
-      if (!('webkitSpeechRecognition' in window || 'SpeechRecognition' in window)) {
-        buttonEl.style.display = 'none';
+      const hasSpeech = ('webkitSpeechRecognition' in window) || ('SpeechRecognition' in window);
+
+      if (!hasSpeech) {
+        buttonEl.addEventListener('click', () => {
+          showToast(currentLang === 'hi' ? 'इस ब्राउज़र में वॉइस रिकॉग्निशन समर्थित नहीं है। कृपया Chrome या Safari का उपयोग करें।' : 'Voice speech recognition not supported in this browser. Please use Chrome or Safari.', 'warning');
+        });
         return;
       }
-      const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
-      const rec = new SpeechRec();
-      rec.continuous = false;
-      rec.interimResults = false;
 
-      buttonEl.addEventListener('click', () => {
-        try {
-          rec.lang = currentLang === 'hi' ? 'hi-IN' : 'en-IN';
-          rec.start();
-          buttonEl.classList.add('text-rose-600', 'animate-pulse');
-          showToast(currentLang === 'hi' ? 'सुन रहा हूँ... बोलिए' : 'Listening... Speak now', 'info');
-        } catch (err) {
+      const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
+      let rec = null;
+      let isRecording = false;
+
+      function stopSession() {
+        if (rec && isRecording) {
           try { rec.stop(); } catch(e){}
-          buttonEl.classList.remove('text-rose-600', 'animate-pulse');
+        }
+        isRecording = false;
+        hideVoiceOrangeTint(buttonEl);
+      }
+
+      buttonEl.addEventListener('click', (e) => {
+        e.preventDefault();
+
+        if (isRecording) {
+          stopSession();
+          return;
+        }
+
+        try {
+          rec = new SpeechRec();
+          rec.continuous = false;
+          rec.interimResults = false;
+          rec.lang = currentLang === 'hi' ? 'hi-IN' : 'en-IN';
+
+          rec.onstart = () => {
+            isRecording = true;
+            showVoiceOrangeTint(buttonEl);
+          };
+
+          rec.onresult = (evt) => {
+            const transcript = evt.results[0][0].transcript;
+            stopSession();
+            if (inputEl) {
+              inputEl.value = transcript;
+              inputEl.focus();
+            }
+            if (onComplete) onComplete(transcript);
+          };
+
+          rec.onerror = (err) => {
+            console.warn('Speech error:', err);
+            stopSession();
+            if (err.error === 'not-allowed') {
+              showToast(currentLang === 'hi' ? 'माइक्रोफ़ोन अनुमति बंद है। कृपया ब्राउज़र सेटिंग्स में अनुमति दें।' : 'Microphone permission blocked. Please allow mic in browser settings.', 'warning');
+            } else if (err.error !== 'no-speech') {
+              showToast(currentLang === 'hi' ? 'आवाज़ पहचान में समस्या आई, कृपया पुनः प्रयास करें' : 'Could not hear voice. Try again.', 'warning');
+            }
+          };
+
+          rec.onend = () => {
+            stopSession();
+          };
+
+          // Immediate visual orange tint so user knows microphone is starting
+          isRecording = true;
+          showVoiceOrangeTint(buttonEl);
+          rec.start();
+          showToast(currentLang === 'hi' ? '🎙️ सुन रहा हूँ... बोलिए' : '🎙️ Listening... Speak now', 'info');
+        } catch (err) {
+          console.error('Failed to start voice recognition:', err);
+          stopSession();
+          showToast(currentLang === 'hi' ? 'माइक्रोफ़ोन सक्रिय नहीं हो सका' : 'Could not activate microphone', 'error');
         }
       });
-
-      rec.onresult = (e) => {
-        const transcript = e.results[0][0].transcript;
-        buttonEl.classList.remove('text-rose-600', 'animate-pulse');
-        if (inputEl) inputEl.value = transcript;
-        if (onComplete) onComplete(transcript);
-      };
-
-      rec.onerror = () => buttonEl.classList.remove('text-rose-600', 'animate-pulse');
-      rec.onend = () => buttonEl.classList.remove('text-rose-600', 'animate-pulse');
     }
 
     // Attach voice listeners to all 3 inputs: Command bar, Rescue Recipe, and Food Scanner
@@ -4531,9 +5035,55 @@ HTML_CONTENT = r"""<!DOCTYPE html>
     setupVoiceRecognition(document.getElementById('rescue-mic-btn'), document.getElementById('rescue-items-input'), (text) => checkAndCorrectRescueSpelling(text));
     setupVoiceRecognition(document.getElementById('scanner-mic-btn'), document.getElementById('scanner-input'), () => document.getElementById('scanner-btn').click());
 
-    // Quick Chips
+    // Command Bar Photo Intake Triggers (Native Mobile Camera / Desktop Webcam)
+    function openCommandPhotoCapture() {
+      const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || ('ontouchstart' in window);
+      if (isMobile) {
+        const camFile = document.getElementById('cmd-camera-file');
+        if (camFile) camFile.click();
+      } else {
+        startWebcamStream('environment');
+      }
+    }
+
+    const cmdPhotoBtn = document.getElementById('cmd-photo-btn');
+    if (cmdPhotoBtn) cmdPhotoBtn.addEventListener('click', openCommandPhotoCapture);
+
+    const cmdCameraBtn = document.getElementById('cmd-camera-btn');
+    if (cmdCameraBtn) cmdCameraBtn.addEventListener('click', openCommandPhotoCapture);
+
+    const cmdPhotoChip = document.getElementById('cmd-photo-chip');
+    if (cmdPhotoChip) {
+      cmdPhotoChip.addEventListener('click', (e) => {
+        e.stopPropagation();
+        openCommandPhotoCapture();
+      });
+    }
+
+    const cmdCameraFile = document.getElementById('cmd-camera-file');
+    if (cmdCameraFile) {
+      cmdCameraFile.addEventListener('change', (e) => {
+        if (e.target.files && e.target.files[0]) {
+          scanFoodPhoto(e.target.files[0]);
+          e.target.value = '';
+        }
+      });
+    }
+
+    const cmdGalleryFile = document.getElementById('cmd-gallery-file');
+    if (cmdGalleryFile) {
+      cmdGalleryFile.addEventListener('change', (e) => {
+        if (e.target.files && e.target.files[0]) {
+          scanFoodPhoto(e.target.files[0]);
+          e.target.value = '';
+        }
+      });
+    }
+
+    // Quick Chips (Exclude photo snap chip from text command submission)
     document.querySelectorAll('.chip').forEach(chip => {
       chip.addEventListener('click', () => {
+        if (chip.id === 'cmd-photo-chip') return;
         cmdInput.value = chip.textContent;
         commandForm.dispatchEvent(new Event('submit'));
       });
@@ -4668,6 +5218,7 @@ HTML_CONTENT = r"""<!DOCTYPE html>
         }
 
         const recipe = await res.json();
+        latestRecipe = recipe;
         renderRecipe(recipe);
       } catch (err) {
         showToast(err.message, 'error');
@@ -4677,17 +5228,40 @@ HTML_CONTENT = r"""<!DOCTYPE html>
       }
     }
 
+    let latestRecipe = null;
+
     function renderRecipe(recipe) {
-      document.getElementById('recipe-name').textContent = recipe.recipe_name;
-      document.getElementById('recipe-name-hi').textContent = recipe.recipe_name_hi;
-      document.getElementById('recipe-time').textContent = `${recipe.prep_time_minutes} mins`;
-      document.getElementById('recipe-tip').textContent = recipe.chef_tip;
+      if (!recipe) return;
+      latestRecipe = recipe;
+      const isHindi = currentLang === 'hi';
+
+      // Title & Subtitle based on active language
+      const titleEl = document.getElementById('recipe-name');
+      const subTitleEl = document.getElementById('recipe-name-hi');
+      if (isHindi) {
+        titleEl.textContent = recipe.recipe_name_hi || recipe.recipe_name;
+        subTitleEl.textContent = (recipe.recipe_name && recipe.recipe_name !== recipe.recipe_name_hi) ? recipe.recipe_name : 'ज़ीरो-वेस्ट होमस्टाइल रेसिपी';
+      } else {
+        titleEl.textContent = recipe.recipe_name;
+        subTitleEl.textContent = recipe.recipe_name_hi || '';
+      }
+
+      // Cooking Time
+      const timeVal = isHindi ? `${recipe.prep_time_minutes} मिनट` : `${recipe.prep_time_minutes} mins`;
+      const timeText = document.getElementById('recipe-time-text');
+      if (timeText) timeText.textContent = timeVal;
+      else document.getElementById('recipe-time').textContent = timeVal;
+
+      // Chef Zero-Waste Tip
+      const tipVal = isHindi ? (recipe.chef_tip_hi || recipe.chef_tip) : (recipe.chef_tip || recipe.chef_tip_hi);
+      document.getElementById('recipe-tip').textContent = tipVal || '';
 
       // Meal Type pill
       const mealTypeEl = document.getElementById('recipe-meal-type');
       if (mealTypeEl) {
-        if (recipe.meal_type) {
-          mealTypeEl.textContent = recipe.meal_type.replace(/_/g, ' ');
+        const mealTypeVal = isHindi ? (recipe.meal_type_hi || recipe.meal_type) : (recipe.meal_type || recipe.meal_type_hi);
+        if (mealTypeVal) {
+          mealTypeEl.textContent = mealTypeVal.replace(/_/g, ' ');
           mealTypeEl.classList.remove('hidden');
         } else {
           mealTypeEl.classList.add('hidden');
@@ -4698,33 +5272,46 @@ HTML_CONTENT = r"""<!DOCTYPE html>
       const pairingBox = document.getElementById('recipe-pairing-box');
       const pairingText = document.getElementById('recipe-pairing-text');
       if (pairingBox && pairingText) {
-        if (recipe.pairing_notes) {
-          pairingText.textContent = recipe.pairing_notes;
+        const pairingVal = isHindi ? (recipe.pairing_notes_hi || recipe.pairing_notes) : (recipe.pairing_notes || recipe.pairing_notes_hi);
+        if (pairingVal) {
+          pairingText.textContent = pairingVal;
           pairingBox.classList.remove('hidden');
         } else {
           pairingBox.classList.add('hidden');
         }
       }
 
+      // Rescued Ingredients
       const rescuedList = document.getElementById('recipe-rescued-list');
       rescuedList.innerHTML = '';
-      (recipe.ingredients_used || []).forEach(i => {
+      const rescuedItems = isHindi && recipe.ingredients_used_hi && recipe.ingredients_used_hi.length > 0
+        ? recipe.ingredients_used_hi
+        : (recipe.ingredients_used || []);
+      rescuedItems.forEach(i => {
         const li = document.createElement('li');
         li.textContent = i;
         rescuedList.appendChild(li);
       });
 
+      // Pantry Items
       const pantryList = document.getElementById('recipe-pantry-list');
       pantryList.innerHTML = '';
-      (recipe.pantry_items_needed || []).forEach(i => {
+      const pantryItems = isHindi && recipe.pantry_items_needed_hi && recipe.pantry_items_needed_hi.length > 0
+        ? recipe.pantry_items_needed_hi
+        : (recipe.pantry_items_needed || []);
+      pantryItems.forEach(i => {
         const li = document.createElement('li');
         li.textContent = i;
         pantryList.appendChild(li);
       });
 
+      // Cooking Steps
       const stepsList = document.getElementById('recipe-steps-list');
       stepsList.innerHTML = '';
-      (recipe.steps || []).forEach((step, idx) => {
+      const steps = isHindi && recipe.steps_hi && recipe.steps_hi.length > 0
+        ? recipe.steps_hi
+        : (recipe.steps || []);
+      steps.forEach((step, idx) => {
         const li = document.createElement('li');
         li.className = 'flex items-start gap-2.5';
         li.innerHTML = `<span class="w-5 h-5 rounded-full bg-brand-100 dark:bg-stone-800 text-brand-800 dark:text-brand-300 font-bold text-xs flex items-center justify-center shrink-0 mt-0.5">${idx + 1}</span><span>${step}</span>`;
@@ -4750,8 +5337,9 @@ HTML_CONTENT = r"""<!DOCTYPE html>
     document.getElementById('copy-recipe-btn').addEventListener('click', () => {
       const name = document.getElementById('recipe-name').textContent;
       const steps = Array.from(document.querySelectorAll('#recipe-steps-list li')).map(li => li.innerText).join('\n');
-      navigator.clipboard.writeText(`${name}\n\nInstructions:\n${steps}`).then(() => {
-        showToast('Recipe copied to clipboard!', 'success');
+      const header = currentLang === 'hi' ? 'पकाने की विधि:' : 'Instructions:';
+      navigator.clipboard.writeText(`${name}\n\n${header}\n${steps}`).then(() => {
+        showToast(currentLang === 'hi' ? 'रेसिपी क्लिपबोर्ड में कॉपी की गई!' : 'Recipe copied to clipboard!', 'success');
       });
     });
 
@@ -4809,6 +5397,87 @@ HTML_CONTENT = r"""<!DOCTYPE html>
               <span>Not a Food Item</span>
             </div>
             <p>${data.message || `'${queryText || 'Item'}' does not appear to be an edible food or kitchen grocery item.`}</p>
+          </div>
+        `;
+        return;
+      }
+
+      // MULTI-ITEM SCAN RESULTS SUMMARY (Auto-added fresh + Packaged modal prompt)
+      if ((data.auto_added && data.auto_added.length > 0) || (data.needs_expiry && data.needs_expiry.length > 0)) {
+        const autoAddedCount = data.auto_added ? data.auto_added.length : 0;
+        const needsExpiryCount = data.needs_expiry ? data.needs_expiry.length : 0;
+        const totalItemsCount = autoAddedCount + needsExpiryCount;
+
+        resBox.innerHTML = `
+          <div class="p-5 rounded-3xl bg-stone-50 dark:bg-stone-800/90 border border-stone-200 dark:border-stone-700 text-xs space-y-4 shadow-sm transition-all">
+            ${photoUrl ? `
+              <div class="flex items-center gap-3 pb-3 border-b border-stone-200 dark:border-stone-700/60">
+                <div class="relative w-16 h-16 rounded-2xl overflow-hidden shrink-0 border-2 border-emerald-500/40 shadow-sm bg-black">
+                  <img src="${photoUrl}" alt="Scanned Food Photo" class="w-full h-full object-cover"/>
+                  <span class="absolute bottom-0 inset-x-0 bg-stone-900/80 text-white text-[8px] text-center font-bold py-0.5">PHOTO</span>
+                </div>
+                <div class="min-w-0 flex-1">
+                  <div class="flex items-center gap-2 flex-wrap">
+                    <span class="px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 font-bold text-[10px] tracking-wide flex items-center gap-1">
+                      <svg class="w-3 h-3 text-emerald-600 dark:text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+                      <span>AI MULTI-FOOD SCAN</span>
+                    </span>
+                    <span class="text-[10px] text-stone-400">• ${data.analyzed_by || 'Gemini Vision AI'}</span>
+                  </div>
+                  <div class="text-[11px] text-stone-600 dark:text-stone-300 font-semibold mt-1">
+                    AI identified ${totalItemsCount} food item${totalItemsCount > 1 ? 's' : ''} in photo
+                  </div>
+                </div>
+              </div>
+            ` : ''}
+
+            ${autoAddedCount > 0 ? `
+              <div class="p-3.5 rounded-2xl bg-emerald-50/80 dark:bg-emerald-950/40 border border-emerald-200/80 dark:border-emerald-800/60 space-y-2">
+                <div class="flex items-center justify-between text-xs font-bold text-emerald-800 dark:text-emerald-200">
+                  <div class="flex items-center gap-1.5">
+                    <svg class="w-4 h-4 text-emerald-600 dark:text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                    <span>Automatically Added Fresh (No Expiry Needed)</span>
+                  </div>
+                  <span class="px-2 py-0.5 rounded-full bg-emerald-200/60 dark:bg-emerald-900/80 text-emerald-800 dark:text-emerald-200 text-[10px] font-bold">${autoAddedCount} added</span>
+                </div>
+                <div class="divide-y divide-emerald-100 dark:divide-emerald-900/40 text-[11px]">
+                  ${data.auto_added.map(item => `
+                    <div class="py-1.5 flex items-center justify-between">
+                      <div class="flex items-center gap-2">
+                        <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                        <span class="font-semibold text-stone-800 dark:text-stone-200">${item.name_en}</span>
+                        ${item.name_hi ? `<span class="text-[10px] text-brand-600 dark:text-brand-400">(${item.name_hi})</span>` : ''}
+                      </div>
+                      <span class="text-stone-500 dark:text-stone-400 text-[10px] font-medium">${item.days_left || item.shelf_life_days || 2}d estimated freshness</span>
+                    </div>
+                  `).join('')}
+                </div>
+              </div>
+            ` : ''}
+
+            ${needsExpiryCount > 0 ? `
+              <div class="p-3.5 rounded-2xl bg-amber-50/80 dark:bg-amber-950/40 border border-amber-200/80 dark:border-amber-800/60 space-y-2">
+                <div class="flex items-center justify-between text-xs font-bold text-amber-800 dark:text-amber-200">
+                  <div class="flex items-center gap-1.5">
+                    <svg class="w-4 h-4 text-amber-600 dark:text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                    <span>Packaged Items (Modal Prompt Opened)</span>
+                  </div>
+                  <span class="px-2 py-0.5 rounded-full bg-amber-200/60 dark:bg-amber-900/80 text-amber-800 dark:text-amber-200 text-[10px] font-bold">${needsExpiryCount} queued</span>
+                </div>
+                <div class="divide-y divide-amber-100 dark:divide-amber-900/40 text-[11px]">
+                  ${data.needs_expiry.map(item => `
+                    <div class="py-1.5 flex items-center justify-between">
+                      <div class="flex items-center gap-2">
+                        <span class="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
+                        <span class="font-semibold text-stone-800 dark:text-stone-200">${item.name_en}</span>
+                        ${item.name_hi ? `<span class="text-[10px] text-brand-600 dark:text-brand-400">(${item.name_hi})</span>` : ''}
+                      </div>
+                      <span class="text-amber-700 dark:text-amber-300 text-[10px] font-medium">Printed expiry date required</span>
+                    </div>
+                  `).join('')}
+                </div>
+              </div>
+            ` : ''}
           </div>
         `;
         return;
@@ -4970,17 +5639,21 @@ HTML_CONTENT = r"""<!DOCTYPE html>
       }
     };
 
-    // Core Photo Scanner Function
+    // Core Photo Scanner Function (Works from Command Bar and Food Scanner Tab)
     async function scanFoodPhoto(fileOrBlob) {
       if (!fileOrBlob) return;
 
       const resBox = document.getElementById('scanner-result');
-      resBox.classList.remove('hidden');
+      if (resBox) resBox.classList.remove('hidden');
+
+      const invStatus = document.getElementById('inv-photo-status');
+      if (invStatus) invStatus.classList.remove('hidden');
 
       // Immediate visual feedback with photo thumbnail + laser scanning animation
       const objectUrl = URL.createObjectURL(fileOrBlob);
-      resBox.innerHTML = `
-        <div class="p-5 rounded-3xl bg-stone-50 dark:bg-stone-800/90 border border-stone-200 dark:border-stone-700 text-xs space-y-4 shadow-sm animate-pulse-subtle">
+
+      const scanningHtml = `
+        <div class="p-4 sm:p-5 rounded-3xl bg-stone-50 dark:bg-stone-800/90 border border-stone-200 dark:border-stone-700 text-xs space-y-4 shadow-sm animate-pulse-subtle">
           <div class="relative w-full max-w-xs mx-auto rounded-2xl overflow-hidden aspect-video bg-black flex items-center justify-center border border-stone-800 shadow-md">
             <img src="${objectUrl}" alt="Scanning..." class="w-full h-full object-cover opacity-80"/>
             <div class="scanner-laser-bar"></div>
@@ -4992,22 +5665,49 @@ HTML_CONTENT = r"""<!DOCTYPE html>
           <div class="text-center space-y-1">
             <div class="text-xs font-bold text-stone-800 dark:text-stone-200 flex items-center justify-center gap-2">
               <svg class="w-4 h-4 text-emerald-600 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path></svg>
-              <span>Gemini AI Vision Analyzing Food Photo...</span>
+              <span>${currentLang === 'hi' ? 'Gemini AI भोजन की फोटो का विश्लेषण कर रहा है...' : 'Gemini AI Vision Analyzing Food Photo...'}</span>
             </div>
-            <p class="text-[11px] text-stone-500 dark:text-stone-400">Detecting dish name, culinary category, freshness & accurate shelf life</p>
+            <p class="text-[11px] text-stone-500 dark:text-stone-400">${currentLang === 'hi' ? 'सामान का नाम, शेल्फ लाइफ व ताज़गी की जाँच करके फ्रिज में जोड़ा जा रहा है' : 'Detecting dish name, culinary category, freshness & accurate shelf life'}</p>
           </div>
         </div>
       `;
 
+      if (resBox) resBox.innerHTML = scanningHtml;
+      if (invStatus) {
+        invStatus.innerHTML = `
+          <div class="flex flex-col sm:flex-row items-center gap-3.5 text-xs">
+            <div class="relative w-28 h-20 rounded-xl overflow-hidden bg-black shrink-0 border border-emerald-500/50 shadow-sm">
+              <img src="${objectUrl}" class="w-full h-full object-cover opacity-80" />
+              <div class="scanner-laser-bar"></div>
+            </div>
+            <div class="flex-grow space-y-1 text-center sm:text-left">
+              <div class="font-bold text-stone-900 dark:text-stone-100 flex items-center justify-center sm:justify-start gap-2">
+                <svg class="w-4 h-4 text-emerald-600 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path></svg>
+                <span>${currentLang === 'hi' ? 'Gemini AI भोजन की फोटो का विश्लेषण कर रहा है...' : 'Gemini AI Vision Analyzing Food Photo...'}</span>
+              </div>
+              <p class="text-stone-500 dark:text-stone-400 text-[11px]">${currentLang === 'hi' ? 'ताज़ी सामग्री अपने-आप फ्रिज इन्वेंटरी में जोड़ी जा रही है...' : 'Detecting food items & automatically adding to FridgeInventory...'}</p>
+            </div>
+          </div>
+        `;
+      }
+
       try {
         const { dataUrl } = await compressAndResizeImage(fileOrBlob, 1024, 0.85);
 
+        const activeTz = getEffectiveTimezone();
+        const fid = currentFridge || '';
+
         const res = await fetch('/api/scanner/photo', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 
+            'Content-Type': 'application/json',
+            'X-Client-Timezone': activeTz
+          },
           body: JSON.stringify({
             image: dataUrl,
-            mime_type: 'image/jpeg'
+            mime_type: 'image/jpeg',
+            fridge_id: fid,
+            timezone: activeTz
           })
         });
 
@@ -5017,9 +5717,55 @@ HTML_CONTENT = r"""<!DOCTYPE html>
 
         const data = await res.json();
         renderScannerResult(data, dataUrl);
+
+        // 1. Fresh items without printed expiry date were automatically persisted to DB and returned in auto_added
+        if (data.auto_added && data.auto_added.length > 0) {
+          data.auto_added.forEach(item => inventory.unshift(item));
+          try { localStorage.setItem('fi_cached_inventory', JSON.stringify(inventory)); } catch(e){}
+          renderInventory();
+          updateStats();
+          checkUrgentAndNotify();
+          const freshNames = data.auto_added.map(i => currentLang === 'hi' ? (i.name_hi || i.name_en) : i.name_en).join(', ');
+          showToast(currentLang === 'hi' ? `फ्रिज में जोड़ा गया: ${freshNames}` : `Auto-added fresh item(s) to fridge: ${freshNames}`, 'success');
+
+          if (invStatus) {
+            invStatus.innerHTML = `
+              <div class="flex items-center justify-between gap-3 text-xs">
+                <div class="flex items-center gap-2.5">
+                  <div class="w-7 h-7 rounded-full bg-emerald-100 dark:bg-emerald-900/60 text-emerald-600 dark:text-emerald-300 flex items-center justify-center shrink-0">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+                  </div>
+                  <div>
+                    <span class="font-bold text-emerald-700 dark:text-emerald-300">${currentLang === 'hi' ? 'फ्रिज में जोड़ा गया:' : 'Added to FridgeInventory:'}</span>
+                    <span class="text-stone-700 dark:text-stone-300 ml-1 font-medium">${freshNames}</span>
+                  </div>
+                </div>
+                <button type="button" onclick="document.getElementById('inv-photo-status').classList.add('hidden')" class="text-stone-400 hover:text-stone-600 dark:hover:text-stone-200 text-xs">✕</button>
+              </div>
+            `;
+            setTimeout(() => { if (invStatus) invStatus.classList.add('hidden'); }, 6000);
+          }
+        }
+
+        // 2. Packaged items or items requiring printed expiry date open modal sequentially one-by-one
+        const needsExpiry = data.needs_expiry || (data.requires_expiry_date ? [data] : []);
+        if (needsExpiry.length > 0) {
+          modalQueue = [...needsExpiry];
+          modalQueueTotal = needsExpiry.length;
+          modalQueueIndex = 1;
+          const firstItem = modalQueue.shift();
+          openModalWithClassification(firstItem, 1, modalQueueTotal);
+          if (data.auto_added && data.auto_added.length > 0) {
+            showToast(`Setting printed expiry date for ${firstItem.name_en}...`, 'info');
+          } else {
+            showToast(`Please enter printed expiry date for ${firstItem.name_en}`, 'info');
+          }
+        } else if (data.auto_added && data.auto_added.length > 0) {
+          showToast(currentLang === 'hi' ? `सभी ${data.auto_added.length} सामान सुरक्षित रूप से जोड़े गए!` : `All ${data.auto_added.length} item(s) automatically added with computed shelf life!`, 'success');
+        }
       } catch (err) {
         console.error('Photo scan error:', err);
-        resBox.innerHTML = `
+        const errorHtml = `
           <div class="p-5 rounded-2xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 text-xs text-rose-800 dark:text-rose-200 space-y-3">
             <div class="font-bold flex items-center gap-2">
               <svg class="w-4 h-4 text-rose-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
@@ -5028,13 +5774,15 @@ HTML_CONTENT = r"""<!DOCTYPE html>
             <p>Could not analyze the photo. Please ensure a clear photo of food and try again.</p>
             <button 
               type="button" 
-              onclick="document.getElementById('scanner-photo-bubble-btn').click()" 
+              onclick="openCommandPhotoCapture()" 
               class="px-4 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-semibold text-xs transition"
             >
               Retry Camera Snap
             </button>
           </div>
         `;
+        if (resBox) resBox.innerHTML = errorHtml;
+        if (invStatus) invStatus.innerHTML = errorHtml;
       }
     }
 
@@ -5467,31 +6215,117 @@ HTML_CONTENT = r"""<!DOCTYPE html>
       }
     }
 
-    // Local Offline Notification Engine (Works completely without Wi-Fi / Cellular)
-    function checkLocalOfflineExpiryAlerts() {
-      if (!swRegistration || !swRegistration.active) return;
+    // Automatic Urgent Notification Engine: Automatically sends notification when any item hits urgent category (<= 2 days or expired)
+    function checkUrgentAndNotify() {
       if (!inventory || inventory.length === 0) return;
 
-      const expiringItems = inventory.filter(i => i.days_left <= 1);
-      if (expiringItems.length === 0) return;
+      // Urgent category: days_left <= 2 (expiring within 48h or already expired)
+      const urgentItems = inventory.filter(i => typeof i.days_left === 'number' && i.days_left <= 2);
+      if (urgentItems.length === 0) return;
 
-      // Throttle offline notifications so we don't spam on every 30s interval
-      const lastAlert = parseInt(localStorage.getItem('fi_last_offline_alert') || '0', 10);
+      const cacheKey = 'fi_urgent_notified_v4';
+      let notifiedCache = {};
+      try {
+        notifiedCache = JSON.parse(localStorage.getItem(cacheKey) || '{}');
+      } catch (e) {}
+
       const now = Date.now();
-      if (now - lastAlert < 3 * 3600 * 1000) return;
+      // Purge entries older than 8 hours
+      for (const k in notifiedCache) {
+        if (now - (notifiedCache[k]?.time || 0) > 8 * 3600 * 1000) {
+          delete notifiedCache[k];
+        }
+      }
 
-      try { localStorage.setItem('fi_last_offline_alert', now.toString()); } catch(e){}
-      const itemNames = expiringItems.map(i => currentLang === 'hi' ? (i.name_hi || i.name_en) : i.name_en).slice(0, 3).join(', ');
-      const count = expiringItems.length;
-
-      swRegistration.active.postMessage({
-        type: 'SHOW_OFFLINE_NOTIFICATION',
-        title: currentLang === 'hi' ? `[खाद्य समाप्ति अलर्ट] ${count} सामान` : `[Food Expiry Alert] ${count} item${count > 1 ? 's' : ''}`,
-        body: currentLang === 'hi' ? `${itemNames} जल्द समाप्त हो रहे हैं! फ्रिज खोलकर उपयोग करें।` : `${itemNames} expiring soon! Open your fridge to inspect.`,
-        tag: 'offline-expiry-alert',
-        url: '/'
+      // Identify newly urgent items or items transitioning to a new day state
+      const newlyUrgent = urgentItems.filter(item => {
+        const stateKey = `${item.id}_${item.days_left}`;
+        return !notifiedCache[stateKey];
       });
+
+      if (newlyUrgent.length === 0) return;
+
+      // Record state in cache
+      newlyUrgent.forEach(item => {
+        const stateKey = `${item.id}_${item.days_left}`;
+        notifiedCache[stateKey] = { time: now, name: item.name_en, days_left: item.days_left };
+      });
+      try { localStorage.setItem(cacheKey, JSON.stringify(notifiedCache)); } catch (e) {}
+
+      const count = newlyUrgent.length;
+      const names = newlyUrgent.map(i => currentLang === 'hi' ? (i.name_hi || i.name_en) : i.name_en).slice(0, 3).join(', ');
+      const suffix = newlyUrgent.length > 3 ? ` +${newlyUrgent.length - 3} more` : '';
+
+      const title = currentLang === 'hi'
+        ? `🚨 [अर्जेंट खाद्य चेतावनी] ${count} सामान जल्द समाप्त हो रहे हैं!`
+        : `🚨 [Urgent Food Alert] ${count} item${count > 1 ? 's' : ''} expiring soon!`;
+
+      const body = currentLang === 'hi'
+        ? `${names}${suffix} अर्जेंट श्रेणी में आ गए हैं! कृपया खराब होने से पहले उपयोग करें या रेस्क्यू शेफ़ रेसिपी बनाएं।`
+        : `${names}${suffix} hit the urgent category! Consume or rescue them before they spoil.`;
+
+      // 1. Direct Web Browser OS Notification
+      if ('Notification' in window) {
+        if (Notification.permission === 'granted') {
+          try {
+            if (swRegistration && swRegistration.showNotification) {
+              swRegistration.showNotification(title, {
+                body,
+                icon: '/favicon.ico',
+                badge: '/favicon.ico',
+                tag: 'urgent-expiry-' + Date.now(),
+                data: { url: '/#urgent' },
+                vibrate: [200, 100, 200],
+                requireInteraction: true
+              });
+            } else {
+              new Notification(title, {
+                body,
+                icon: '/favicon.ico',
+                tag: 'urgent-expiry-' + Date.now(),
+                requireInteraction: true
+              });
+            }
+          } catch (err) {
+            console.warn('Native notification failed:', err);
+          }
+        } else if (Notification.permission === 'default') {
+          Notification.requestPermission().then(perm => {
+            if (perm === 'granted') {
+              try {
+                new Notification(title, { body, icon: '/favicon.ico' });
+              } catch(e){}
+            }
+          }).catch(()=>{});
+        }
+      }
+
+      // 2. Direct Service Worker PostMessage
+      if (swRegistration && swRegistration.active) {
+        try {
+          swRegistration.active.postMessage({
+            type: 'SHOW_OFFLINE_NOTIFICATION',
+            title,
+            body,
+            tag: 'urgent-expiry-alert',
+            url: '/'
+          });
+        } catch(e){}
+      }
+
+      // 3. Trigger Backend Push Alert (if online and logged in)
+      if (navigator.onLine && currentFridge) {
+        fetch('/api/push/check-expiry', {
+          method: 'POST',
+          headers: { 'X-Client-Timezone': getEffectiveTimezone() }
+        }).catch(()=>{});
+      }
+
+      // 4. In-App Alert Toast
+      showToast(`${title} ${body}`, 'warning', 8000);
     }
+
+    const checkLocalOfflineExpiryAlerts = checkUrgentAndNotify;
 
     async function triggerLocalOfflineTest() {
       if (!swRegistration || !swRegistration.active) {
