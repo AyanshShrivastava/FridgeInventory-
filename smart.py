@@ -1713,9 +1713,9 @@ def _init_vapid_keys():
     """Load or auto-generate VAPID keys for Web Push Notifications."""
     global _VAPID_PUBLIC_KEY, _VAPID_PRIVATE_KEY, _VAPID_SUBJECT
 
-    _VAPID_PUBLIC_KEY = os.getenv("VAPID_PUBLIC_KEY", "").strip()
-    _VAPID_PRIVATE_KEY = os.getenv("VAPID_PRIVATE_KEY", "").strip()
-    subject = os.getenv("VAPID_SUBJECT", "").strip()
+    _VAPID_PUBLIC_KEY = os.getenv("VAPID_PUBLIC_KEY", "").strip().strip('"').strip("'")
+    _VAPID_PRIVATE_KEY = os.getenv("VAPID_PRIVATE_KEY", "").strip().strip('"').strip("'")
+    subject = os.getenv("VAPID_SUBJECT", "").strip().strip('"').strip("'")
     if subject:
         _VAPID_SUBJECT = subject
 
@@ -2370,6 +2370,11 @@ def health_check():
         "firestore_status": "connected" if db is not None else db_err,
         "local_database_cached_items": len(EXPIRY_DATABASE),
         "web_push_enabled": HAVE_WEBPUSH and bool(_VAPID_PUBLIC_KEY),
+        "web_push_details": {
+            "pywebpush_installed": HAVE_WEBPUSH,
+            "vapid_public_key_loaded": bool(_VAPID_PUBLIC_KEY),
+            "vapid_private_key_loaded": bool(_VAPID_PRIVATE_KEY),
+        },
     }
 
 
