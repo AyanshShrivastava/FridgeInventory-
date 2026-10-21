@@ -3062,7 +3062,7 @@ HTML_CONTENT = r"""<!DOCTYPE html>
         <!-- Quick Push Alerts Button -->
         <button type="button" id="header-push-pill" class="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-white dark:bg-stone-800 hover:bg-stone-50 dark:hover:bg-stone-750 border border-stone-200 dark:border-stone-700 text-xs font-semibold transition shadow-2xs shrink-0" title="View Offline Push Notifications">
           <svg class="w-3.5 h-3.5 text-amber-500 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"></path></svg>
-          <span class="text-stone-600 dark:text-stone-400">Alerts:</span>
+          <span class="text-stone-600 dark:text-stone-400" data-i18n="header_alerts_label">Alerts:</span>
           <span id="push-status-badge" class="font-bold text-[10px] px-1.5 py-0.5 rounded-full bg-stone-100 dark:bg-stone-700 text-stone-600 dark:text-stone-300">OFF</span>
         </button>
 
@@ -3295,7 +3295,7 @@ HTML_CONTENT = r"""<!DOCTYPE html>
         <div id="sync-banner" class="p-3.5 bg-gradient-to-r from-amber-500/10 via-emerald-500/10 to-transparent dark:from-stone-800/80 dark:to-stone-900 border border-stone-200 dark:border-stone-800 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
           <div class="flex items-center gap-2 text-stone-700 dark:text-stone-300">
             <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shrink-0"></span>
-            <span class="font-bold" id="sync-engine-heading">Live Freshness Engine:</span>
+            <span class="font-bold" id="sync-engine-heading" data-i18n="sync_engine_heading">Live Freshness Engine:</span>
             <span id="sync-banner-text" data-i18n="time_sync_banner">
               Automatically comparing your country's local time against food addition dates. Freshness & expiry countdowns update continuously without refreshing.
             </span>
@@ -3314,9 +3314,9 @@ HTML_CONTENT = r"""<!DOCTYPE html>
 
           <!-- MULTI-SELECT RESCUE BAR -->
           <div id="rescue-action-bar" class="hidden bg-stone-900 dark:bg-stone-800 text-white px-3.5 py-2 rounded-2xl flex items-center justify-between gap-3 shadow-md w-full sm:w-auto">
-            <span class="text-xs font-medium">Selected <b id="selected-count" class="text-brand-400 font-bold">0</b> items</span>
+            <span class="text-xs font-medium" id="rescue-selected-label">Selected <b id="selected-count" class="text-brand-400 font-bold">0</b> items</span>
             <button id="trigger-rescue-btn" class="px-3.5 py-1.5 bg-brand-600 hover:bg-brand-500 font-bold rounded-xl text-xs shadow transition inline-flex items-center gap-1.5 shrink-0">
-              <span>Rescue Recipe</span>
+              <span data-i18n="trigger_rescue_btn">Rescue Recipe</span>
               <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
             </button>
           </div>
@@ -3356,7 +3356,7 @@ HTML_CONTENT = r"""<!DOCTYPE html>
             <div class="flex items-center gap-2">
               <button id="urgent-rescue-all-btn" class="px-4 py-2.5 bg-brand-600 hover:bg-brand-700 text-white font-bold rounded-xl text-xs shadow transition flex items-center gap-2">
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
-                <span>Rescue All with AI Chef</span>
+                <span data-i18n="urgent_rescue_all_btn">Rescue All with AI Chef</span>
               </button>
             </div>
           </div>
@@ -3369,8 +3369,8 @@ HTML_CONTENT = r"""<!DOCTYPE html>
             <div class="w-12 h-12 mx-auto rounded-full bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
               <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
             </div>
-            <h4 class="font-bold text-sm text-stone-800 dark:text-stone-200 mt-2">No Urgent Expirations!</h4>
-            <p class="text-xs text-stone-500 dark:text-stone-400 mt-0.5">Everything in your fridge has plenty of shelf life remaining.</p>
+            <h4 class="font-bold text-sm text-stone-800 dark:text-stone-200 mt-2" data-i18n="urgent_empty_title">No Urgent Expirations!</h4>
+            <p class="text-xs text-stone-500 dark:text-stone-400 mt-0.5" data-i18n="urgent_empty_desc">Everything in your fridge has plenty of shelf life remaining.</p>
           </div>
         </div>
       </section>
@@ -3399,7 +3399,7 @@ HTML_CONTENT = r"""<!DOCTYPE html>
             <!-- Master Toggle Button -->
             <button id="push-main-toggle-btn" class="px-6 py-3 rounded-2xl bg-brand-600 hover:bg-brand-700 text-white font-bold text-sm shadow-md transition-all flex items-center justify-center gap-2 shrink-0">
               <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"></path></svg>
-              <span id="push-main-toggle-text">Enable Expiry Alerts</span>
+              <span id="push-main-toggle-text" data-i18n="push_toggle_enable">Enable Expiry Alerts</span>
             </button>
           </div>
 
@@ -3428,11 +3428,11 @@ HTML_CONTENT = r"""<!DOCTYPE html>
               <div>
                 <h4 class="font-bold text-xs text-stone-900 dark:text-white flex items-center gap-1.5">
                   <svg class="w-3.5 h-3.5 text-brand-600 dark:text-brand-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/></svg>
-                  <span>Test Web Push</span>
+                  <span data-i18n="push_card_test_title">Test Web Push</span>
                 </h4>
-                <p class="text-[11px] text-stone-500 dark:text-stone-400 mt-0.5">Signed VAPID push (buffers 24h offline).</p>
+                <p class="text-[11px] text-stone-500 dark:text-stone-400 mt-0.5" data-i18n="push_card_test_desc">Signed VAPID push (buffers 24h offline).</p>
               </div>
-              <button id="push-tab-test-btn" class="px-3.5 py-2 rounded-xl bg-white dark:bg-stone-800 hover:bg-stone-100 dark:hover:bg-stone-700 border border-stone-200 dark:border-stone-700 text-stone-800 dark:text-stone-200 font-semibold text-xs transition shrink-0">
+              <button id="push-tab-test-btn" class="px-3.5 py-2 rounded-xl bg-white dark:bg-stone-800 hover:bg-stone-100 dark:hover:bg-stone-700 border border-stone-200 dark:border-stone-700 text-stone-800 dark:text-stone-200 font-semibold text-xs transition shrink-0" data-i18n="push_btn_send_push">
                 Send Push
               </button>
             </div>
@@ -3441,11 +3441,11 @@ HTML_CONTENT = r"""<!DOCTYPE html>
               <div>
                 <h4 class="font-bold text-xs text-stone-900 dark:text-white flex items-center gap-1.5">
                   <svg class="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
-                  <span>Test Offline Alert</span>
+                  <span data-i18n="push_card_offline_title">Test Offline Alert</span>
                 </h4>
-                <p class="text-[11px] text-stone-500 dark:text-stone-400 mt-0.5">Local Service Worker (no Wi-Fi needed).</p>
+                <p class="text-[11px] text-stone-500 dark:text-stone-400 mt-0.5" data-i18n="push_card_offline_desc">Local Service Worker (no Wi-Fi needed).</p>
               </div>
-              <button id="push-tab-offline-test-btn" class="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs shadow-sm transition shrink-0">
+              <button id="push-tab-offline-test-btn" class="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs shadow-sm transition shrink-0" data-i18n="push_btn_test_offline">
                 Test Offline
               </button>
             </div>
@@ -3454,11 +3454,11 @@ HTML_CONTENT = r"""<!DOCTYPE html>
               <div>
                 <h4 class="font-bold text-xs text-stone-900 dark:text-white flex items-center gap-1.5">
                   <svg class="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-                  <span>Check Expiry Now</span>
+                  <span data-i18n="push_card_expiry_title">Check Expiry Now</span>
                 </h4>
-                <p class="text-[11px] text-stone-500 dark:text-stone-400 mt-0.5">Scan fridge and alert for food expiring soon.</p>
+                <p class="text-[11px] text-stone-500 dark:text-stone-400 mt-0.5" data-i18n="push_card_expiry_desc">Scan fridge and alert for food expiring soon.</p>
               </div>
-              <button id="push-tab-expiry-btn" class="px-3.5 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-semibold text-xs shadow-sm transition shrink-0">
+              <button id="push-tab-expiry-btn" class="px-3.5 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-semibold text-xs shadow-sm transition shrink-0" data-i18n="push_btn_check_now">
                 Check Now
               </button>
             </div>
@@ -3468,7 +3468,7 @@ HTML_CONTENT = r"""<!DOCTYPE html>
           <details class="text-xs text-stone-400 dark:text-stone-500 pt-2 border-t border-stone-100 dark:border-stone-800/60">
             <summary class="cursor-pointer hover:text-stone-600 dark:hover:text-stone-300 font-medium select-none flex items-center gap-1.5">
               <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
-              <span>Technical status & diagnostics</span>
+              <span data-i18n="push_diag_title">Technical status & diagnostics</span>
             </summary>
             <div class="mt-3 p-4 rounded-2xl bg-stone-50/80 dark:bg-stone-800/30 border border-stone-200/60 dark:border-stone-700/40 space-y-3">
               <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[11px]">
@@ -3522,7 +3522,7 @@ HTML_CONTENT = r"""<!DOCTYPE html>
               <label class="block text-xs font-semibold text-stone-700 dark:text-stone-300" data-i18n="custom_rescue_label">
                 Custom Ingredients / Leftovers to Rescue (Comma-separated):
               </label>
-              <span class="text-[10px] text-stone-400">Speaks or types dishes, drinks, or leftovers</span>
+              <span class="text-[10px] text-stone-400" data-i18n="rescue_sub_tip">Speaks or types dishes, drinks, or leftovers</span>
             </div>
             <div class="relative">
               <input 
@@ -3560,7 +3560,7 @@ HTML_CONTENT = r"""<!DOCTYPE html>
                 <div class="min-w-0 flex-1">
                   <div class="flex items-center gap-2 mb-1 flex-wrap">
                     <span class="text-xs font-bold text-brand-600 dark:text-brand-400 uppercase tracking-wider" data-i18n="recipe_card_tag">Zero-Waste Culinary Recipe</span>
-                    <span id="recipe-meal-type" class="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-indigo-50 dark:bg-indigo-950/70 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800">Homestyle Meal</span>
+                    <span id="recipe-meal-type" class="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-indigo-50 dark:bg-indigo-950/70 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800" data-i18n="recipe_homestyle_badge">Homestyle Meal</span>
                   </div>
                   <h3 id="recipe-name" class="text-lg sm:text-2xl font-bold text-stone-900 dark:text-white break-words"></h3>
                   <h4 id="recipe-name-hi" class="text-sm sm:text-base font-semibold text-brand-600 dark:text-brand-400"></h4>
@@ -3571,7 +3571,7 @@ HTML_CONTENT = r"""<!DOCTYPE html>
                     </span>
                     <button id="copy-recipe-btn" class="px-2.5 py-1 bg-white dark:bg-stone-900 hover:bg-stone-100 dark:hover:bg-stone-750 border border-stone-200 dark:border-stone-700 rounded-xl text-stone-600 dark:text-stone-300 text-xs font-medium inline-flex items-center gap-1 shrink-0" title="Copy">
                       <svg class="w-3.5 h-3.5 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>
-                      <span>Copy</span>
+                      <span data-i18n="btn_copy">Copy</span>
                     </button>
                   </div>
                 </div>
@@ -3586,7 +3586,7 @@ HTML_CONTENT = r"""<!DOCTYPE html>
               <div id="recipe-pairing-box" class="hidden mt-3.5 p-3.5 rounded-2xl bg-amber-50/80 dark:bg-stone-800/80 border border-amber-200 dark:border-stone-700 text-xs text-amber-900 dark:text-amber-200">
                 <div class="font-bold flex items-center gap-1.5 mb-1 text-stone-900 dark:text-stone-100">
                   <svg class="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"></path></svg>
-                  <span>Chef's Zero-Waste Course & Pairing Notes:</span>
+                  <span data-i18n="recipe_pairing_title">Chef's Zero-Waste Course & Pairing Notes:</span>
                 </div>
                 <p id="recipe-pairing-text" class="text-stone-700 dark:text-stone-300 leading-relaxed"></p>
               </div>
@@ -3641,7 +3641,7 @@ HTML_CONTENT = r"""<!DOCTYPE html>
             <h2 class="text-lg font-bold text-stone-900 dark:text-white" data-i18n="scanner_title">AI Food Inspector & Storage Advisor</h2>
             <div class="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800/80 text-emerald-700 dark:text-emerald-300 text-[10px] font-bold">
               <span class="w-2 h-2 rounded-full bg-emerald-500 animate-ping"></span>
-              <span>AI Vision Ready</span>
+              <span data-i18n="scanner_ai_vision_badge">AI Vision Ready</span>
             </div>
           </div>
           
@@ -3668,8 +3668,8 @@ HTML_CONTENT = r"""<!DOCTYPE html>
               </button>
 
               <div>
-                <div class="text-xs font-bold text-stone-800 dark:text-stone-200">Instant AI Food Camera</div>
-                <div class="text-[11px] text-stone-500 dark:text-stone-400">Snap any fresh dish or grocery to auto-identify & track</div>
+                <div class="text-xs font-bold text-stone-800 dark:text-stone-200" data-i18n="scanner_instant_title">Instant AI Food Camera</div>
+                <div class="text-[11px] text-stone-500 dark:text-stone-400" data-i18n="scanner_instant_desc">Snap any fresh dish or grocery to auto-identify & track</div>
               </div>
             </div>
 
@@ -3682,7 +3682,7 @@ HTML_CONTENT = r"""<!DOCTYPE html>
                 title="Open live desktop webcam viewfinder"
               >
                 <svg class="w-3.5 h-3.5 text-stone-500 dark:text-stone-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
-                <span class="hidden sm:inline">Live Camera</span>
+                <span class="hidden sm:inline" data-i18n="scanner_live_cam_btn">Live Camera</span>
               </button>
               
               <button 
@@ -3692,7 +3692,7 @@ HTML_CONTENT = r"""<!DOCTYPE html>
                 title="Upload image from device storage"
               >
                 <svg class="w-3.5 h-3.5 text-stone-500 dark:text-stone-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/></svg>
-                <span class="hidden sm:inline">Upload Image</span>
+                <span class="hidden sm:inline" data-i18n="scanner_upload_img_btn">Upload Image</span>
               </button>
             </div>
           </div>
@@ -3718,7 +3718,7 @@ HTML_CONTENT = r"""<!DOCTYPE html>
               <input 
                 type="text" 
                 id="scanner-input" 
-                placeholder="Or type any food (e.g. Paneer Butter Masala, Gajar, Dal Makhani)..." 
+                placeholder="Or type any food (e.g. Paneer Butter Masala, Gajar, Dal Makhani)..." data-i18n-placeholder="scanner_input_placeholder" 
                 class="w-full pl-3.5 sm:pl-4 pr-20 sm:pr-24 py-2.5 rounded-xl border border-stone-200 dark:border-stone-700 text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 bg-stone-50 dark:bg-stone-800 text-stone-800 dark:text-stone-100 font-medium"
               />
               <div class="absolute right-1.5 sm:right-2 top-1/2 -translate-y-1/2 flex items-center gap-0.5 sm:gap-1">
@@ -3782,7 +3782,7 @@ HTML_CONTENT = r"""<!DOCTYPE html>
         <div>
           <div class="flex items-center justify-between mb-1">
             <label class="block text-xs font-semibold" data-i18n="auth_fid_label">Fridge ID:</label>
-            <span class="text-[10px] text-amber-600 dark:text-amber-400 font-semibold px-1.5 py-0.5 rounded bg-amber-50 dark:bg-amber-950/60 border border-amber-200/60 dark:border-amber-800/60">Case-Sensitive</span>
+            <span class="text-[10px] text-amber-600 dark:text-amber-400 font-semibold px-1.5 py-0.5 rounded bg-amber-50 dark:bg-amber-950/60 border border-amber-200/60 dark:border-amber-800/60" data-i18n="auth_case_sensitive">Case-Sensitive</span>
           </div>
           <input 
             type="text" 
@@ -3792,12 +3792,12 @@ HTML_CONTENT = r"""<!DOCTYPE html>
             class="w-full px-4 py-2.5 rounded-xl border border-stone-200 dark:border-stone-700 bg-stone-50 dark:bg-stone-800 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 font-mono"
             required
           />
-          <div class="text-[10px] text-stone-400 dark:text-stone-500 mt-1">Letters (a-z, A-Z) and numbers (0-9) only. No symbols or spaces.</div>
+          <div class="text-[10px] text-stone-400 dark:text-stone-500 mt-1" data-i18n="auth_login_fid_hint">Letters (a-z, A-Z) and numbers (0-9) only. No symbols or spaces.</div>
         </div>
         <div>
           <div class="flex items-center justify-between mb-1">
             <label class="block text-xs font-semibold" data-i18n="auth_pin_label">Family PIN / Password:</label>
-            <span class="text-[10px] text-amber-600 dark:text-amber-400 font-semibold px-1.5 py-0.5 rounded bg-amber-50 dark:bg-amber-950/60 border border-amber-200/60 dark:border-amber-800/60">Case-Sensitive</span>
+            <span class="text-[10px] text-amber-600 dark:text-amber-400 font-semibold px-1.5 py-0.5 rounded bg-amber-50 dark:bg-amber-950/60 border border-amber-200/60 dark:border-amber-800/60" data-i18n="auth_case_sensitive">Case-Sensitive</span>
           </div>
           <div class="relative">
             <input 
@@ -3819,7 +3819,7 @@ HTML_CONTENT = r"""<!DOCTYPE html>
               <svg class="w-4 h-4 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
             </button>
           </div>
-          <div class="text-[10px] text-stone-400 dark:text-stone-500 mt-1">Letters and numbers only. Exact casing verified (test doesn't equal Test).</div>
+          <div class="text-[10px] text-stone-400 dark:text-stone-500 mt-1" data-i18n="auth_login_pin_hint">Letters and numbers only. Exact casing verified.</div>
         </div>
         <button type="submit" class="w-full py-2.5 bg-brand-600 hover:bg-brand-700 text-white font-semibold rounded-xl text-sm shadow transition" data-i18n="auth_login_submit">
           Open Fridge
@@ -3831,7 +3831,7 @@ HTML_CONTENT = r"""<!DOCTYPE html>
         <div>
           <div class="flex items-center justify-between mb-1">
             <label class="block text-xs font-semibold" data-i18n="auth_create_fid_label">Choose Fridge ID:</label>
-            <span class="text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold px-1.5 py-0.5 rounded bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200/60 dark:border-emerald-800/60">Letters & Numbers</span>
+            <span class="text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold px-1.5 py-0.5 rounded bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200/60 dark:border-emerald-800/60" data-i18n="auth_letters_numbers">Letters & Numbers</span>
           </div>
           <input 
             type="text" 
@@ -3841,12 +3841,12 @@ HTML_CONTENT = r"""<!DOCTYPE html>
             class="w-full px-4 py-2.5 rounded-xl border border-stone-200 dark:border-stone-700 bg-stone-50 dark:bg-stone-800 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 font-mono"
             required
           />
-          <div class="text-[10px] text-stone-400 dark:text-stone-500 mt-1">Case-sensitive: saved exactly as typed. Allowed: a-z, A-Z, 0-9.</div>
+          <div class="text-[10px] text-stone-400 dark:text-stone-500 mt-1" data-i18n="auth_create_fid_hint">Case-sensitive: saved exactly as typed. Allowed: a-z, A-Z, 0-9.</div>
         </div>
         <div>
           <div class="flex items-center justify-between mb-1">
             <label class="block text-xs font-semibold" data-i18n="auth_create_pin_label">Set Family PIN / Password:</label>
-            <span class="text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold px-1.5 py-0.5 rounded bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200/60 dark:border-emerald-800/60">Min 4 Alphanumeric</span>
+            <span class="text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold px-1.5 py-0.5 rounded bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200/60 dark:border-emerald-800/60" data-i18n="auth_min_chars">Min 4 Alphanumeric</span>
           </div>
           <div class="relative">
             <input 
@@ -3868,7 +3868,7 @@ HTML_CONTENT = r"""<!DOCTYPE html>
               <svg class="w-4 h-4 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
             </button>
           </div>
-          <div class="text-[10px] text-stone-400 dark:text-stone-500 mt-1">Letters (a-z, A-Z) and numbers (0-9) only. Strictly case-sensitive.</div>
+          <div class="text-[10px] text-stone-400 dark:text-stone-500 mt-1" data-i18n="auth_create_pin_hint">Letters (a-z, A-Z) and numbers (0-9) only. Strictly case-sensitive.</div>
         </div>
         <button type="submit" class="w-full py-2.5 bg-leaf-600 hover:bg-leaf-700 text-white font-semibold rounded-xl text-sm shadow transition" data-i18n="auth_create_submit">
           Create & Save Fridge
@@ -3928,7 +3928,7 @@ HTML_CONTENT = r"""<!DOCTYPE html>
               </select>
             </div>
             <div>
-              <label class="block text-[11px] font-bold text-stone-600 dark:text-stone-300 mb-1">Hindi Name (वैकल्पिक):</label>
+              <label class="block text-[11px] font-bold text-stone-600 dark:text-stone-300 mb-1" data-i18n="modal_hi_label">Hindi Name (Optional):</label>
               <input 
                 type="text" 
                 id="modal-name-hi-input" 
@@ -3945,7 +3945,7 @@ HTML_CONTENT = r"""<!DOCTYPE html>
         </div>
 
         <div>
-          <label class="block text-xs font-semibold mb-1" id="modal-date-label">Expiry Date:</label>
+          <label class="block text-xs font-semibold mb-1" id="modal-date-label" data-i18n="modal_date_label">Expiry Date:</label>
           <input 
             type="date" 
             id="modal-date-input" 
@@ -3991,7 +3991,7 @@ HTML_CONTENT = r"""<!DOCTYPE html>
         <!-- Live Badge -->
         <span class="absolute top-3 left-3 px-2 py-0.5 rounded-full bg-rose-600 text-white font-bold text-[9px] tracking-wider animate-pulse uppercase flex items-center gap-1">
           <span class="w-1.5 h-1.5 rounded-full bg-white"></span>
-          LIVE CAMERA
+          <span data-i18n="webcam_live_badge">LIVE CAMERA</span>
         </span>
       </div>
 
@@ -4003,7 +4003,7 @@ HTML_CONTENT = r"""<!DOCTYPE html>
           title="Switch front/back camera"
         >
           <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
-          <span>Flip</span>
+          <span data-i18n="webcam_flip_btn">Flip</span>
         </button>
 
         <button 
@@ -4379,7 +4379,49 @@ HTML_CONTENT = r"""<!DOCTYPE html>
         pwa_desk_step2_desc: "Click Install to run FridgeInventory in its own distraction-free standalone desktop window.",
         pwa_trigger_btn: "Click Here to Install Now",
         pwa_close_btn: "Got It, Thanks!",
-        badge_pin_protected: "PIN Protected"
+        badge_pin_protected: "PIN Protected",
+        header_alerts_label: "Alerts:",
+        header_alerts_off: "OFF",
+        header_alerts_on: "ON",
+        sync_engine_heading: "Live Freshness Engine:",
+        sync_timestamp_live: "Live Synced",
+        trigger_rescue_btn: "Rescue Recipe",
+        urgent_rescue_all_btn: "Rescue All with AI Chef",
+        urgent_empty_title: "No Urgent Expirations!",
+        urgent_empty_desc: "Everything in your fridge has plenty of shelf life remaining.",
+        push_toggle_enable: "Enable Expiry Alerts",
+        push_toggle_disable: "Disable Expiry Alerts",
+        push_card_test_title: "Test Web Push",
+        push_card_test_desc: "Signed VAPID push (buffers 24h offline).",
+        push_btn_send_push: "Send Push",
+        push_card_offline_title: "Test Offline Alert",
+        push_card_offline_desc: "Local Service Worker (no Wi-Fi needed).",
+        push_btn_test_offline: "Test Offline",
+        push_card_expiry_title: "Check Expiry Now",
+        push_card_expiry_desc: "Scan fridge and alert for food expiring soon.",
+        push_btn_check_now: "Check Now",
+        push_diag_title: "Technical status & diagnostics",
+        rescue_sub_tip: "Speaks or types dishes, drinks, or leftovers",
+        recipe_homestyle_badge: "Homestyle Meal",
+        btn_copy: "Copy",
+        recipe_pairing_title: "Chef's Zero-Waste Course & Pairing Notes:",
+        scanner_ai_vision_badge: "AI Vision Ready",
+        scanner_instant_title: "Instant AI Food Camera",
+        scanner_instant_desc: "Snap any fresh dish or grocery to auto-identify & track",
+        scanner_live_cam_btn: "Live Camera",
+        scanner_upload_img_btn: "Upload Image",
+        scanner_input_placeholder: "Or type any food (e.g. Paneer Butter Masala, Gajar, Dal Makhani)...",
+        webcam_live_badge: "LIVE CAMERA",
+        webcam_flip_btn: "Flip",
+        auth_case_sensitive: "Case-Sensitive",
+        auth_letters_numbers: "Letters & Numbers",
+        auth_min_chars: "Min 4 Alphanumeric",
+        auth_login_fid_hint: "Letters (a-z, A-Z) and numbers (0-9) only. No symbols or spaces.",
+        auth_login_pin_hint: "Letters and numbers only. Exact casing verified.",
+        auth_create_fid_hint: "Case-sensitive: saved exactly as typed. Allowed: a-z, A-Z, 0-9.",
+        auth_create_pin_hint: "Letters (a-z, A-Z) and numbers (0-9) only. Strictly case-sensitive.",
+        modal_hi_label: "Hindi Name (Optional):",
+        modal_date_label: "Expiry Date:",
       },
       hi: {
         app_title: "FridgeInventory",
@@ -4511,7 +4553,49 @@ HTML_CONTENT = r"""<!DOCTYPE html>
         pwa_desk_step2_desc: "FridgeInventory बिना किसी रुकावट के एक स्वतंत्र ऐप विंडो में खुल जाएगा।",
         pwa_trigger_btn: "अभी इंस्टॉल करने के लिए यहाँ क्लिक करें",
         pwa_close_btn: "समझ गया, धन्यवाद!",
-        badge_pin_protected: "PIN द्वारा सुरक्षित"
+        badge_pin_protected: "PIN द्वारा सुरक्षित",
+        header_alerts_label: "अलर्ट:",
+        header_alerts_off: "बंद",
+        header_alerts_on: "चालू",
+        sync_engine_heading: "लाइव ताजगी ट्रैकर:",
+        sync_timestamp_live: "लाइव सिंक",
+        trigger_rescue_btn: "रेस्क्यू रेसिपी",
+        urgent_rescue_all_btn: "AI शेफ़ से सभी रेस्क्यू करें",
+        urgent_empty_title: "कोई जल्द समाप्त होने वाला सामान नहीं!",
+        urgent_empty_desc: "आपके फ्रिज का सारा सामान पूरी तरह ताज़ा है।",
+        push_toggle_enable: "एक्सपायरी अलर्ट चालू करें",
+        push_toggle_disable: "अलर्ट बंद करें",
+        push_card_test_title: "वेब पुश का परीक्षण करें",
+        push_card_test_desc: "हस्ताक्षरित VAPID पुश (24 घंटे ऑफ़लाइन सुरक्षित)।",
+        push_btn_send_push: "पुश भेजें",
+        push_card_offline_title: "ऑफ़लाइन अलर्ट का परीक्षण करें",
+        push_card_offline_desc: "लोकल सर्विस वर्कर (इंटरनेट की आवश्यकता नहीं)।",
+        push_btn_test_offline: "ऑफ़लाइन टेस्ट",
+        push_card_expiry_title: "अभी एक्सपायरी चेक करें",
+        push_card_expiry_desc: "फ्रिज स्कैन करें और जल्द समाप्त होने वाले सामान की चेतावनी दें।",
+        push_btn_check_now: "अभी चेक करें",
+        push_diag_title: "तकनीकी स्थिति और डायग्नोस्टिक्स",
+        rescue_sub_tip: "व्यंजनों, पेय या बचे हुए खाने के नाम बोलें या लिखें",
+        recipe_homestyle_badge: "स्वादिष्ट घरेलू भोजन",
+        btn_copy: "कॉपी करें",
+        recipe_pairing_title: "शेफ़ के सुझाव और परोसने की सलाह:",
+        scanner_ai_vision_badge: "AI विज़न सक्रिय",
+        scanner_instant_title: "त्वरित AI भोजन कैमरा",
+        scanner_instant_desc: "पहचान और ट्रैकिंग के लिए किसी भी भोजन या किराना सामान की फोटो लें",
+        scanner_live_cam_btn: "लाइव कैमरा",
+        scanner_upload_img_btn: "फोटो अपलोड करें",
+        scanner_input_placeholder: "या किसी भी भोजन का नाम लिखें (जैसे: पनीर बटर मसाला, गाजर, दाल मखनी)...",
+        webcam_live_badge: "लाइव कैमरा",
+        webcam_flip_btn: "कैमरा बदलें",
+        auth_case_sensitive: "केस-सेंसिटिव",
+        auth_letters_numbers: "अक्षर और अंक",
+        auth_min_chars: "न्यूनतम 4 अक्षर/अंक",
+        auth_login_fid_hint: "केवल अक्षर (a-z, A-Z) और अंक (0-9)। कोई प्रतीक या स्पेस नहीं।",
+        auth_login_pin_hint: "केवल अक्षर और अंक। बड़े/छोटे अक्षरों का मिलान आवश्यक है।",
+        auth_create_fid_hint: "जैसे टाइप करेंगे वैसे ही सेव होगा। अनुमत: a-z, A-Z, 0-9।",
+        auth_create_pin_hint: "केवल अक्षर और अंक। बड़े और छोटे अक्षरों का ध्यान रखें।",
+        modal_hi_label: "हिंदी नाम (वैकल्पिक):",
+        modal_date_label: "एक्सपायरी तारीख:",
       }
     };
 
@@ -4538,6 +4622,9 @@ HTML_CONTENT = r"""<!DOCTYPE html>
 
       renderInventory();
       updateStats();
+      updatePushUI(!!pushSubscription);
+      updateLiveClock();
+      updateSidebarPinDisplay();
 
       if (typeof latestRecipe !== 'undefined' && latestRecipe) {
         const rCont = document.getElementById('recipe-container');
@@ -4796,15 +4883,7 @@ HTML_CONTENT = r"""<!DOCTYPE html>
       return outputArray;
     }
 
-        // Purge legacy PIN keys from browser storage immediately on page load
-    try {
-      const keysToRemove = [];
-      for (let i = 0; i < localStorage.length; i++) {
-        const k = localStorage.key(i);
-        if (k && k.startsWith('fi_last_pin_')) keysToRemove.push(k);
-      }
-      keysToRemove.forEach(k => localStorage.removeItem(k));
-    } catch(e){}
+        // Preserve remembered fridge pin in localStorage for instant display
     
     // Auth & Fridge Management
     async function checkAuth() {
@@ -4874,6 +4953,9 @@ HTML_CONTENT = r"""<!DOCTYPE html>
     }
 
     function setLoggedOutState() {
+      if (currentFridge) {
+        try { localStorage.removeItem('fi_last_pin_' + currentFridge); } catch(e){}
+      }
       currentFridge = null;
       currentFridgePin = '';
       pinRevealed = false;
@@ -4930,28 +5012,10 @@ HTML_CONTENT = r"""<!DOCTYPE html>
         if (typeof e.stopPropagation === 'function') e.stopPropagation();
       }
       const now = Date.now();
-      if (now - _lastPinToggleTime < 250) return;
+      if (now - _lastPinToggleTime < 200) return;
       _lastPinToggleTime = now;
 
-      let effectivePin = currentFridgePin || (currentFridge ? localStorage.getItem('fi_last_pin_' + currentFridge) : '') || '';
-      if (!effectivePin && currentFridge) {
-        const entered = prompt(
-          currentLang === 'hi'
-            ? 'परिवार PIN देखें: कृपया इस डिवाइस पर पिन दिखाने और सुरक्षित रखने के लिए अपना फ़ैमिली PIN दर्ज करें:'
-            : 'View PIN: Please enter your family PIN to reveal and remember it on this device:'
-        );
-        if (entered && entered.trim()) {
-          effectivePin = entered.trim();
-          currentFridgePin = effectivePin;
-          try { localStorage.setItem('fi_last_pin_' + currentFridge, effectivePin); } catch(e){}
-          pinRevealed = true;
-          updateSidebarPinDisplay();
-          showToast(currentLang === 'hi' ? 'पिन सहेजा गया और दिखाया गया!' : 'PIN saved and revealed!', 'success');
-          return;
-        } else {
-          return;
-        }
-      }
+      // Pure instantaneous toggle - NO popups, prompts, or verification
       pinRevealed = !pinRevealed;
       updateSidebarPinDisplay();
     }
@@ -4964,23 +5028,10 @@ HTML_CONTENT = r"""<!DOCTYPE html>
         if (typeof e.stopPropagation === 'function') e.stopPropagation();
       }
       const now = Date.now();
-      if (now - _lastPinCopyTime < 250) return;
+      if (now - _lastPinCopyTime < 200) return;
       _lastPinCopyTime = now;
 
-      let effectivePin = currentFridgePin || (currentFridge ? localStorage.getItem('fi_last_pin_' + currentFridge) : '') || '';
-      if (!effectivePin && currentFridge) {
-        const entered = prompt(
-          currentLang === 'hi'
-            ? 'पिन कॉपी करें: कृपया अपना फ़ैमिली PIN दर्ज करें:'
-            : 'Copy PIN: Please enter your family PIN to copy and remember it on this device:'
-        );
-        if (entered && entered.trim()) {
-          effectivePin = entered.trim();
-          currentFridgePin = effectivePin;
-          try { localStorage.setItem('fi_last_pin_' + currentFridge, effectivePin); } catch(e){}
-          updateSidebarPinDisplay();
-        }
-      }
+      const effectivePin = currentFridgePin || (currentFridge ? localStorage.getItem('fi_last_pin_' + currentFridge) : '') || '';
       if (effectivePin) {
         navigator.clipboard.writeText(effectivePin).then(() => {
           showToast(currentLang === 'hi' ? 'पिन कॉपी किया गया!' : 'PIN copied to clipboard!', 'success');
@@ -5343,7 +5394,19 @@ HTML_CONTENT = r"""<!DOCTYPE html>
       const displayName = (currentLang === 'hi' && item.name_hi) ? item.name_hi : item.name_en;
       const subName = (currentLang === 'hi' && item.name_hi) ? item.name_en : item.name_hi;
 
-      const elapsedText = item.days_elapsed === 0 ? 'Today' : `${item.days_elapsed}d ago`;
+      const CATEGORY_NAMES_HI = {
+        vegetable: 'सब्ज़ी',
+        fruit: 'फल',
+        dairy: 'डेयरी',
+        cooked_dish: 'भोजन',
+        snack_bakery: 'स्नैक',
+        beverage: 'पेय पदार्थ',
+        grain_pulse_flour: 'अनाज व दालें',
+        meat_fish_egg: 'अंडा व मीट',
+        spice_condiment: 'मसाले'
+      };
+      const catDisplay = currentLang === 'hi' ? (CATEGORY_NAMES_HI[item.category] || item.category.replace(/_/g, ' ')) : item.category.replace(/_/g, ' ');
+      const elapsedText = currentLang === 'hi' ? (item.days_elapsed === 0 ? 'आज' : `${item.days_elapsed} दिन पहले`) : (item.days_elapsed === 0 ? 'Today' : `${item.days_elapsed}d ago`);
 
       const card = document.createElement('div');
       card.className = `bg-white dark:bg-stone-900 rounded-2xl p-4 border border-stone-200/80 dark:border-stone-800 shadow-sm hover:shadow-md transition-all flex flex-col justify-between ${
@@ -5355,7 +5418,7 @@ HTML_CONTENT = r"""<!DOCTYPE html>
             <div class="min-w-0 flex-1">
               <div class="flex items-center gap-1.5 flex-wrap">
                 <h4 class="font-bold text-stone-900 dark:text-white text-sm leading-tight break-words">${displayName}</h4>
-                <span class="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-stone-100 dark:bg-stone-800 text-stone-500 uppercase shrink-0">${item.category.replace(/_/g, ' ')}</span>
+                <span class="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-stone-100 dark:bg-stone-800 text-stone-500 uppercase shrink-0">${catDisplay}</span>
               </div>
               ${subName ? `<p class="text-xs text-stone-500 dark:text-stone-400 mt-0.5 truncate">${subName}</p>` : ''}
             </div>
@@ -5388,7 +5451,14 @@ HTML_CONTENT = r"""<!DOCTYPE html>
 
     function updateRescueBar() {
       const count = selectedItemsForRescue.size;
-      document.getElementById('selected-count').textContent = count;
+      const countElem = document.getElementById('selected-count');
+      if (countElem) countElem.textContent = count;
+      const labelElem = document.getElementById('rescue-selected-label');
+      if (labelElem) {
+        labelElem.innerHTML = currentLang === 'hi' 
+          ? `<b id="selected-count" class="text-brand-400 font-bold">${count}</b> सामान चुने गए`
+          : `Selected <b id="selected-count" class="text-brand-400 font-bold">${count}</b> items`;
+      }
       document.getElementById('rescue-action-bar').classList.toggle('hidden', count === 0);
     }
 
@@ -6844,33 +6914,33 @@ HTML_CONTENT = r"""<!DOCTYPE html>
 
       if (isSubscribed) {
         if (headerBadge) {
-          headerBadge.textContent = 'ON';
+          headerBadge.textContent = currentLang === 'hi' ? 'चालू' : 'ON';
           headerBadge.className = 'font-bold text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300';
         }
         if (navBadge) {
-          navBadge.textContent = 'ON';
+          navBadge.textContent = currentLang === 'hi' ? 'चालू' : 'ON';
           navBadge.className = 'text-[10px] px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 font-bold';
         }
         if (heroBadge) {
-          heroBadge.textContent = 'ACTIVE';
+          heroBadge.textContent = currentLang === 'hi' ? 'सक्रिय' : 'ACTIVE';
           heroBadge.className = 'text-xs font-bold px-2.5 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300';
         }
-        if (toggleText) toggleText.textContent = 'Disable Offline Expiry Alerts';
+        if (toggleText) toggleText.textContent = currentLang === 'hi' ? 'अलर्ट बंद करें' : 'Disable Offline Expiry Alerts';
         if (toggleBtn) toggleBtn.className = 'px-6 py-3 rounded-2xl bg-stone-200 dark:bg-stone-800 hover:bg-stone-300 dark:hover:bg-stone-700 text-stone-800 dark:text-stone-200 font-bold text-sm transition-all flex items-center justify-center gap-2 shrink-0';
       } else {
         if (headerBadge) {
-          headerBadge.textContent = 'OFF';
+          headerBadge.textContent = currentLang === 'hi' ? 'बंद' : 'OFF';
           headerBadge.className = 'font-bold text-[10px] px-1.5 py-0.5 rounded-full bg-stone-200 dark:bg-stone-700 text-stone-600 dark:text-stone-300';
         }
         if (navBadge) {
-          navBadge.textContent = 'OFF';
+          navBadge.textContent = currentLang === 'hi' ? 'बंद' : 'OFF';
           navBadge.className = 'text-[10px] px-2 py-0.5 rounded-full bg-stone-100 dark:bg-stone-800 text-stone-600 dark:text-stone-400 font-bold';
         }
         if (heroBadge) {
-          heroBadge.textContent = 'OFF';
+          heroBadge.textContent = currentLang === 'hi' ? 'बंद' : 'OFF';
           heroBadge.className = 'text-xs font-bold px-2.5 py-0.5 rounded-full bg-stone-100 dark:bg-stone-800 text-stone-500';
         }
-        if (toggleText) toggleText.textContent = 'Enable Offline Expiry Alerts';
+        if (toggleText) toggleText.textContent = currentLang === 'hi' ? 'ऑफ़लाइन एक्सपायरी अलर्ट चालू करें' : 'Enable Offline Expiry Alerts';
         if (toggleBtn) toggleBtn.className = 'px-6 py-3 rounded-2xl bg-brand-600 hover:bg-brand-700 text-white font-bold text-sm shadow-md transition-all flex items-center justify-center gap-2 shrink-0';
       }
     }
@@ -7106,7 +7176,7 @@ HTML_CONTENT = r"""<!DOCTYPE html>
 
       const statusEl = document.getElementById('header-sync-status');
       if (statusEl) {
-        statusEl.textContent = `Live • ${timeStr} ${tzAbbr}`;
+        statusEl.textContent = (currentLang === 'hi' ? 'लाइव • ' : 'Live • ') + `${timeStr} ${tzAbbr}`;
       }
 
       const syncTsEl = document.getElementById('sync-timestamp-display');
@@ -7117,7 +7187,7 @@ HTML_CONTENT = r"""<!DOCTYPE html>
       const engineHeadingEl = document.getElementById('sync-engine-heading');
       if (engineHeadingEl) {
         const countryOrCity = activeTz === 'auto' ? 'Auto Local' : activeTz.split('/').pop().replace('_', ' ');
-        engineHeadingEl.textContent = `Live Freshness Engine (${countryOrCity} • ${tzAbbr}):`;
+        engineHeadingEl.textContent = (currentLang === 'hi' ? 'लाइव ताजगी ट्रैकर' : 'Live Freshness Engine') + ` (${countryOrCity} • ${tzAbbr}):`;
       }
     }
 
