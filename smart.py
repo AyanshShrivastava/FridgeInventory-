@@ -375,6 +375,57 @@ def get_gemini_client() -> Optional[Any]:
         return None
 
 
+# ----------------------------------------------------------------------------
+# Groq LPU Integration (High-Speed Inference & Multimodal Vision)
+# ----------------------------------------------------------------------------
+try:
+    from groq import Groq
+    HAVE_GROQ = True
+except ImportError:
+    Groq = None
+    HAVE_GROQ = False
+
+_groq_client: Optional[Any] = None
+
+GROQ_TEXT_MODELS = [
+    os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile"),
+    "llama-3.1-8b-instant",
+]
+
+GROQ_VISION_MODELS = [
+    "llama-3.2-11b-vision-preview",
+    "llama-3.2-90b-vision-preview",
+]
+
+def get_groq_api_key() -> Optional[str]:
+    """Retrieve Groq API key from environment, supporting GROQ_API_KEY, GROK_API_KEY, or PROQ_API_KEY."""
+    for var in ("GROQ_API_KEY", "GROK_API_KEY", "PROQ_API_KEY"):
+        val = os.getenv(var)
+        if val and val.strip():
+            return val.strip()
+    return None
+
+def get_groq_client() -> Optional[Any]:
+    """Retrieve or initialize singleton Groq client."""
+    global _groq_client
+    if _groq_client is not None:
+        return _groq_client
+
+    api_key = get_groq_api_key()
+    if not api_key:
+        return None
+
+    try:
+        if HAVE_GROQ and Groq is not None:
+            _groq_client = Groq(api_key=api_key)
+            logger.info("Groq LPU client successfully initialized.")
+            return _groq_client
+    except Exception as exc:
+        logger.error(f"Failed to initialize Groq client: {exc}")
+        return None
+    return None
+
+
 # ============================================================================
 # 5. PYDANTIC SCHEMAS & DATA MODELS
 # ============================================================================
@@ -1176,14 +1227,74 @@ Classification Rules:
 """
 
 def classify_food(phrase: str) -> ClassifyResponse:
-    """Classify food phrase using Google GenAI with fallback to local database heuristic."""
+    """Classify food phrase for command bar:
+    1. Primary: Groq LPU (sub-second Llama 3.3 / Llama 3.1)
+    2. Fallback: Switch to Gemini AI if Groq is unavailable or rate-limited
+    3. Final Fallback: Local database heuristic (1,921 foods)
+    """
     clean_phrase = phrase.strip()
     if not clean_phrase:
         raise HTTPException(status_code=400, detail="Food item phrase cannot be empty.")
 
-    client = get_gemini_client()
+    # 1. Primary: Groq LPU (Blazing Fast sub-second natural language classification)
+    groq_client = get_groq_client()
+    if groq_client is not None:
+        for model_name in GROQ_TEXT_MODELS:
+            try:
+                chat_completion = groq_client.chat.completions.create(
+                    messages=[
+                        {
+                            "role": "system",
+                            "content": (
+                                "You are a professional culinary AI food classifier for Indian household refrigerators. "
+                                "You analyze food names, translate to authentic Hindi Devanagari script, determine practical refrigerator shelf life, "
+                                "and decide whether the item is a manufactured packaged good requiring a printed expiry date. "
+                                "Output strictly valid JSON matching the schema with keys: "
+                                "is_food (bool), name_en (str), name_hi (str), category (str: 'dairy', 'produce', 'vegetable', 'fruit', 'cooked_dish', 'meat_fish_egg', 'grain_pulse_flour', 'snack_bakery', 'beverage', 'spice_condiment', 'packaged_grocery', 'oil_sugar_fat', or 'not_food'), "
+                                "shelf_life_days (int: 1-30 for fresh/cooked, 0 if packaged), requires_expiry_date (bool), storage_tip (str)."
+                            )
+                        },
+                        {
+                            "role": "user",
+                            "content": CLASSIFY_PROMPT_TEMPLATE.format(query=clean_phrase)
+                        }
+                    ],
+                    model=model_name,
+                    response_format={"type": "json_object"},
+                    temperature=0.1,
+                )
+                raw_text = chat_completion.choices[0].message.content or ""
+                verdict = FoodClassificationVerdict.model_validate_json(raw_text)
 
-    # 1. Prioritize Google GenAI (Gemini)
+                if not verdict.is_food or verdict.category == FoodCategory.NOT_FOOD or not verdict.name_en:
+                    return ClassifyResponse(
+                        is_food=False,
+                        name_en="",
+                        name_hi="",
+                        category="not_food",
+                        shelf_life_days=None,
+                        requires_expiry_date=False,
+                        storage_tip="",
+                        message=f"'{clean_phrase}' does not appear to be a food or grocery item.",
+                        analyzed_by=f"Groq LPU ({model_name})",
+                    )
+
+                return ClassifyResponse(
+                    is_food=True,
+                    name_en=verdict.name_en,
+                    name_hi=verdict.name_hi or verdict.name_en,
+                    category=verdict.category.value,
+                    shelf_life_days=None if verdict.requires_expiry_date else verdict.shelf_life_days,
+                    requires_expiry_date=verdict.requires_expiry_date,
+                    storage_tip=verdict.storage_tip or "Keep refrigerated or in a cool dry space.",
+                    analyzed_by=f"Groq LPU ({model_name})",
+                )
+            except Exception as exc:
+                logger.warning(f"Groq text model {model_name} failed on '{clean_phrase}': {exc}. Switching to Gemini fallback.")
+                continue
+
+    # 2. Fallback: Switch to Google GenAI (Gemini) if Groq is unavailable
+    client = get_gemini_client()
     if client is not None and types is not None:
         for model_name in GEMINI_MODELS:
             try:
@@ -1209,7 +1320,7 @@ def classify_food(phrase: str) -> ClassifyResponse:
                         requires_expiry_date=False,
                         storage_tip="",
                         message=f"'{clean_phrase}' does not appear to be a food or grocery item.",
-                        analyzed_by="Gemini AI",
+                        analyzed_by="Gemini AI (Fallback)",
                     )
 
                 return ClassifyResponse(
@@ -1220,10 +1331,10 @@ def classify_food(phrase: str) -> ClassifyResponse:
                     shelf_life_days=None if verdict.requires_expiry_date else verdict.shelf_life_days,
                     requires_expiry_date=verdict.requires_expiry_date,
                     storage_tip=verdict.storage_tip or "Keep refrigerated or in a cool dry space.",
-                    analyzed_by="Gemini AI",
+                    analyzed_by="Gemini AI (Fallback)",
                 )
             except Exception as exc:
-                logger.warning(f"Gemini model {model_name} failed on '{clean_phrase}': {exc}")
+                logger.warning(f"Gemini fallback model {model_name} failed on '{clean_phrase}': {exc}")
                 continue
 
     # 2. Check for packaged snacks & brand drinks heuristic (e.g. "lays", "red bull", "potato bites")
@@ -1463,9 +1574,89 @@ def classify_food_photo(
                     logger.warning(f"Gemini vision model {model_name} failed: {exc}")
                     continue
 
-    # When Gemini cannot identify the food or all configured models fail:
-    # NEVER silently present a generic classification as if the food was identified correctly.
-    logger.warning("Gemini Vision was unable to identify food in the photo or all vision models were unreachable.")
+    # 2. Fallback: If Gemini Vision is unavailable or failed, try Groq Vision
+    groq_client = get_groq_client()
+    if groq_client is not None:
+        for vmodel in GROQ_VISION_MODELS:
+            try:
+                logger.info(f"Attempting Groq Vision classification using {vmodel}...")
+                prompt_vision = PHOTO_CLASSIFY_PROMPT + "\n\nOutput strictly valid JSON with root object having keys: is_food (bool), items (list of objects with name_en, name_hi, category, shelf_life_days, requires_expiry_date, storage_tip), message (str)."
+                g_res = groq_client.chat.completions.create(
+                    model=vmodel,
+                    messages=[
+                        {
+                            "role": "user",
+                            "content": [
+                                {"type": "text", "text": prompt_vision},
+                                {"type": "image_url", "image_url": {"url": f"data:{detected_mime};base64,{b64_str}"}}
+                            ]
+                        }
+                    ],
+                    response_format={"type": "json_object"},
+                    temperature=0.1,
+                )
+                g_raw = g_res.choices[0].message.content or ""
+                verdict = MultiFoodClassificationVerdict.model_validate_json(g_raw)
+                if verdict.is_food and verdict.items:
+                    valid_items = [it for it in verdict.items if it.name_en and it.category != FoodCategory.NOT_FOOD]
+                    if valid_items:
+                        auto_added: List[InventoryItem] = []
+                        needs_expiry: List[dict] = []
+                        all_items_dicts: List[dict] = []
+                        for it in valid_items:
+                            cat_str = it.category.value if hasattr(it.category, "value") else str(it.category)
+                            item_dict = {
+                                "name_en": it.name_en,
+                                "name_hi": it.name_hi or it.name_en,
+                                "category": cat_str,
+                                "shelf_life_days": it.shelf_life_days if not it.requires_expiry_date else None,
+                                "requires_expiry_date": it.requires_expiry_date,
+                                "storage_tip": it.storage_tip or "Store refrigerated.",
+                            }
+                            all_items_dicts.append(item_dict)
+                            if not it.requires_expiry_date:
+                                if fridge_id:
+                                    try:
+                                        item_create = InventoryItemCreate(
+                                            name_en=it.name_en,
+                                            name_hi=it.name_hi or it.name_en,
+                                            category=cat_str,
+                                            shelf_life_days=it.shelf_life_days if it.shelf_life_days > 0 else 2,
+                                            requires_expiry_date=False,
+                                            expiry_date=None,
+                                            storage_tip=it.storage_tip or "Keep refrigerated in an airtight container.",
+                                        )
+                                        saved = save_fridge_inventory_item(fridge_id, item_create, client_tz=client_tz)
+                                        auto_added.append(saved)
+                                    except Exception as save_err:
+                                        needs_expiry.append(item_dict)
+                                else:
+                                    needs_expiry.append(item_dict)
+                            else:
+                                needs_expiry.append(item_dict)
+
+                        primary = valid_items[0]
+                        cat_primary = primary.category.value if hasattr(primary.category, "value") else str(primary.category)
+                        return ClassifyResponse(
+                            is_food=True,
+                            name_en=primary.name_en,
+                            name_hi=primary.name_hi or primary.name_en,
+                            category=cat_primary,
+                            shelf_life_days=None if primary.requires_expiry_date else primary.shelf_life_days,
+                            requires_expiry_date=primary.requires_expiry_date,
+                            storage_tip=primary.storage_tip or "Keep refrigerated.",
+                            message=f"Photo analyzed via Groq Vision ({vmodel}).",
+                            analyzed_by=f"Groq Vision ({vmodel})",
+                            items=all_items_dicts,
+                            auto_added=[it.model_dump() for it in auto_added],
+                            needs_expiry=needs_expiry,
+                        )
+            except Exception as g_exc:
+                logger.warning(f"Groq Vision model {vmodel} failed: {g_exc}")
+                continue
+
+    # When both Gemini and Groq Vision are unable to identify or unreachable:
+    logger.warning("Gemini Vision and Groq Vision were unreachable or unable to identify food in photo.")
     return ClassifyResponse(
         is_food=False,
         name_en="",
@@ -1868,6 +2059,33 @@ def generate_rescue_recipe(items: List[str]) -> RescueRecipe:
             except Exception as exc:
                 logger.warning(f"Rescue recipe generation failed on {model_name}: {exc}")
                 continue
+
+    # 2b. Try Groq Culinary Fallback if Gemini is unavailable
+    groq_client = get_groq_client()
+    if groq_client is not None:
+        try:
+            formatted_list = ", ".join(clean_items)
+            g_chat = groq_client.chat.completions.create(
+                model="llama-3.3-70b-versatile",
+                messages=[
+                    {
+                        "role": "system",
+                        "content": "You are an expert chef specializing in Indian home cooking, pairing intelligence, and zero-waste recipes. Output strictly valid JSON conforming to the recipe schema with English and Hindi fields."
+                    },
+                    {
+                        "role": "user",
+                        "content": RESCUE_PROMPT_TEMPLATE.format(ingredients=formatted_list)
+                    }
+                ],
+                response_format={"type": "json_object"},
+                temperature=0.3,
+            )
+            g_raw = g_chat.choices[0].message.content or ""
+            recipe = RescueRecipe.model_validate_json(g_raw)
+            recipe.corrected_ingredients = clean_items
+            return recipe
+        except Exception as g_err:
+            logger.warning(f"Groq rescue recipe fallback failed: {g_err}")
 
     # 3. Intelligent Culinary Fallback (Supports Drink + Food Combos)
     drink_kw = {"milk", "chocolate", "cocoa", "curd", "dahi", "yogurt", "shake", "smoothie",
@@ -2748,13 +2966,20 @@ def health_check():
     """Returns application status, time in IST, and configuration flags."""
     db, db_err = init_firestore()
     gemini_ready = get_gemini_client() is not None
+    groq_ready = bool(get_groq_api_key())
     now_ist = datetime.now(IST).strftime("%Y-%m-%d %H:%M:%S %Z")
     
     return {
         "status": "healthy",
         "service": "FridgeInventory",
         "timestamp_ist": now_ist,
+        "groq_configured": groq_ready,
         "gemini_configured": gemini_ready,
+        "ai_engine_routing": {
+            "fridge_command_bar": "Groq LPU (Primary) -> Gemini AI (Fallback) -> Local DB (Safety Net)",
+            "food_scanner_vision": "Gemini Vision (Primary) -> Groq Vision (Fallback) -> Manual / Local",
+            "rescue_recipe_chef": "Gemini AI (Primary) -> Groq LPU (Fallback) -> Preset Master Chef",
+        },
         "firebase_configured": db is not None,
         "firestore_status": "connected" if db is not None else db_err,
         "local_database_cached_items": len(EXPIRY_DATABASE),
