@@ -1,0 +1,475 @@
+{
+  "timestamp": "2026-10-22 14:01:32 UTC",
+  "total_accounts": 5,
+  "successful_recipes": 5,
+  "wall_elapsed_sec": 11.182,
+  "measured_rps": 0.45,
+  "results": [
+    {
+      "user_idx": 3,
+      "family": "Gupta Family",
+      "fridge_id": "Family3f2e1fa",
+      "ingredients_typed": [
+        "leftover boiled rice",
+        "mustard seeds",
+        "curry leaves",
+        "lemon"
+      ],
+      "account_created": true,
+      "account_create_ms": 4701.68,
+      "recipe_result": {
+        "status": "success",
+        "http_code": 200,
+        "latency_ms": 5386.83,
+        "recipe": {
+          "recipe_name": "Mustard-Curry Leaf Rice & Zesty Lemon Cooler",
+          "recipe_name_hi": "\u0938\u0930\u0938\u094b\u0902-\u0915\u0930\u0940 \u092a\u0924\u094d\u0924\u093e \u091a\u093e\u0935\u0932 \u0914\u0930 \u091c\u093c\u0947\u0938\u094d\u091f\u0940 \u0932\u0947\u092e\u0928 \u0915\u0942\u0932\u0930",
+          "meal_type": "Food & Drink Combo",
+          "meal_type_hi": "\u092d\u094b\u091c\u0928 \u0914\u0930 \u092a\u0947\u092f \u0915\u0949\u092e\u094d\u092c\u094b",
+          "pairing_notes": "The leftover boiled rice is transformed into a classic South Indian 'Pongal' style dry rice using mustard seeds and curry leaves, providing a warm, savory, and aromatic base. The lemon is used to make a refreshing, chilled lemon cooler to cut through the richness of the mustard oil and provide a bright, citrusy contrast. This pairing balances the heavy, earthy flavors of the rice with the light, acidic refreshment of the drink.",
+          "pairing_notes_hi": "\u092c\u091a\u093e \u0939\u0941\u0906 \u092c\u0942\u0902\u0926\u0940 \u091a\u093e\u0935\u0932 \u0915\u094b \u0938\u0930\u0938\u094b\u0902 \u0915\u0947 \u0926\u093e\u0928\u094b\u0902 \u0914\u0930 \u0915\u0930\u0940 \u092a\u0924\u094d\u0924\u094b\u0902 \u0915\u0947 \u0938\u093e\u0925 \u0926\u0915\u094d\u0937\u093f\u0923 \u092d\u093e\u0930\u0924\u0940\u092f '\u092a\u094b\u0902\u0917\u0932' \u0938\u094d\u091f\u093e\u0907\u0932 \u0915\u0947 \u0938\u0942\u0916\u0947 \u091a\u093e\u0935\u0932 \u092e\u0947\u0902 \u092c\u0926\u0932\u093e \u091c\u093e\u0924\u093e \u0939\u0948, \u091c\u094b \u0917\u0930\u094d\u092e, \u0938\u094d\u0935\u093e\u0926\u093f\u0937\u094d\u091f \u0914\u0930 \u0938\u0941\u0917\u0902\u0927\u093f\u0924 \u0906\u0927\u093e\u0930 \u092a\u094d\u0930\u0926\u093e\u0928 \u0915\u0930\u0924\u093e \u0939\u0948\u0964 \u0928\u0940\u0902\u092c\u0942 \u0915\u093e \u0909\u092a\u092f\u094b\u0917 \u090f\u0915 \u0924\u093e\u091c\u093c\u093e, \u0920\u0902\u0921\u093e \u0928\u0940\u0902\u092c\u0942 \u0915\u0942\u0932\u0930 \u092c\u0928\u093e\u0928\u0947 \u0915\u0947 \u0932\u093f\u090f \u0915\u093f\u092f\u093e \u091c\u093e\u0924\u093e \u0939\u0948, \u091c\u094b \u0938\u0930\u0938\u094b\u0902 \u0915\u0947 \u0924\u0947\u0932 \u0915\u0940 \u092d\u093e\u0930\u0940\u092a\u0928 \u0915\u094b \u0915\u093e\u091f\u0924\u093e \u0939\u0948 \u0914\u0930 \u090f\u0915 \u091a\u092e\u0915\u0940\u0932\u093e, \u0938\u093f\u091f\u094d\u0930\u0938-\u0906\u0927\u093e\u0930\u093f\u0924 \u0935\u093f\u0930\u094b\u0927\u093e\u092d\u093e\u0938 \u092a\u094d\u0930\u0926\u093e\u0928 \u0915\u0930\u0924\u093e \u0939\u0948\u0964 \u092f\u0939 \u091c\u094b\u0921\u093c\u0940 \u091a\u093e\u0935\u0932 \u0915\u0947 \u092d\u093e\u0930\u0940, \u092e\u093f\u091f\u094d\u091f\u0940 \u091c\u0948\u0938\u0947 \u0938\u094d\u0935\u093e\u0926\u094b\u0902 \u0915\u094b \u092a\u0947\u092f \u0915\u0947 \u0939\u0932\u094d\u0915\u0947, \u0905\u092e\u094d\u0932\u0940\u092f \u0924\u093e\u091c\u093c\u0917\u0940 \u0915\u0947 \u0938\u093e\u0925 \u0938\u0902\u0924\u0941\u0932\u093f\u0924 \u0915\u0930\u0924\u0940 \u0939\u0948\u0964",
+          "prep_time_minutes": 15,
+          "ingredients_used": [
+            "Leftover Boiled Rice",
+            "Mustard Seeds",
+            "Curry Leaves",
+            "Lemon"
+          ],
+          "ingredients_used_hi": [
+            "\u092c\u091a\u093e \u0939\u0941\u0906 \u092c\u0942\u0902\u0926\u0940 \u091a\u093e\u0935\u0932",
+            "\u0938\u0930\u0938\u094b\u0902 \u0915\u0947 \u0926\u093e\u0928\u0947",
+            "\u0915\u0930\u0940 \u092a\u0924\u094d\u0924\u0947",
+            "\u0928\u0940\u0902\u092c\u0942"
+          ],
+          "corrected_ingredients": [
+            "Leftover Boiled Rice",
+            "Mustard Seeds",
+            "Curry Leaves",
+            "Lemon"
+          ],
+          "pantry_items_needed": [
+            "1 tbsp Mustard Oil (or any neutral oil)",
+            "1/2 tsp Turmeric Powder",
+            "1/2 tsp Cumin Seeds",
+            "1/4 tsp Asafoetida (Hing)",
+            "1/2 tsp Red Chili Powder",
+            "Salt to taste",
+            "1/2 cup Water",
+            "1/4 cup Sugar (for drink)",
+            "1 cup Ice Cubes",
+            "1/2 cup Water (for drink)"
+          ],
+          "pantry_items_needed_hi": [
+            "1 \u091a\u092e\u094d\u092e\u091a \u0938\u0930\u0938\u094b\u0902 \u0915\u093e \u0924\u0947\u0932 (\u092f\u093e \u0915\u094b\u0908 \u092d\u0940 \u0928\u094d\u092f\u0942\u091f\u094d\u0930\u0932 \u0924\u0947\u0932)",
+            "1/2 \u091a\u092e\u094d\u092e\u091a \u0939\u0932\u094d\u0926\u0940 \u092a\u093e\u0909\u0921\u0930",
+            "1/2 \u091a\u092e\u094d\u092e\u091a \u091c\u0940\u0930\u093e",
+            "1/4 \u091a\u092e\u094d\u092e\u091a \u0939\u0940\u0902\u0917",
+            "1/2 \u091a\u092e\u094d\u092e\u091a \u0932\u093e\u0932 \u092e\u093f\u0930\u094d\u091a \u092a\u093e\u0909\u0921\u0930",
+            "\u0938\u094d\u0935\u093e\u0926\u093e\u0928\u0941\u0938\u093e\u0930 \u0928\u092e\u0915",
+            "1/2 \u0915\u092a \u092a\u093e\u0928\u0940",
+            "1/4 \u0915\u092a \u091a\u0940\u0928\u0940 (\u092a\u0947\u092f \u0915\u0947 \u0932\u093f\u090f)",
+            "1 \u0915\u092a \u092c\u0930\u094d\u092b \u0915\u0947 \u091f\u0941\u0915\u0921\u093c\u0947",
+            "1/2 \u0915\u092a \u092a\u093e\u0928\u0940 (\u092a\u0947\u092f \u0915\u0947 \u0932\u093f\u090f)"
+          ],
+          "steps": [
+            "Heat mustard oil in a non-stick pan over medium heat until it starts to splutter.",
+            "Add mustard seeds and cumin seeds, and temper them until they turn golden brown.",
+            "Add asafoetida (hing) and fresh curry leaves, and saut\u00e9 for 10 seconds until fragrant.",
+            "Add the leftover boiled rice, turmeric powder, red chili powder, and salt to the pan.",
+            "Add 1/2 cup of water, mix well, and let it simmer for 2-3 minutes until the water evaporates and the rice becomes fluffy.",
+            "Turn off the heat and let the rice cool slightly before serving.",
+            "Squeeze the juice of one lemon into a glass.",
+            "Add 1/4 cup of sugar and 1/2 cup of water to the lemon juice and stir until the sugar dissolves.",
+            "Add 1 cup of ice cubes to the glass and stir well.",
+            "Serve the warm mustard-curry leaf rice alongside the chilled lemon cooler."
+          ],
+          "steps_hi": [
+            "\u092e\u0927\u094d\u092f\u092e \u0906\u0902\u091a \u092a\u0930 \u090f\u0915 \u0917\u0948\u0930-\u091a\u093f\u092a\u091a\u093f\u092a\u093e\u0924\u0947 \u092a\u0948\u0928 \u092e\u0947\u0902 \u0938\u0930\u0938\u094b\u0902 \u0915\u093e \u0924\u0947\u0932 \u0917\u0930\u094d\u092e \u0915\u0930\u0947\u0902 \u091c\u092c \u0924\u0915 \u0915\u093f \u092f\u0939 \u092b\u0942\u091f\u0928\u0947 \u0932\u0917\u0947\u0964",
+            "\u0938\u0930\u0938\u094b\u0902 \u0915\u0947 \u0926\u093e\u0928\u0947 \u0914\u0930 \u091c\u0940\u0930\u093e \u0921\u093e\u0932\u0947\u0902 \u0914\u0930 \u0909\u0928\u094d\u0939\u0947\u0902 \u0938\u0941\u0928\u0939\u0930\u093e \u0939\u094b\u0928\u0947 \u0924\u0915 \u0924\u0932\u0947\u0902\u0964",
+            "\u0939\u0940\u0902\u0917 \u0914\u0930 \u0924\u093e\u091c\u093c\u0947 \u0915\u0930\u0940 \u092a\u0924\u094d\u0924\u0947 \u0921\u093e\u0932\u0947\u0902 \u0914\u0930 \u0938\u0941\u0917\u0902\u0927\u093f\u0924 \u0939\u094b\u0928\u0947 \u0924\u0915 10 \u0938\u0947\u0915\u0902\u0921 \u0924\u0915 \u092d\u0942\u0928 \u0932\u0947\u0902\u0964",
+            "\u092a\u0948\u0928 \u092e\u0947\u0902 \u092c\u091a\u093e \u0939\u0941\u0906 \u092c\u0942\u0902\u0926\u0940 \u091a\u093e\u0935\u0932, \u0939\u0932\u094d\u0926\u0940 \u092a\u093e\u0909\u0921\u0930, \u0932\u093e\u0932 \u092e\u093f\u0930\u094d\u091a \u092a\u093e\u0909\u0921\u0930 \u0914\u0930 \u0928\u092e\u0915 \u0921\u093e\u0932\u0947\u0902\u0964",
+            "1/2 \u0915\u092a \u092a\u093e\u0928\u0940 \u0921\u093e\u0932\u0947\u0902, \u0905\u091a\u094d\u091b\u0940 \u0924\u0930\u0939 \u092e\u093f\u0932\u093e\u090f\u0902 \u0914\u0930 2-3 \u092e\u093f\u0928\u091f \u0924\u0915 \u0909\u092c\u093e\u0932\u0947\u0902 \u091c\u092c \u0924\u0915 \u0915\u093f \u092a\u093e\u0928\u0940 \u0938\u0942\u0916 \u091c\u093e\u090f \u0914\u0930 \u091a\u093e\u0935\u0932 \u092b\u0941\u092b\u094d\u092b\u0941\u0938\u093e (fluffy) \u0939\u094b \u091c\u093e\u090f\u0964",
+            "\u0917\u0948\u0938 \u092c\u0902\u0926 \u0915\u0930\u0947\u0902 \u0914\u0930 \u092a\u0930\u094b\u0938\u0928\u0947 \u0938\u0947 \u092a\u0939\u0932\u0947 \u091a\u093e\u0935\u0932 \u0915\u094b \u0925\u094b\u0921\u093c\u093e \u0920\u0902\u0921\u093e \u0939\u094b\u0928\u0947 \u0926\u0947\u0902\u0964",
+            "\u090f\u0915 \u0917\u093f\u0932\u093e\u0938 \u092e\u0947\u0902 \u090f\u0915 \u0928\u0940\u0902\u092c\u0942 \u0915\u093e \u0930\u0938 \u0928\u093f\u091a\u094b\u0921\u093c\u0947\u0902\u0964",
+            "\u0928\u0940\u0902\u092c\u0942 \u0915\u0947 \u0930\u0938 \u092e\u0947\u0902 1/4 \u0915\u092a \u091a\u0940\u0928\u0940 \u0914\u0930 1/2 \u0915\u092a \u092a\u093e\u0928\u0940 \u0921\u093e\u0932\u0947\u0902 \u0914\u0930 \u091a\u0940\u0928\u0940 \u0918\u0941\u0932\u0928\u0947 \u0924\u0915 \u092e\u093f\u0932\u093e\u090f\u0902\u0964",
+            "\u0917\u093f\u0932\u093e\u0938 \u092e\u0947\u0902 1 \u0915\u092a \u092c\u0930\u094d\u092b \u0915\u0947 \u091f\u0941\u0915\u0921\u093c\u0947 \u0921\u093e\u0932\u0947\u0902 \u0914\u0930 \u0905\u091a\u094d\u091b\u0940 \u0924\u0930\u0939 \u092e\u093f\u0932\u093e\u090f\u0902\u0964",
+            "\u0917\u0930\u094d\u092e \u0938\u0930\u0938\u094b\u0902-\u0915\u0930\u0940 \u092a\u0924\u094d\u0924\u093e \u091a\u093e\u0935\u0932 \u0915\u0947 \u0938\u093e\u0925 \u0920\u0902\u0921\u093e \u0928\u0940\u0902\u092c\u0942 \u0915\u0942\u0932\u0930 \u092a\u0930\u094b\u0938\u0947\u0902\u0964"
+          ],
+          "chef_tip": "To prevent the rice from becoming mushy, ensure the leftover rice is spread out on a plate to cool and dry slightly before adding it to the pan. For the lemon cooler, add a pinch of black salt (kala namak) for an authentic Indian 'nimbu pani' flavor profile.",
+          "chef_tip_hi": "\u091a\u093e\u0935\u0932 \u0915\u094b \u0917\u0942\u0922\u093c (mushy) \u0939\u094b\u0928\u0947 \u0938\u0947 \u0930\u094b\u0915\u0928\u0947 \u0915\u0947 \u0932\u093f\u090f, \u092a\u0948\u0928 \u092e\u0947\u0902 \u0921\u093e\u0932\u0928\u0947 \u0938\u0947 \u092a\u0939\u0932\u0947 \u092c\u091a\u0947 \u0939\u0941\u090f \u091a\u093e\u0935\u0932 \u0915\u094b \u090f\u0915 \u092a\u094d\u0932\u0947\u091f \u092a\u0930 \u092b\u0948\u0932\u093e\u0915\u0930 \u0920\u0902\u0921\u093e \u0914\u0930 \u0925\u094b\u0921\u093c\u093e \u0938\u0942\u0916\u093e \u0939\u094b\u0928\u0947 \u0926\u0947\u0902\u0964 \u0928\u0940\u0902\u092c\u0942 \u0915\u0942\u0932\u0930 \u0915\u0947 \u0932\u093f\u090f, \u090f\u0915 \u092a\u094d\u0930\u093e\u092e\u093e\u0923\u093f\u0915 \u092d\u093e\u0930\u0924\u0940\u092f '\u0928\u0940\u0902\u092c\u0942 \u092a\u093e\u0928\u0940' \u0938\u094d\u0935\u093e\u0926 \u092a\u094d\u0930\u094b\u092b\u093c\u093e\u0907\u0932 \u0915\u0947 \u0932\u093f\u090f \u090f\u0915 \u091a\u0941\u091f\u0915\u0940 \u0915\u093e\u0932\u093e \u0928\u092e\u0915 \u091c\u094b\u0921\u093c\u0947\u0902\u0964",
+          "response": 0,
+          "premade_code": 0,
+          "is_premade": false,
+          "premade_message": "",
+          "premade_message_hi": "",
+          "suggested_recipes": []
+        }
+      }
+    },
+    {
+      "user_idx": 5,
+      "family": "Mehta Family",
+      "fridge_id": "Family528e6b8",
+      "ingredients_typed": [
+        "chopped potatoes",
+        "green peas",
+        "cumin seeds"
+      ],
+      "account_created": true,
+      "account_create_ms": 3779.98,
+      "recipe_result": {
+        "status": "success",
+        "http_code": 200,
+        "latency_ms": 6574.08,
+        "recipe": {
+          "recipe_name": "Cumin-Spiced Mashed Potato & Pea Patties",
+          "recipe_name_hi": "\u091c\u0940\u0930\u093e-\u0938\u094d\u0935\u093e\u0926 \u0935\u093e\u0932\u093e \u092e\u0948\u0936\u094d\u0921 \u0906\u0932\u0942 \u0914\u0930 \u092e\u091f\u0930 \u0915\u0947 \u092a\u0915\u094b\u0921\u093c\u0947",
+          "meal_type": "Homestyle Meal",
+          "meal_type_hi": "\u0918\u0930 \u0915\u093e \u092d\u094b\u091c\u0928",
+          "pairing_notes": "Mashed potatoes, green peas, and cumin seeds blend naturally; the creamy potatoes balance the sweet peas, while toasted cumin adds earthy aroma, making a wholesome single\u2011pot dish.",
+          "pairing_notes_hi": "\u092e\u0948\u0936\u094d\u0921 \u0906\u0932\u0942, \u0939\u0930\u0947 \u092e\u091f\u0930 \u0914\u0930 \u091c\u0940\u0930\u093e \u090f\u0915 \u0938\u093e\u0925 \u0938\u094d\u0935\u093e\u092d\u093e\u0935\u093f\u0915 \u0930\u0942\u092a \u0938\u0947 \u092e\u0947\u0932 \u0916\u093e\u0924\u0947 \u0939\u0948\u0902; \u0915\u094d\u0930\u0940\u092e\u0940 \u0906\u0932\u0942 \u092e\u0940\u0920\u0947 \u092e\u091f\u0930 \u0915\u094b \u0938\u0902\u0924\u0941\u0932\u093f\u0924 \u0915\u0930\u0924\u093e \u0939\u0948, \u091c\u092c\u0915\u093f \u092d\u0941\u0928\u0947 \u0939\u0941\u090f \u091c\u0940\u0930\u0947 \u0938\u0947 earthy \u0938\u0941\u0917\u0902\u0927 \u0906\u0924\u0940 \u0939\u0948, \u091c\u093f\u0938\u0938\u0947 \u090f\u0915 \u0938\u0902\u092a\u0942\u0930\u094d\u0923 \u0918\u0930 \u0915\u093e \u092d\u094b\u091c\u0928 \u092c\u0928\u0924\u093e \u0939\u0948\u0964",
+          "prep_time_minutes": 20,
+          "ingredients_used": [
+            "Mashed Potatoes",
+            "Green Peas (fresh or frozen)",
+            "Cumin Seeds"
+          ],
+          "ingredients_used_hi": [
+            "\u092e\u0948\u0936\u094d\u0921 \u0906\u0932\u0942",
+            "\u0939\u0930\u0940 \u092e\u091f\u0930 (\u0924\u093e\u091c\u093c\u093e \u092f\u093e \u092b\u094d\u0930\u094b\u091c\u0928)",
+            "\u091c\u0940\u0930\u093e"
+          ],
+          "corrected_ingredients": [
+            "Mashed Potatoes",
+            "Green Peas",
+            "Cumin Seeds"
+          ],
+          "pantry_items_needed": [
+            "Vegetable oil",
+            "Salt",
+            "Black pepper",
+            "Red chili powder (optional)",
+            "Fresh coriander leaves (for garnish)"
+          ],
+          "pantry_items_needed_hi": [
+            "2 \u091f\u0947\u092c\u0932\u0938\u094d\u092a\u0942\u0928 \u0935\u0928\u0938\u094d\u092a\u0924\u093f \u0924\u0947\u0932",
+            "\u0938\u094d\u0935\u093e\u0926\u093e\u0928\u0941\u0938\u093e\u0930 \u0928\u092e\u0915",
+            "\u0938\u094d\u0935\u093e\u0926\u093e\u0928\u0941\u0938\u093e\u0930 \u0915\u093e\u0932\u0940 \u092e\u093f\u0930\u094d\u091a",
+            "1 \u091a\u092e\u094d\u092e\u091a \u0932\u093e\u0932 \u092e\u093f\u0930\u094d\u091a \u092a\u093e\u0909\u0921\u0930 (\u0935\u0948\u0915\u0932\u094d\u092a\u093f\u0915)",
+            "\u0917\u093e\u0930\u094d\u0928\u093f\u0936 \u0915\u0947 \u0932\u093f\u090f \u0924\u093e\u091c\u093c\u093e \u0927\u0928\u093f\u092f\u093e \u092a\u0924\u094d\u0924\u0947"
+          ],
+          "steps": [
+            "Heat oil in a pan, add cumin seeds, and let them sizzle for 10 seconds.",
+            "Add the mashed potatoes and stir to coat them with the cumin\u2011infused oil.",
+            "Stir in the green peas and cook for 3\u20114 minutes until the peas are tender.",
+            "Season with salt, black pepper, and optional red chili powder; mix well.",
+            "Shape the mixture into small patties about 2 inches wide and flatten slightly.",
+            "Add a little more oil to the pan and shallow\u2011fry the patties until golden brown on both sides, about 2\u20113 minutes per side.",
+            "Garnish with chopped coriander leaves and serve hot."
+          ],
+          "steps_hi": [
+            "\u092a\u0948\u0928 \u092e\u0947\u0902 \u0924\u0947\u0932 \u0917\u0930\u092e \u0915\u0930\u0947\u0902, \u091c\u0940\u0930\u093e \u0921\u093e\u0932\u0947\u0902 \u0914\u0930 10 \u0938\u0947\u0915\u0902\u0921 \u0924\u0915 \u091a\u091f\u0915\u0928\u0947 \u0926\u0947\u0902\u0964",
+            "\u092e\u0948\u0936\u094d\u0921 \u0906\u0932\u0942 \u0921\u093e\u0932\u0947\u0902 \u0914\u0930 \u091c\u0940\u0930\u0947 \u0915\u0947 \u0924\u0947\u0932 \u092e\u0947\u0902 \u0905\u091a\u094d\u091b\u0940 \u0924\u0930\u0939 \u092e\u093f\u0932\u093e\u090f\u0901\u0964",
+            "\u0939\u0930\u0940 \u092e\u091f\u0930 \u0921\u093e\u0932\u0947\u0902 \u0914\u0930 3\u20114 \u092e\u093f\u0928\u091f \u0924\u0915 \u092a\u0915\u093e\u090f\u0901 \u091c\u092c \u0924\u0915 \u092e\u091f\u0930 \u0928\u0930\u092e \u0928 \u0939\u094b \u091c\u093e\u090f\u0964",
+            "\u0928\u092e\u0915, \u0915\u093e\u0932\u0940 \u092e\u093f\u0930\u094d\u091a \u0914\u0930 \u0935\u0948\u0915\u0932\u094d\u092a\u093f\u0915 \u0932\u093e\u0932 \u092e\u093f\u0930\u094d\u091a \u092a\u093e\u0909\u0921\u0930 \u0921\u093e\u0932\u0915\u0930 \u0905\u091a\u094d\u091b\u0940 \u0924\u0930\u0939 \u092e\u093f\u0932\u093e\u090f\u0901\u0964",
+            "\u092e\u093f\u0936\u094d\u0930\u0923 \u0915\u094b \u0932\u0917\u092d\u0917 2 \u0907\u0902\u091a \u0915\u0947 \u091b\u094b\u091f\u0947 \u092a\u0915\u094b\u0921\u093c\u094b\u0902 \u092e\u0947\u0902 \u0906\u0915\u093e\u0930 \u0926\u0947\u0902 \u0914\u0930 \u0939\u0932\u094d\u0915\u093e \u091a\u092a\u091f\u093e \u0915\u0930\u0947\u0902\u0964",
+            "\u092a\u0948\u0928 \u092e\u0947\u0902 \u0925\u094b\u0921\u093c\u093e \u0914\u0930 \u0924\u0947\u0932 \u0921\u093e\u0932\u0947\u0902 \u0914\u0930 \u092a\u0915\u094b\u0921\u093c\u094b\u0902 \u0915\u094b \u0926\u094b\u0928\u094b\u0902 \u0924\u0930\u092b \u0938\u0947 \u0938\u0941\u0928\u0939\u0930\u093e \u092d\u0942\u0930\u093e \u0939\u094b\u0928\u0947 \u0924\u0915 \u0924\u0932\u0947\u0902, \u092a\u094d\u0930\u0924\u094d\u092f\u0947\u0915 \u0924\u0930\u092b 2\u20113 \u092e\u093f\u0928\u091f\u0964",
+            "\u0915\u091f\u093e \u0939\u0941\u0906 \u0927\u0928\u093f\u092f\u093e \u091b\u093f\u0921\u093c\u0915\u0947\u0902 \u0914\u0930 \u0917\u0930\u092e\u093e\u0917\u0930\u092e \u092a\u0930\u094b\u0938\u0947\u0902\u0964"
+          ],
+          "chef_tip": "Use the leftover water from boiling peas to adjust the consistency; it adds nutrients and reduces waste.",
+          "chef_tip_hi": "\u092c\u091a\u0947 \u0939\u0941\u090f \u092e\u091f\u0930 \u0915\u0947 \u0909\u092c\u093e\u0932\u0928\u0947 \u0935\u093e\u0932\u0947 \u092a\u093e\u0928\u0940 \u0915\u094b \u092e\u093f\u0932\u093e\u0915\u0930 \u092a\u0915\u094b\u0921\u093c\u0947 \u0915\u0940 \u092c\u0928\u093e\u0935\u091f \u0915\u094b \u0938\u0939\u0940 \u0930\u0916\u0947\u0902; \u0907\u0938\u0938\u0947 \u092a\u094b\u0937\u0915 \u0924\u0924\u094d\u0935 \u092d\u0940 \u092c\u091a\u0924\u0947 \u0939\u0948\u0902 \u0914\u0930 \u092c\u0930\u094d\u092c\u093e\u0926\u0940 \u0915\u092e \u0939\u094b\u0924\u0940 \u0939\u0948\u0964",
+          "response": 0,
+          "premade_code": 0,
+          "is_premade": false,
+          "premade_message": "",
+          "premade_message_hi": "",
+          "suggested_recipes": []
+        }
+      }
+    },
+    {
+      "user_idx": 1,
+      "family": "Sharma Family",
+      "fridge_id": "Family13adda5",
+      "ingredients_typed": [
+        "ripe mango",
+        "chilled milk",
+        "sugar"
+      ],
+      "account_created": true,
+      "account_create_ms": 5991.86,
+      "recipe_result": {
+        "status": "success",
+        "http_code": 200,
+        "latency_ms": 4615.58,
+        "recipe": {
+          "recipe_name": "Mango Chilled Milk Sugar",
+          "recipe_name_hi": "\u0906\u092e \u0920\u0902\u0921\u093e \u0926\u0942\u0927 \u0936\u0915\u094d\u0915\u0930",
+          "meal_type": "Beverage / Drink",
+          "meal_type_hi": "\u0924\u093e\u091c\u093c\u093e \u092a\u0947\u092f",
+          "pairing_notes": "Enjoy as a refreshing summer drink, perfect with samosa or pakoras.",
+          "pairing_notes_hi": "\u0917\u0930\u094d\u092e\u093f\u092f\u094b\u0902 \u092e\u0947\u0902 \u0924\u093e\u091c\u093c\u093e \u092a\u0947\u092f \u0915\u0947 \u0930\u0942\u092a \u092e\u0947\u0902 \u0906\u0928\u0902\u0926 \u0932\u0947\u0902, \u0938\u092e\u094b\u0938\u093e \u092f\u093e \u092a\u0915\u094b\u0921\u093c\u0947 \u0915\u0947 \u0938\u093e\u0925 \u092a\u0930\u094b\u0938\u0947\u0902\u0964",
+          "prep_time_minutes": 10,
+          "ingredients_used": [
+            "Mango",
+            "Milk",
+            "Sugar",
+            "Ice cubes",
+            "Cardamom (optional)"
+          ],
+          "ingredients_used_hi": [
+            "\u0906\u092e",
+            "\u0926\u0942\u0927",
+            "\u091a\u0940\u0928\u0940",
+            "\u092c\u0930\u094d\u092b \u0915\u0947 \u091f\u0941\u0915\u0921\u093c\u0947",
+            "\u0907\u0932\u093e\u092f\u091a\u0940 (\u0935\u0948\u0915\u0932\u094d\u092a\u093f\u0915)"
+          ],
+          "corrected_ingredients": [
+            "2 ripe mangoes",
+            "2 cups cold milk",
+            "3 tbsp sugar",
+            "\u00bd cup ice cubes",
+            "\u00bc tsp cardamom powder (optional)"
+          ],
+          "pantry_items_needed": [
+            "Cardamom powder - \u00bc tsp",
+            "Vanilla essence - \u00bd tsp (optional)"
+          ],
+          "pantry_items_needed_hi": [
+            "\u0907\u0932\u093e\u092f\u091a\u0940 \u092a\u093e\u0909\u0921\u0930 - \u00bc \u091a\u092e\u094d\u092e\u091a",
+            "\u0935\u0948\u0928\u093f\u0932\u093e \u090f\u0938\u0947\u0902\u0938 - \u00bd \u091a\u092e\u094d\u092e\u091a (\u0935\u0948\u0915\u0932\u094d\u092a\u093f\u0915)"
+          ],
+          "steps": [
+            "Wash, peel, and cut ripe mangoes into chunks.",
+            "In a blender, add mango chunks, cold milk, sugar, and a pinch of cardamom powder.",
+            "Add ice cubes (optional) and blend until smooth and frothy.",
+            "Taste and adjust sugar if needed; blend a few seconds more.",
+            "Pour into glasses, garnish with a sprinkle of cardamom or a slice of mango.",
+            "Serve chilled immediately."
+          ],
+          "steps_hi": [
+            "\u0927\u094b\u090f\u0901, \u091b\u093f\u0932\u0915\u093e \u0909\u0924\u093e\u0930\u0947\u0902 \u0914\u0930 \u092a\u0915\u0947 \u0939\u0941\u090f \u0906\u092e \u0915\u094b \u091f\u0941\u0915\u0921\u093c\u094b\u0902 \u092e\u0947\u0902 \u0915\u093e\u091f\u0947\u0902\u0964",
+            "\u092c\u094d\u0932\u0947\u0902\u0921\u0930 \u092e\u0947\u0902 \u0906\u092e \u0915\u0947 \u091f\u0941\u0915\u0921\u093c\u0947, \u0920\u0902\u0921\u093e \u0926\u0942\u0927, \u091a\u0940\u0928\u0940 \u0914\u0930 \u090f\u0915 \u091a\u0941\u091f\u0915\u0940 \u0907\u0932\u093e\u092f\u091a\u0940 \u092a\u093e\u0909\u0921\u0930 \u0921\u093e\u0932\u0947\u0902\u0964",
+            "\u092c\u0930\u094d\u092b \u0915\u0947 \u091f\u0941\u0915\u0921\u093c\u0947 (\u092f\u0926\u093f \u091a\u093e\u0939\u0947\u0902) \u0921\u093e\u0932\u0947\u0902 \u0914\u0930 \u0938\u094d\u092e\u0942\u0925 \u0935 \u092b\u094d\u0930\u094b\u0925\u0940 \u0939\u094b\u0928\u0947 \u0924\u0915 \u092c\u094d\u0932\u0947\u0902\u0921 \u0915\u0930\u0947\u0902\u0964",
+            "\u0938\u094d\u0935\u093e\u0926 \u0926\u0947\u0916\u0947\u0902 \u0914\u0930 \u0906\u0935\u0936\u094d\u092f\u0915\u0924\u093e \u0905\u0928\u0941\u0938\u093e\u0930 \u091a\u0940\u0928\u0940 \u0938\u092e\u093e\u092f\u094b\u091c\u093f\u0924 \u0915\u0930\u0947\u0902; \u092b\u093f\u0930 \u0915\u0941\u091b \u0938\u0947\u0915\u0902\u0921 \u0914\u0930 \u092c\u094d\u0932\u0947\u0902\u0921 \u0915\u0930\u0947\u0902\u0964",
+            "\u0917\u093f\u0932\u093e\u0938 \u092e\u0947\u0902 \u0921\u093e\u0932\u0947\u0902, \u090a\u092a\u0930 \u0938\u0947 \u0925\u094b\u0921\u093c\u093e \u0907\u0932\u093e\u092f\u091a\u0940 \u091b\u093f\u0921\u093c\u0915\u0947\u0902 \u092f\u093e \u0906\u092e \u0915\u093e \u0938\u094d\u0932\u093e\u0907\u0938 \u0932\u0917\u093e\u090f\u0901\u0964",
+            "\u0924\u0941\u0930\u0902\u0924 \u0920\u0902\u0921\u093e-\u0920\u0902\u0921\u093e \u092a\u0930\u094b\u0938\u0947\u0902\u0964"
+          ],
+          "chef_tip": "Use overripe mangoes for extra sweetness and blend milk slightly warmed (not hot) to bring out mango flavor.",
+          "chef_tip_hi": "\u0926\u093e\u0926\u0940 \u092e\u093e\u0901 \u0915\u093e \u0938\u0940\u0915\u094d\u0930\u0947\u091f \u0928\u0941\u0938\u094d\u0916\u093e: \u0905\u0927\u093f\u0915 \u092e\u0940\u0920\u0947 \u0914\u0930 \u0930\u0938\u0940\u0932\u0947 \u0906\u092e \u0915\u0947 \u0932\u093f\u090f \u092a\u0915\u0947 \u0939\u0941\u090f \u0906\u092e \u0915\u093e \u0909\u092a\u092f\u094b\u0917 \u0915\u0930\u0947\u0902 \u0914\u0930 \u0926\u0942\u0927 \u0915\u094b \u0939\u0932\u094d\u0915\u093e \u0917\u0930\u094d\u092e \u0915\u0930\u0915\u0947 \u092c\u094d\u0932\u0947\u0902\u0921 \u0915\u0930\u0947\u0902, \u0907\u0938\u0938\u0947 \u0906\u092e \u0915\u093e \u0938\u094d\u0935\u093e\u0926 \u0914\u0930 \u092d\u0940 \u0928\u093f\u0916\u0930\u0924\u093e \u0939\u0948\u0964",
+          "response": 0,
+          "premade_code": 0,
+          "is_premade": false,
+          "premade_message": "",
+          "premade_message_hi": "",
+          "suggested_recipes": []
+        }
+      }
+    },
+    {
+      "user_idx": 4,
+      "family": "Kapoor Family",
+      "fridge_id": "Family4b09970",
+      "ingredients_typed": [
+        "overripe bananas",
+        "atta flour",
+        "cardamom"
+      ],
+      "account_created": true,
+      "account_create_ms": 5965.63,
+      "recipe_result": {
+        "status": "success",
+        "http_code": 200,
+        "latency_ms": 5084.92,
+        "recipe": {
+          "recipe_name": "Banana Cardamom Pancakes",
+          "recipe_name_hi": "\u0915\u0947\u0932\u093e \u0907\u0932\u093e\u092f\u091a\u0940 \u092a\u0948\u0928\u0915\u0947\u0915",
+          "meal_type": "Homestyle Meal",
+          "meal_type_hi": "\u0918\u0930 \u0915\u093e \u092d\u094b\u091c\u0928",
+          "pairing_notes": "Banana, wheat flour and cardamom naturally blend into a sweet breakfast treat, so they are combined in a single pancake dish.",
+          "pairing_notes_hi": "\u0915\u0947\u0932\u093e, \u0906\u091f\u093e \u0914\u0930 \u0907\u0932\u093e\u092f\u091a\u0940 \u090f\u0915 \u0938\u093e\u0925 \u092e\u093f\u0932\u0915\u0930 \u0938\u094d\u0935\u093e\u0926\u093f\u0937\u094d\u091f \u092e\u0940\u0920\u093e \u0928\u093e\u0936\u094d\u0924\u093e \u092c\u0928\u093e\u0924\u0947 \u0939\u0948\u0902, \u0907\u0938\u0932\u093f\u090f \u0907\u0928\u094d\u0939\u0947\u0902 \u090f\u0915 \u0939\u0940 \u092a\u0948\u0928\u0915\u0947\u0915 \u092e\u0947\u0902 \u091c\u094b\u0921\u093c\u093e \u0917\u092f\u093e \u0939\u0948\u0964",
+          "prep_time_minutes": 20,
+          "ingredients_used": [
+            "Overripe Bananas",
+            "Wheat Flour",
+            "Cardamom"
+          ],
+          "ingredients_used_hi": [
+            "\u092a\u0915\u0947 \u0939\u0941\u090f \u0915\u0947\u0932\u0947",
+            "\u0917\u0947\u0939\u0942\u0901 \u0915\u093e \u0906\u091f\u093e",
+            "\u0907\u0932\u093e\u092f\u091a\u0940"
+          ],
+          "corrected_ingredients": [
+            "Overripe Bananas",
+            "Wheat Flour",
+            "Cardamom"
+          ],
+          "pantry_items_needed": [
+            "Sugar",
+            "Salt",
+            "Milk (or water)",
+            "Oil for cooking",
+            "Honey (optional)"
+          ],
+          "pantry_items_needed_hi": [
+            "1 \u091f\u0947\u092c\u0932\u0938\u094d\u092a\u0942\u0928 \u091a\u0940\u0928\u0940",
+            "\u0938\u094d\u0935\u093e\u0926\u093e\u0928\u0941\u0938\u093e\u0930 \u0928\u092e\u0915",
+            "1 \u0915\u092a \u0926\u0942\u0927 \u092f\u093e \u092a\u093e\u0928\u0940",
+            "\u092a\u0915\u093e\u0928\u0947 \u0915\u0947 \u0932\u093f\u090f \u0924\u0947\u0932",
+            "\u0935\u0948\u0915\u0932\u094d\u092a\u093f\u0915: \u0936\u0939\u0926"
+          ],
+          "steps": [
+            "Peel and mash the overripe bananas in a bowl until smooth.",
+            "Add wheat flour, ground cardamom, sugar, and a pinch of salt to the mashed bananas.",
+            "Gradually whisk in milk (or water) to form a smooth batter of pourable consistency.",
+            "Let the batter rest for 5 minutes.",
+            "Heat a non-stick pan over medium heat and lightly grease with oil.",
+            "Pour a ladleful of batter onto the pan, spreading slightly to form a pancake.",
+            "Cook until bubbles appear on surface, then flip and cook the other side until golden.",
+            "Serve hot, drizzled with a little honey or maple syrup if desired."
+          ],
+          "steps_hi": [
+            "\u092a\u0915\u0947 \u0939\u0941\u090f \u0915\u0947\u0932\u0947 \u091b\u093f\u0932\u0915\u0930 \u090f\u0915 \u092c\u0930\u094d\u0924\u0928 \u092e\u0947\u0902 \u0905\u091a\u094d\u091b\u0940 \u0924\u0930\u0939 \u092e\u0948\u0936 \u0915\u0930 \u0932\u0947\u0902\u0964",
+            "\u092e\u0948\u0936 \u0915\u093f\u090f \u0939\u0941\u090f \u0915\u0947\u0932\u0947 \u092e\u0947\u0902 \u0917\u0947\u0939\u0942\u0901 \u0915\u093e \u0906\u091f\u093e, \u092a\u093f\u0938\u093e \u0907\u0932\u093e\u092f\u091a\u0940, \u091a\u0940\u0928\u0940 \u0914\u0930 \u090f\u0915 \u091a\u0941\u091f\u0915\u0940 \u0928\u092e\u0915 \u0921\u093e\u0932\u0947\u0902\u0964",
+            "\u0927\u0940\u0930\u0947-\u0927\u0940\u0930\u0947 \u0926\u0942\u0927 (\u092f\u093e \u092a\u093e\u0928\u0940) \u092e\u093f\u0932\u093e\u0924\u0947 \u0939\u0941\u090f \u092c\u0948\u091f\u0930 \u0915\u094b \u0917\u093e\u0922\u093c\u093e \u0932\u0947\u0915\u093f\u0928 \u0922\u093e\u0932\u0928\u0947 \u092f\u094b\u0917\u094d\u092f \u092c\u0928\u093e \u0932\u0947\u0902\u0964",
+            "\u092c\u0948\u091f\u0930 \u0915\u094b 5 \u092e\u093f\u0928\u091f \u0915\u0947 \u0932\u093f\u090f \u0906\u0930\u093e\u092e \u0926\u0947\u0902\u0964",
+            "\u092e\u0927\u094d\u092f\u092e \u0906\u0901\u091a \u092a\u0930 \u0928\u0949\u0928-\u0938\u094d\u091f\u093f\u0915 \u092a\u0948\u0928 \u0917\u0930\u092e \u0915\u0930\u0947\u0902 \u0914\u0930 \u0939\u0932\u094d\u0915\u093e \u0924\u0947\u0932 \u0932\u0917\u093e\u090f\u0901\u0964",
+            "\u092a\u0948\u0928 \u092e\u0947\u0902 \u090f\u0915 \u091a\u092e\u094d\u092e\u091a \u092c\u0948\u091f\u0930 \u0921\u093e\u0932\u0947\u0902 \u0914\u0930 \u0939\u0932\u094d\u0915\u093e \u092b\u0948\u0932\u093e\u090f\u0901 \u0924\u093e\u0915\u093f \u092a\u0948\u0928\u0915\u0947\u0915 \u092c\u0928 \u0938\u0915\u0947\u0964",
+            "\u0938\u0924\u0939 \u092a\u0930 \u092c\u0941\u0932\u092c\u0941\u0932\u0947 \u0906\u0928\u0947 \u0924\u0915 \u092a\u0915\u093e\u090f\u0901, \u092b\u093f\u0930 \u092a\u0932\u091f \u0915\u0930 \u0926\u0942\u0938\u0930\u0940 \u0924\u0930\u092b \u0938\u0941\u0928\u0939\u0930\u093e \u0939\u094b\u0928\u0947 \u0924\u0915 \u092a\u0915\u093e\u090f\u0901\u0964",
+            "\u0917\u0930\u092e\u093e\u0917\u0930\u092e \u092a\u0948\u0928\u0915\u0947\u0915 \u0915\u094b \u0936\u0939\u0926 \u092f\u093e \u092e\u0947\u092a\u0932 \u0938\u093f\u0930\u092a \u0915\u0947 \u0938\u093e\u0925 \u092a\u0930\u094b\u0938\u0947\u0902\u0964"
+          ],
+          "chef_tip": "Use the bananas' natural sweetness to reduce added sugar, and keep the batter thin for fluffy pancakes.",
+          "chef_tip_hi": "\u0915\u0947\u0932\u0947 \u0915\u0940 \u092a\u094d\u0930\u093e\u0915\u0943\u0924\u093f\u0915 \u092e\u093f\u0920\u093e\u0938 \u0915\u093e \u0909\u092a\u092f\u094b\u0917 \u0915\u0930\u0915\u0947 \u091a\u0940\u0928\u0940 \u0915\u092e \u0915\u0930\u0947\u0902, \u0914\u0930 \u092c\u0948\u091f\u0930 \u0915\u094b \u0925\u094b\u0921\u093c\u093e \u092a\u0924\u0932\u093e \u0930\u0916\u0947\u0902 \u0924\u093e\u0915\u093f \u092a\u0948\u0928\u0915\u0947\u0915 \u092b\u0942\u0932\u0947 \u0914\u0930 \u0939\u0932\u094d\u0915\u0947 \u0930\u0939\u0947\u0902\u0964",
+          "response": 0,
+          "premade_code": 0,
+          "is_premade": false,
+          "premade_message": "",
+          "premade_message_hi": "",
+          "suggested_recipes": []
+        }
+      }
+    },
+    {
+      "user_idx": 2,
+      "family": "Verma Family",
+      "fridge_id": "Family23c9cf2",
+      "ingredients_typed": [
+        "fresh palak",
+        "paneer cubes",
+        "garlic"
+      ],
+      "account_created": true,
+      "account_create_ms": 5967.82,
+      "recipe_result": {
+        "status": "success",
+        "http_code": 200,
+        "latency_ms": 5211.19,
+        "recipe": {
+          "recipe_name": "Garlic Palak Paneer Cubes",
+          "recipe_name_hi": "\u0932\u0939\u0938\u0941\u0928 \u092a\u093e\u0932\u0915 \u092a\u0928\u0940\u0930 \u0915\u094d\u092f\u0942\u092c\u094d\u0938",
+          "meal_type": "Main Course",
+          "meal_type_hi": "\u092e\u0941\u0916\u094d\u092f \u092d\u094b\u091c\u0928",
+          "pairing_notes": "Serve hot with garlic naan, tandoori roti, or jeera rice.",
+          "pairing_notes_hi": "\u0917\u0930\u092e \u0932\u0939\u0938\u0941\u0928 \u0928\u093e\u0928, \u0924\u0902\u0926\u0942\u0930\u0940 \u0930\u094b\u091f\u0940 \u092f\u093e \u091c\u0940\u0930\u093e \u091a\u093e\u0935\u0932 \u0915\u0947 \u0938\u093e\u0925 \u092a\u0930\u094b\u0938\u0947\u0902\u0964",
+          "prep_time_minutes": 30,
+          "ingredients_used": [
+            "Spinach (Palak)",
+            "Paneer cubes",
+            "Garlic",
+            "Onion",
+            "Tomato",
+            "Ginger",
+            "Green chilies",
+            "Cream",
+            "Spices"
+          ],
+          "ingredients_used_hi": [
+            "\u092a\u093e\u0932\u0915",
+            "\u092a\u0928\u0940\u0930 \u0915\u094d\u092f\u0942\u092c\u094d\u0938",
+            "\u0932\u0939\u0938\u0941\u0928",
+            "\u092a\u094d\u092f\u093e\u091c\u093c",
+            "\u091f\u092e\u093e\u091f\u0930",
+            "\u0905\u0926\u0930\u0915",
+            "\u0939\u0930\u0940 \u092e\u093f\u0930\u094d\u091a",
+            "\u0915\u094d\u0930\u0940\u092e",
+            "\u092e\u0938\u093e\u0932\u0947"
+          ],
+          "corrected_ingredients": [
+            "500g fresh spinach",
+            "200g paneer (cut into cubes)",
+            "6-8 garlic cloves (minced)",
+            "1 large onion (finely chopped)",
+            "2 medium tomatoes (pureed)",
+            "1-inch ginger (grated)",
+            "2 green chilies (slit)",
+            "2 tbsp fresh cream",
+            "1 tsp cumin seeds",
+            "\u00bd tsp turmeric powder",
+            "1 tsp coriander powder",
+            "\u00bd tsp red chili powder",
+            "\u00bd tsp garam masala",
+            "Salt to taste",
+            "2 tbsp oil or ghee",
+            "\u00bc cup water"
+          ],
+          "pantry_items_needed": [
+            "1 tsp cumin seeds",
+            "\u00bd tsp turmeric powder",
+            "1 tsp coriander powder",
+            "\u00bd tsp red chili powder",
+            "\u00bd tsp garam masala",
+            "2 tbsp oil or ghee",
+            "Salt to taste",
+            "\u00bc cup water"
+          ],
+          "pantry_items_needed_hi": [
+            "\u0967 \u091b\u094b\u091f\u093e \u091a\u092e\u094d\u092e\u091a \u091c\u0940\u0930\u093e",
+            "\u00bd \u091b\u094b\u091f\u093e \u091a\u092e\u094d\u092e\u091a \u0939\u0932\u094d\u0926\u0940 \u092a\u093e\u0909\u0921\u0930",
+            "\u0967 \u091b\u094b\u091f\u093e \u091a\u092e\u094d\u092e\u091a \u0927\u0928\u093f\u092f\u093e \u092a\u093e\u0909\u0921\u0930",
+            "\u00bd \u091b\u094b\u091f\u093e \u091a\u092e\u094d\u092e\u091a \u0932\u093e\u0932 \u092e\u093f\u0930\u094d\u091a \u092a\u093e\u0909\u0921\u0930",
+            "\u00bd \u091b\u094b\u091f\u093e \u091a\u092e\u094d\u092e\u091a \u0917\u0930\u092e \u092e\u0938\u093e\u0932\u093e",
+            "\u0968 \u092c\u0921\u093c\u0947 \u091a\u092e\u094d\u092e\u091a \u0924\u0947\u0932 \u092f\u093e \u0918\u0940",
+            "\u0938\u094d\u0935\u093e\u0926\u093e\u0928\u0941\u0938\u093e\u0930 \u0928\u092e\u0915",
+            "\u00bc \u0915\u092a \u092a\u093e\u0928\u0940"
+          ],
+          "steps": [
+            "Wash spinach thoroughly, blanch in boiling water for 2 minutes, then transfer to ice water. Drain and puree to a smooth paste.",
+            "Heat oil or ghee in a pan, add cumin seeds and let them sizzle.",
+            "Add minced garlic, grated ginger, and slit green chilies; saut\u00e9 for 30 seconds.",
+            "Add finely chopped onion; cook until golden brown.",
+            "Stir in tomato puree; cook until oil separates from the mixture.",
+            "Add turmeric, coriander powder, and red chili powder; mix well.",
+            "Add the spinach puree, stir and cook for 3-4 minutes.",
+            "Gently add paneer cubes; simmer for 5 minutes so they absorb the flavors.",
+            "Stir in cream and garam masala; cook for another minute.",
+            "Adjust salt and add a splash of water if needed for desired consistency.",
+            "Turn off heat and let the dish rest for 2 minutes.",
+            "Serve hot with garlic naan, tandoori roti, or jeera rice."
+          ],
+          "steps_hi": [
+            "\u092a\u093e\u0932\u0915 \u0915\u094b \u0905\u091a\u094d\u091b\u0940 \u0924\u0930\u0939 \u0927\u094b\u090f\u0901, 2 \u092e\u093f\u0928\u091f \u0915\u0947 \u0932\u093f\u090f \u0909\u092c\u0932\u0924\u0947 \u092a\u093e\u0928\u0940 \u092e\u0947\u0902 \u092c\u094d\u0932\u093e\u0902\u091a \u0915\u0930\u0947\u0902, \u092b\u093f\u0930 \u0924\u0941\u0930\u0902\u0924 \u092c\u0930\u094d\u092b \u0915\u0947 \u092a\u093e\u0928\u0940 \u092e\u0947\u0902 \u0921\u093e\u0932\u0947\u0902\u0964 \u091b\u093e\u0928\u0915\u0930 \u0938\u094d\u092e\u0942\u0926 \u092a\u0947\u0938\u094d\u091f \u092c\u0928\u093e \u0932\u0947\u0902\u0964",
+            "\u090f\u0915 \u092a\u0948\u0928 \u092e\u0947\u0902 \u0924\u0947\u0932 \u092f\u093e \u0918\u0940 \u0917\u0930\u092e \u0915\u0930\u0947\u0902, \u091c\u0940\u0930\u093e \u0921\u093e\u0932\u0947\u0902 \u0914\u0930 \u091a\u091f\u0915\u0928\u0947 \u0926\u0947\u0902\u0964",
+            "\u0915\u091f\u093e \u0939\u0941\u0906 \u0932\u0939\u0938\u0941\u0928, \u0915\u0938\u093e \u0939\u0941\u0906 \u0905\u0926\u0930\u0915 \u0914\u0930 \u0939\u0930\u0940 \u092e\u093f\u0930\u094d\u091a \u0921\u093e\u0932\u0947\u0902; 30 \u0938\u0947\u0915\u0902\u0921 \u0924\u0915 \u092d\u0942\u0928\u0947\u0902\u0964",
+            "\u092c\u093e\u0930\u0940\u0915 \u0915\u091f\u093e \u0939\u0941\u0906 \u092a\u094d\u092f\u093e\u091c\u093c \u0921\u093e\u0932\u0947\u0902; \u0938\u0941\u0928\u0939\u0930\u093e \u092d\u0942\u0930\u093e \u0939\u094b\u0928\u0947 \u0924\u0915 \u092a\u0915\u093e\u090f\u0901\u0964",
+            "\u091f\u092e\u093e\u091f\u0930 \u092a\u094d\u092f\u0942\u0930\u0940 \u0921\u093e\u0932\u0947\u0902; \u0924\u0947\u0932 \u0905\u0932\u0917 \u0939\u094b\u0928\u0947 \u0924\u0915 \u092a\u0915\u093e\u090f\u0901\u0964",
+            "\u0939\u0932\u094d\u0926\u0940, \u0927\u0928\u093f\u092f\u093e \u092a\u093e\u0909\u0921\u0930 \u0914\u0930 \u0932\u093e\u0932 \u092e\u093f\u0930\u094d\u091a \u092a\u093e\u0909\u0921\u0930 \u0921\u093e\u0932\u0947\u0902; \u0905\u091a\u094d\u091b\u0940 \u0924\u0930\u0939 \u092e\u093f\u0932\u093e\u090f\u0901\u0964",
+            "\u092a\u093e\u0932\u0915 \u092a\u0947\u0938\u094d\u091f \u0921\u093e\u0932\u0947\u0902, 3-4 \u092e\u093f\u0928\u091f \u0924\u0915 \u092a\u0915\u093e\u090f\u0901\u0964",
+            "\u0927\u094d\u092f\u093e\u0928 \u0938\u0947 \u092a\u0928\u0940\u0930 \u0915\u094d\u092f\u0942\u092c\u094d\u0938 \u0921\u093e\u0932\u0947\u0902; 5 \u092e\u093f\u0928\u091f \u0924\u0915 \u0909\u092c\u093e\u0932\u0947\u0902 \u0924\u093e\u0915\u093f \u0938\u094d\u0935\u093e\u0926 \u0918\u0941\u0932 \u091c\u093e\u090f\u0964",
+            "\u0915\u094d\u0930\u0940\u092e \u0914\u0930 \u0917\u0930\u092e \u092e\u0938\u093e\u0932\u093e \u092e\u093f\u0932\u093e\u090f\u0901; \u090f\u0915 \u092e\u093f\u0928\u091f \u0914\u0930 \u092a\u0915\u093e\u090f\u0901\u0964",
+            "\u0938\u094d\u0935\u093e\u0926 \u0905\u0928\u0941\u0938\u093e\u0930 \u0928\u092e\u0915 \u092e\u093f\u0932\u093e\u090f\u0901 \u0914\u0930 \u0907\u091a\u094d\u091b\u093f\u0924 \u0917\u093e\u0922\u093c\u093e\u092a\u0928 \u0915\u0947 \u0932\u093f\u090f \u0925\u094b\u0921\u093c\u093e \u092a\u093e\u0928\u0940 \u0921\u093e\u0932\u0947\u0902\u0964",
+            "\u0906\u0917 \u092c\u0902\u0926 \u0915\u0930 \u0926\u0947\u0902 \u0914\u0930 \u0921\u093f\u0936 \u0915\u094b 2 \u092e\u093f\u0928\u091f \u0906\u0930\u093e\u092e \u0926\u0947\u0902\u0964",
+            "\u0917\u0930\u092e \u0932\u0939\u0938\u0941\u0928 \u0928\u093e\u0928, \u0924\u0902\u0926\u0942\u0930\u0940 \u0930\u094b\u091f\u0940 \u092f\u093e \u091c\u0940\u0930\u093e \u091a\u093e\u0935\u0932 \u0915\u0947 \u0938\u093e\u0925 \u092a\u0930\u094b\u0938\u0947\u0902\u0964"
+          ],
+          "chef_tip": "Blanch the spinach briefly and shock it in cold water to lock in the vivid green color; use fresh paneer and finish with a dash of cream for extra richness.",
+          "chef_tip_hi": "\u092a\u093e\u0932\u0915 \u0915\u094b \u0925\u094b\u0921\u093c\u0940 \u0926\u0947\u0930 \u092c\u094d\u0932\u093e\u0902\u091a \u0915\u0930\u0915\u0947 \u0924\u0941\u0930\u0902\u0924 \u0920\u0902\u0921\u0947 \u092a\u093e\u0928\u0940 \u092e\u0947\u0902 \u0921\u093e\u0932\u0947\u0902 \u0924\u093e\u0915\u093f \u0909\u0938\u0915\u093e \u091a\u092e\u0915\u0940\u0932\u093e \u0939\u0930\u093e \u0930\u0902\u0917 \u092c\u0928\u093e \u0930\u0939\u0947; \u0924\u093e\u091c\u093c\u093e \u092a\u0928\u0940\u0930 \u0907\u0938\u094d\u0924\u0947\u092e\u093e\u0932 \u0915\u0930\u0947\u0902 \u0914\u0930 \u0905\u0902\u0924 \u092e\u0947\u0902 \u0925\u094b\u0921\u093c\u093e \u0915\u094d\u0930\u0940\u092e \u0921\u093e\u0932\u0947\u0902 \u091c\u093f\u0938\u0938\u0947 \u0938\u094d\u0935\u093e\u0926 \u0914\u0930 \u092d\u0940 \u0938\u092e\u0943\u0926\u094d\u0927 \u0939\u094b \u091c\u093e\u090f\u0917\u093e\u0964",
+          "response": 0,
+          "premade_code": 0,
+          "is_premade": false,
+          "premade_message": "",
+          "premade_message_hi": "",
+          "suggested_recipes": []
+        }
+      }
+    }
+  ]
+}
