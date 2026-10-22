@@ -34,6 +34,7 @@ from datetime import datetime, timedelta, timezone
 from enum import Enum
 from typing import Any, Dict, List, Optional, Tuple, Union
 import difflib
+import concurrent.futures
 
 # Multi-Country Global Timezone Support
 try:
@@ -3447,6 +3448,161 @@ def health_check():
             "vapid_private_key_loaded": bool(_VAPID_PRIVATE_KEY),
         },
     }
+
+
+@app.api_route("/api/benchmark/ai-throughput", methods=["GET", "POST"], summary="AI Engines Live Throughput & Latency Diagnostic Benchmark")
+async def api_benchmark_ai_throughput(
+    engine: str = "all",
+    prompt: str = "Classify food item: 1L cow milk. Return JSON: is_food, category, shelf_life_days.",
+    request: Request = None,
+):
+    """Benchmark raw latency and requests/second capacity for Groq, Gemini, and OpenRouter."""
+    if request and request.method == "POST":
+        try:
+            body = await request.json()
+            if isinstance(body, dict):
+                engine = body.get("engine", engine)
+                prompt = body.get("prompt", prompt)
+        except Exception:
+            pass
+
+    eng = engine.lower().strip()
+
+    def _test_groq():
+        client = get_groq_client()
+        if not client:
+            return {"configured": False, "status": "error", "error": "GROQ_API_KEY not configured"}
+        models = get_groq_active_text_models()
+        model_used = models[0] if models else "llama-3.3-70b-versatile"
+        t0 = time.perf_counter()
+        try:
+            resp = client.chat.completions.create(
+                messages=[{"role": "user", "content": prompt}],
+                model=model_used,
+                temperature=0.1,
+                max_tokens=150,
+            )
+            elapsed_ms = round((time.perf_counter() - t0) * 1000, 2)
+            content = resp.choices[0].message.content or ""
+            tokens_out = getattr(resp.usage, "completion_tokens", None) if hasattr(resp, "usage") and resp.usage else None
+            return {
+                "configured": True,
+                "status": "success",
+                "engine": "Groq LPU",
+                "model": model_used,
+                "latency_ms": elapsed_ms,
+                "completion_tokens": tokens_out,
+                "sample": content[:120].strip(),
+            }
+        except Exception as e:
+            elapsed_ms = round((time.perf_counter() - t0) * 1000, 2)
+            return {
+                "configured": True,
+                "status": "error",
+                "engine": "Groq LPU",
+                "model": model_used,
+                "latency_ms": elapsed_ms,
+                "error": str(e),
+            }
+
+    def _test_gemini():
+        client = get_gemini_client()
+        if not client or types is None:
+            return {"configured": False, "status": "error", "error": "GEMINI_API_KEY or google-genai not configured"}
+        model_used = GEMINI_MODELS[0] if GEMINI_MODELS else "gemini-2.0-flash"
+        t0 = time.perf_counter()
+        try:
+            resp = client.models.generate_content(
+                model=model_used,
+                contents=prompt,
+            )
+            elapsed_ms = round((time.perf_counter() - t0) * 1000, 2)
+            content = (resp.text or "").strip()
+            return {
+                "configured": True,
+                "status": "success",
+                "engine": "Google Gemini",
+                "model": model_used,
+                "latency_ms": elapsed_ms,
+                "sample": content[:120].strip(),
+            }
+        except Exception as e:
+            elapsed_ms = round((time.perf_counter() - t0) * 1000, 2)
+            return {
+                "configured": True,
+                "status": "error",
+                "engine": "Google Gemini",
+                "model": model_used,
+                "latency_ms": elapsed_ms,
+                "error": str(e),
+            }
+
+    def _test_openrouter():
+        api_key = get_openrouter_api_key()
+        if not api_key:
+            return {"configured": False, "status": "error", "error": "OPENROUTER_API_KEY not configured"}
+        model_used = OPENROUTER_TEXT_MODELS[0] if OPENROUTER_TEXT_MODELS else "meta-llama/llama-3.3-70b-instruct:free"
+        t0 = time.perf_counter()
+        try:
+            content = query_openrouter_chat(
+                messages=[{"role": "user", "content": prompt}],
+                models=[model_used],
+                json_mode=False,
+            )
+            elapsed_ms = round((time.perf_counter() - t0) * 1000, 2)
+            if content:
+                return {
+                    "configured": True,
+                    "status": "success",
+                    "engine": "OpenRouter",
+                    "model": model_used,
+                    "latency_ms": elapsed_ms,
+                    "sample": content[:120].strip(),
+                }
+            else:
+                return {
+                    "configured": True,
+                    "status": "error",
+                    "engine": "OpenRouter",
+                    "model": model_used,
+                    "latency_ms": elapsed_ms,
+                    "error": "No content returned from OpenRouter",
+                }
+        except Exception as e:
+            elapsed_ms = round((time.perf_counter() - t0) * 1000, 2)
+            return {
+                "configured": True,
+                "status": "error",
+                "engine": "OpenRouter",
+                "model": model_used,
+                "latency_ms": elapsed_ms,
+                "error": str(e),
+            }
+
+    wall_start = time.perf_counter()
+    results = {}
+    if eng == "groq":
+        results["groq"] = _test_groq()
+    elif eng in ("gemini", "google"):
+        results["gemini"] = _test_gemini()
+    elif eng == "openrouter":
+        results["openrouter"] = _test_openrouter()
+    else:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
+            fut_groq = executor.submit(_test_groq)
+            fut_gemini = executor.submit(_test_gemini)
+            fut_or = executor.submit(_test_openrouter)
+            results["groq"] = fut_groq.result()
+            results["gemini"] = fut_gemini.result()
+            results["openrouter"] = fut_or.result()
+
+    wall_ms = round((time.perf_counter() - wall_start) * 1000, 2)
+    return {
+        "engine_requested": eng,
+        "wall_time_ms": wall_ms,
+        "results": results,
+    }
+
 
 
 # ============================================================================
