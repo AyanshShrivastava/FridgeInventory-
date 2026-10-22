@@ -3967,9 +3967,9 @@ HTML_CONTENT = r"""<!DOCTYPE html>
           <span class="font-extrabold text-sm sm:text-base tracking-tight text-stone-900 dark:text-white truncate" data-i18n="app_title">FridgeInventory</span>
           <span class="text-[10px] bg-stone-100 dark:bg-stone-800 text-stone-500 dark:text-stone-400 font-semibold px-1.5 py-0.5 rounded-md hidden md:inline">v2.2</span>
           
-          <!-- Compact Logged-in Fridge Pill (Visible on Desktop; Mobile gets dedicated pill in subheader) -->
-          <div id="header-breadcrumb" class="hidden md:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-amber-50 dark:bg-stone-800 border border-amber-200 dark:border-amber-500/40 text-xs font-mono font-bold shadow-2xs truncate shrink-0">
-            <span id="header-fridge-name" class="truncate max-w-[140px] lg:max-w-[200px] text-amber-950 dark:text-amber-200 font-extrabold tracking-wide">MY-FRIDGE</span>
+          <!-- Compact Logged-in Fridge Pill (Visible on Desktop lg: 1024px+; mobile & tablets use dedicated subheader pill) -->
+          <div id="header-breadcrumb" style="display: none;" class="hidden lg:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-amber-50 dark:bg-stone-800 border border-amber-200 dark:border-amber-500/40 text-xs font-mono font-bold shadow-2xs truncate shrink-0">
+            <span id="header-fridge-name" class="truncate max-w-[120px] xl:max-w-[180px] text-amber-950 dark:text-amber-200 font-extrabold tracking-wide">MY-FRIDGE</span>
             <button type="button" id="copy-fid-btn" class="text-amber-700/70 dark:text-amber-400/80 hover:text-amber-900 dark:hover:text-amber-100 transition p-0.5 shrink-0 cursor-pointer" title="Copy Fridge ID">
               <svg class="w-3.5 h-3.5 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>
             </button>
@@ -4006,22 +4006,18 @@ HTML_CONTENT = r"""<!DOCTYPE html>
           <svg id="theme-icon-moon" class="w-4 h-4 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"></path></svg>
         </button>
 
-        <!-- Auth Actions -->
-        <div id="auth-logged-in" class="hidden items-center gap-1.5 shrink-0">
-          <button id="logout-btn" class="px-2 sm:px-2.5 py-1.5 rounded-xl bg-stone-100 dark:bg-stone-800 hover:bg-orange-50 dark:hover:bg-orange-950/60 hover:text-orange-600 text-stone-600 dark:text-stone-300 font-semibold text-xs border border-stone-200 dark:border-stone-700 transition flex items-center gap-1 shrink-0 cursor-pointer" title="Logout" data-i18n="logout_btn">
-            <svg class="w-3.5 h-3.5 inline sm:hidden pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/></svg>
-            <span class="hidden sm:inline">Logout</span>
-          </button>
-          <button id="delete-fridge-btn" class="px-2 sm:px-2.5 py-1.5 rounded-xl bg-rose-50 dark:bg-rose-950/50 hover:bg-rose-600 hover:text-white text-rose-700 dark:text-rose-300 font-bold text-xs border border-rose-200 dark:border-rose-800 transition flex items-center gap-1 shrink-0 cursor-pointer" title="Delete Fridge" data-i18n="delete_fridge_btn">
-            <svg class="w-3.5 h-3.5 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
-            <span class="hidden sm:inline">Delete Fridge</span>
+        <!-- Auth Actions: Clean Dedicated Logout (Delete Fridge placed separately in subheader to eliminate all overlap) -->
+        <div id="auth-logged-in" class="hidden items-center shrink-0">
+          <button id="logout-btn" class="px-2 sm:px-2.5 py-1.5 rounded-xl bg-stone-100 dark:bg-stone-800 hover:bg-orange-50 dark:hover:bg-orange-950/60 hover:text-orange-600 text-stone-700 dark:text-stone-300 font-bold text-xs border border-stone-200 dark:border-stone-700 transition flex items-center gap-1 shrink-0 cursor-pointer shadow-2xs" title="Logout from Fridge">
+            <svg class="w-3.5 h-3.5 text-stone-500 dark:text-stone-400 pointer-events-none shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/></svg>
+            <span class="hidden sm:inline" data-i18n="logout_btn">Logout</span>
           </button>
         </div>
 
         <div id="auth-logged-out" class="flex items-center shrink-0">
-          <button id="open-auth-btn" class="px-2.5 sm:px-3 py-1.5 rounded-xl bg-stone-900 dark:bg-white hover:bg-stone-800 dark:hover:bg-stone-100 text-white dark:text-stone-900 font-semibold text-xs shadow-sm transition flex items-center gap-1 sm:gap-1.5 shrink-0" data-i18n="login_create_btn">
-            <svg class="w-3.5 h-3.5 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1"></path></svg>
-            <span>Login</span>
+          <button id="open-auth-btn" class="px-2.5 sm:px-3 py-1.5 rounded-xl bg-stone-900 dark:bg-white hover:bg-stone-800 dark:hover:bg-stone-100 text-white dark:text-stone-900 font-semibold text-xs shadow-sm transition flex items-center gap-1 sm:gap-1.5 shrink-0" title="Login to Fridge">
+            <svg class="w-3.5 h-3.5 pointer-events-none shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1"></path></svg>
+            <span data-i18n="login_create_btn">Login</span>
           </button>
         </div>
       </div>
@@ -4035,8 +4031,8 @@ HTML_CONTENT = r"""<!DOCTYPE html>
       <!-- Top Row on Mobile / Left on Desktop: Mobile Fridge ID, Live Clock & Timezone Selector -->
       <div class="flex items-center gap-1.5 sm:gap-2 flex-wrap min-w-0">
         
-        <!-- Mobile-Only Fridge ID Pill (Takes zero space on desktop; provides instant fridge ID on mobile) -->
-        <div id="sub-header-fridge-pill" class="inline-flex md:hidden items-center gap-1 px-2.5 py-1 rounded-xl bg-amber-50 dark:bg-stone-800 border border-amber-200 dark:border-amber-500/40 text-[11px] font-mono font-bold shadow-2xs shrink-0">
+        <!-- Mobile & Tablet Fridge ID Pill (Visible on screens < lg; Desktop uses top header breadcrumb) -->
+        <div id="sub-header-fridge-pill" class="inline-flex lg:hidden items-center gap-1 px-2.5 py-1 rounded-xl bg-amber-50 dark:bg-stone-800 border border-amber-200 dark:border-amber-500/40 text-[11px] font-mono font-bold shadow-2xs shrink-0">
           <span id="sub-header-fridge-name" class="truncate max-w-[130px] text-amber-950 dark:text-amber-200 font-extrabold">MY-FRIDGE</span>
           <button type="button" id="sub-copy-fid-btn" class="text-amber-700/70 dark:text-amber-400/80 hover:text-amber-900 dark:hover:text-amber-100 transition p-0.5 shrink-0 cursor-pointer" title="Copy Fridge ID">
             <svg class="w-3 h-3 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>
@@ -4083,8 +4079,14 @@ HTML_CONTENT = r"""<!DOCTYPE html>
 
         <!-- Share Fridge with Family Button -->
         <button type="button" id="share-fridge-btn" class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-white dark:bg-stone-800 hover:bg-stone-50 dark:hover:bg-stone-750 text-stone-700 dark:text-stone-300 border border-stone-200 dark:border-stone-700 text-xs font-semibold transition shadow-2xs shrink-0" title="Share Fridge with Family">
-          <svg class="w-3.5 h-3.5 text-brand-600 dark:text-brand-400 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"></path></svg>
+          <svg class="w-3.5 h-3.5 text-brand-600 dark:text-brand-400 pointer-events-none shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"></path></svg>
           <span data-i18n="sidebar_share_btn">Share</span>
+        </button>
+
+        <!-- Delete Fridge Button (Cleanly placed in subheader, completely separated from Logout to prevent overlap & accidental clicks) -->
+        <button type="button" id="delete-fridge-btn" class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-rose-50 dark:bg-rose-950/50 hover:bg-rose-600 hover:text-white text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800 text-xs font-bold transition shadow-2xs shrink-0 cursor-pointer" title="Delete this Fridge permanently">
+          <svg class="w-3.5 h-3.5 pointer-events-none shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+          <span data-i18n="delete_fridge_btn">Delete Fridge</span>
         </button>
 
       </div>
@@ -6240,10 +6242,19 @@ HTML_CONTENT = r"""<!DOCTYPE html>
       }
       pinRevealed = true; // Straight up reveal PIN directly on screen without any prompts
 
-      document.getElementById('auth-logged-in').classList.remove('hidden');
-      document.getElementById('auth-logged-out').classList.add('hidden');
-      document.getElementById('header-breadcrumb').classList.remove('hidden');
-      document.getElementById('header-breadcrumb').classList.add('flex');
+      const authIn = document.getElementById('auth-logged-in');
+      if (authIn) {
+        authIn.classList.remove('hidden');
+        authIn.classList.add('flex');
+      }
+      const authOut = document.getElementById('auth-logged-out');
+      if (authOut) authOut.classList.add('hidden');
+      
+      const headerBc = document.getElementById('header-breadcrumb');
+      if (headerBc) {
+        headerBc.classList.remove('hidden');
+        headerBc.style.display = '';
+      }
       
       const subBar = document.getElementById('sub-header-bar');
       if (subBar) subBar.classList.remove('hidden');
@@ -6255,6 +6266,11 @@ HTML_CONTENT = r"""<!DOCTYPE html>
       document.getElementById('header-push-pill').classList.remove('hidden');
       document.getElementById('share-fridge-btn').classList.remove('hidden');
       document.getElementById('share-fridge-btn').classList.add('inline-flex');
+      const delFridgeBtn = document.getElementById('delete-fridge-btn');
+      if (delFridgeBtn) {
+        delFridgeBtn.classList.remove('hidden');
+        delFridgeBtn.classList.add('inline-flex');
+      }
 
       document.getElementById('header-fridge-name').textContent = fid;
       const subFid = document.getElementById('sub-header-fridge-name');
@@ -6276,13 +6292,25 @@ HTML_CONTENT = r"""<!DOCTYPE html>
       currentFridge = null;
       currentFridgePin = '';
       pinRevealed = true;
-      document.getElementById('auth-logged-in').classList.add('hidden');
-      document.getElementById('auth-logged-out').classList.remove('hidden');
-      document.getElementById('header-breadcrumb').classList.add('hidden');
+      const authIn = document.getElementById('auth-logged-in');
+      if (authIn) {
+        authIn.classList.add('hidden');
+        authIn.classList.remove('flex');
+      }
+      const authOut = document.getElementById('auth-logged-out');
+      if (authOut) authOut.classList.remove('hidden');
+      
+      const headerBc = document.getElementById('header-breadcrumb');
+      if (headerBc) {
+        headerBc.classList.add('hidden');
+        headerBc.style.display = 'none';
+      }
       document.getElementById('header-sync-pill').classList.add('hidden');
       document.getElementById('header-pin-container').classList.add('hidden');
       document.getElementById('header-push-pill').classList.add('hidden');
       document.getElementById('share-fridge-btn').classList.add('hidden');
+      const delFridgeBtn = document.getElementById('delete-fridge-btn');
+      if (delFridgeBtn) delFridgeBtn.classList.add('hidden');
 
       const subBar = document.getElementById('sub-header-bar');
       if (subBar) subBar.classList.add('hidden');
@@ -7505,11 +7533,11 @@ HTML_CONTENT = r"""<!DOCTYPE html>
 
     function switchTab(activeBtn, activeSec) {
       [tabInvBtn, tabUrgentBtn, tabPushBtn, tabRescBtn, tabTestBtn].forEach(b => {
-        b.className = 'tab-btn py-3 px-3 border-b-2 border-transparent text-stone-500 dark:text-stone-400 hover:text-stone-800 dark:hover:text-stone-200 flex items-center gap-2 whitespace-nowrap';
+        b.className = 'tab-btn py-2.5 sm:py-3 px-2.5 sm:px-3 border-b-2 border-transparent text-stone-500 dark:text-stone-400 hover:text-stone-800 dark:hover:text-stone-200 flex items-center gap-1.5 sm:gap-2 whitespace-nowrap shrink-0';
       });
       [secInv, secUrgent, secPush, secResc, secTest].forEach(s => s.classList.add('hidden'));
 
-      activeBtn.className = 'tab-btn py-3 px-3 border-b-2 border-brand-600 text-brand-600 dark:text-brand-400 flex items-center gap-2 whitespace-nowrap font-bold';
+      activeBtn.className = 'tab-btn py-2.5 sm:py-3 px-2.5 sm:px-3 border-b-2 border-brand-600 text-brand-600 dark:text-brand-400 flex items-center gap-1.5 sm:gap-2 whitespace-nowrap shrink-0 font-bold';
       activeSec.classList.remove('hidden');
     }
 
