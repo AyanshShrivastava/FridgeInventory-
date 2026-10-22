@@ -2032,13 +2032,61 @@ PREMADE_ITEMS: Dict[str, Tuple[str, str, str, List[str]]] = {
     "icecream": ("Ice Cream", "आइसक्रीम", "🍦", ["Ice Cream Sundae", "Affogato", "Fried Ice Cream"]),
 }
 
+def clean_recipe_query(raw_query: str) -> str:
+    """Normalizes typos and strips conversational/action prefixes and suffixes from recipe queries."""
+    if not raw_query:
+        return ""
+    s = raw_query.strip()
+    
+    # 1. Normalize repeated characters for common words like 'maaake' -> 'make', 'cooook' -> 'cook'
+    s = re.sub(r"\bm+a+k+e+\b", "make", s, flags=re.I)
+    s = re.sub(r"\bc+o+o+k+\b", "cook", s, flags=re.I)
+    s = re.sub(r"\bc+o+k+\b", "cook", s, flags=re.I)
+    s = re.sub(r"\bp+r+e+p+a+r+e+\b", "prepare", s, flags=re.I)
+    s = re.sub(r"\bb+a+n+a+o+\b", "banao", s, flags=re.I)
+    s = re.sub(r"\bb+a+n+a+y+e+\b", "banaye", s, flags=re.I)
+    s = re.sub(r"\br+e+c+i+p+e+\b", "recipe", s, flags=re.I)
+
+    # 2. Repeatedly strip action and question prefixes
+    prefix_pattern = (
+        r"^(tell\s+me\s+(the\s+)?(recipe\s+(of|for)|how\s+to\s+)|"
+        r"what\s+is\s+(the\s+)?recipe\s+(of|for)\s+|"
+        r"give\s+me\s+(the\s+)?recipe\s+(of|for)\s+|"
+        r"how\s+do\s+(i|you)\s+(make|cook|prepare)\s+|"
+        r"how\s+can\s+(i|you)\s+(make|cook|prepare)\s+|"
+        r"how\s+(to|2)\s+(make|cook|prepare|bake|banao)?\s*|"
+        r"hw\s+(to|2)\s+(make|cook|prepare|bake|banao)?\s*|"
+        r"recipe\s+(of|for)\s+|vidhi\s+(of|for)?\s*|"
+        r"make\s+|cook\s+|prepare\s+|bake\s+|banao\s+|bana\s+|banana\s+|"
+        r"kaise\s+banaye\s+|kaise\s+banta\s+hai\s+|please\s+)+"
+    )
+    
+    prev = ""
+    while prev != s:
+        prev = s
+        s = re.sub(prefix_pattern, "", s, flags=re.I).strip()
+        s = re.sub(r"^(a|an|the|some|fresh|raw|ripe|please)\s+", "", s, flags=re.I).strip()
+
+    # 3. Strip suffixes
+    suffix_pattern = (
+        r"\s+(recipe|ki\s+recipe|kaise\s+banaye|kaise\s+banayein|kaise\s+banate\s+hain|"
+        r"kaise\s+banta\s+hai|banane\s+ki\s+vidhi|banana\s+sikhayein|sikhao|banao|bnao|"
+        r"please|bhai|yaar|ji)$"
+    )
+    prev = ""
+    while prev != s:
+        prev = s
+        s = re.sub(suffix_pattern, "", s, flags=re.I).strip(" ?.,!:")
+
+    return s.strip(" ?.,!:")
+
 def check_premade_food_item(dish_query: str) -> Tuple[bool, str, str, str, List[str]]:
     """Checks if a user's how-to query is for a single raw natural fruit or pre-made grocery item."""
     if not dish_query:
         return False, "", "", "", []
-    s = dish_query.strip().lower()
-    s = re.sub(r'^(a|an|the|some|fresh|raw|ripe|please)\s+', '', s)
-    s = s.strip(" ?.,!:")
+    cleaned = clean_recipe_query(dish_query)
+    s = cleaned.strip().lower()
+    s = re.sub(r'^(a|an|the|some|fresh|raw|ripe|please)\s+', '', s).strip(" ?.,!:")
 
     if s in PREMADE_ITEMS:
         en, hi, icon, sug = PREMADE_ITEMS[s]
@@ -2066,11 +2114,14 @@ You MUST return:
 - is_premade: true
 - recipe_name: "-1"
 - recipe_name_hi: "-1"
-- premade_message: "{dish} is already pre-made!"
-- premade_message_hi: "{dish} पहले से ही तैयार सामग्री है!"
-- steps: ["{dish} is already a natural produce or pre-made item and does not need to be cooked from scratch."]
-- steps_hi: ["{dish} पहले से ही एक प्राकृतिक फल या तैयार सामग्री है जिसे शुरू से पकाने की ज़रूरत नहीं है।"]
-- suggested_recipes: ["{dish} Shake", "{dish} Lassi"]
+- ingredients_used: ["<Proper Item Name, e.g. Mango>"]
+- ingredients_used_hi: ["<Proper Item Name in Hindi, e.g. आम>"]
+- premade_message: "<Proper Item Name> is already pre-made! You don't need to cook or make it from scratch."
+- premade_message_hi: "<Proper Item Name in Hindi> पहले से ही तैयार सामग्री है! इसे शुरू से पकाने की आवश्यकता नहीं है।"
+- steps: ["<Proper Item Name> is already a natural produce or pre-made grocery item and does not need to be cooked from scratch."]
+- steps_hi: ["<Proper Item Name in Hindi> पहले से ही एक प्राकृतिक फल या तैयार सामग्री है जिसे शुरू से पकाने की ज़रूरत नहीं है।"]
+- suggested_recipes: ["<Clean Dish 1 using this item, e.g. Mango Shake>", "<Clean Dish 2 using this item, e.g. Mango Lassi>"]
+IMPORTANT: Always use the clean proper noun of the food item (e.g. 'Mango', 'Milk', 'Cheese') without any verbs or question words like 'make', 'cook', or user typos like 'maake'.
 
 Requirements for Cooked Recipes:
 - recipe_name: Authentic dish name in English (e.g. 'Restaurant-Style Paneer Butter Masala')
@@ -2092,42 +2143,33 @@ Requirements for Cooked Recipes:
 """
 
 def detect_recipe_dish_query(items: List[str]) -> Tuple[bool, str]:
-    """Detects if user is asking how to make a specific recipe (e.g. 'how to make paneer butter masala', 'biryani recipe')."""
+    """Detects if user is asking how to make a specific recipe (e.g. 'how to make paneer butter masala', 'how to maaake mango', 'biryani recipe')."""
     joined = " ".join([str(i).strip() for i in items if str(i).strip()]).strip()
     if not joined:
         return False, ""
+    
+    cleaned = clean_recipe_query(joined)
     joined_clean = joined.lower()
 
-    # Prefixes like 'how to make', 'hw to make', 'how to cook', 'recipe of'
-    prefixes = [
-        "tell me the recipe of", "tell me recipe of", "what is the recipe of",
-        "give me recipe for", "give me recipe of", "tell me how to cook",
-        "tell me how to make", "how do you make", "how can i make",
-        "how do i make", "how to prepare", "hw to prepare", "how to cook",
-        "hw to cook", "how to make", "hw to make", "how 2 make", "hw 2 make",
-        "how to bake", "how to do", "hw to do", "how to", "hw to",
-        "recipe of", "recipe for", "recipe", "vidhi"
-    ]
-    for p in prefixes:
-        if joined_clean.startswith(p):
-            dish = joined[len(p):].strip()
-            dish = re.sub(r'^(a|an|the|please)\s+', '', dish, flags=re.I).strip(" ?.,!:")
-            if dish:
-                return True, dish
+    # Check recipe ask intent from prefixes/suffixes or action words
+    has_recipe_intent = (
+        cleaned.lower() != joined_clean or
+        any(k in joined_clean for k in [
+            "how to", "hw to", "how 2", "hw 2", "make", "cook", "prepare", "bake",
+            "recipe", "vidhi", "banao", "banaye", "kaise", "sikhao"
+        ])
+    )
 
-    # Suffixes like 'recipe', 'kaise banaye', 'banane ki vidhi'
-    suffixes = [
-        "recipe", "ki recipe", "kaise banaye", "kaise banayein", "kaise banate hain",
-        "kaise banta hai", "banane ki vidhi", "banana sikhayein", "sikhao"
-    ]
-    for s in suffixes:
-        if joined_clean.endswith(s):
-            dish = joined[:len(joined) - len(s)].strip()
-            dish = re.sub(r'^(a|an|the|please)\s+', '', dish, flags=re.I).strip(" ?.,!:")
-            if dish:
-                return True, dish
+    # 1. If cleaned query matches any pre-made food item (mango, milk, cheese, apple, etc.)
+    _is_pre, en_p, _, _, _ = check_premade_food_item(cleaned)
+    if _is_pre:
+        return True, en_p
 
-    # Known popular composite dishes asked directly
+    # 2. If user had explicit recipe asking intent and we have a valid dish
+    if has_recipe_intent and cleaned:
+        return True, cleaned
+
+    # 3. Known popular composite dishes asked directly
     known_dishes = [
         "paneer butter masala", "shahi paneer", "kadai paneer", "palak paneer", "matar paneer", "paneer tikka",
         "biryani", "chicken biryani", "veg biryani", "mutton biryani", "pulao", "jeera rice",
@@ -2136,11 +2178,11 @@ def detect_recipe_dish_query(items: List[str]) -> Tuple[bool, str]:
         "kheer", "halwa", "sooji halwa", "gajar halwa", "gulab jamun", "cake", "chocolate cake",
         "masala chai", "tea", "cold coffee", "coffee", "lassi", "mango lassi", "lemonade",
         "aloo paratha", "paratha", "poha", "upma", "dosa", "idli", "pasta", "pizza",
-        "butter chicken", "chicken curry", "egg curry", "fish curry"
+        "butter chicken", "chicken curry", "egg curry", "fish curry", "french fries"
     ]
     for kd in known_dishes:
-        if kd == joined_clean or re.search(rf'\b{re.escape(kd)}\b', joined_clean):
-            return True, joined.strip(" ?.,!:")
+        if kd == cleaned.lower() or re.search(rf'\b{re.escape(kd)}\b', cleaned.lower()):
+            return True, cleaned
 
     return False, ""
 
@@ -2411,6 +2453,9 @@ def generate_rescue_recipe(items: List[str]) -> RescueRecipe:
             target_dish = raw_clean[0]
 
     if is_recipe_ask:
+        # Always clean dish query to eliminate words like 'make', 'maaake', 'cook', 'how to'
+        target_dish = clean_recipe_query(target_dish)
+
         # 0. Instant check if the requested dish is already a pre-made or raw natural produce (e.g. mango, milk, cheese)
         is_pre, en_name, hi_name, icon_char, suggestions = check_premade_food_item(target_dish)
         if is_pre:
@@ -3690,18 +3735,29 @@ def api_classify_photo(payload: PhotoScanRequest, request: Request, fridge: Opti
 
 
 class SpellingCheckRequest(BaseModel):
-    text: str = Field(description="Raw ingredients string, comma or space separated")
+    text: Optional[str] = Field(default=None, description="Raw ingredients string, comma or space separated")
+    items: Optional[Any] = Field(default=None, description="Items array or raw string from frontend")
 
 @app.post("/api/rescue/correct-spelling", summary="Correct spelling errors in ingredient input")
 def api_rescue_correct_spelling(payload: SpellingCheckRequest):
     """Detects and fixes spelling typos in user-entered ingredients."""
-    parts = [p.strip() for p in re.split(r'[,;]+', payload.text) if p.strip()]
+    raw_val = payload.text
+    if not raw_val and payload.items is not None:
+        if isinstance(payload.items, list):
+            raw_val = ", ".join([str(x) for x in payload.items])
+        else:
+            raw_val = str(payload.items)
+    raw_val = raw_val or ""
+    parts = [p.strip() for p in re.split(r'[,;]+', raw_val) if p.strip()]
     corrected, corrections = correct_ingredients_list(parts)
+    corrected_str = ", ".join(corrected)
     return {
         "original": parts,
         "corrected": corrected,
-        "corrected_text": ", ".join(corrected),
+        "corrected_string": corrected_str,
+        "corrected_text": corrected_str,
         "corrections": corrections,
+        "corrections_made": corrections,
         "has_corrections": len(corrections) > 0,
     }
 
@@ -7702,15 +7758,19 @@ HTML_CONTENT = r"""<!DOCTYPE html>
 
       // Check if response is -1 or item is pre-made (e.g. milk, cheese, mango)
       if (recipe.response === -1 || recipe.premade_code === -1 || recipe.is_premade || recipe.recipe_name === '-1') {
-        const ingName = (recipe.ingredients_used && recipe.ingredients_used.length > 0)
+        let rawIng = (recipe.ingredients_used && recipe.ingredients_used.length > 0)
           ? recipe.ingredients_used[0]
           : (recipe.recipe_name && recipe.recipe_name !== '-1' ? recipe.recipe_name.replace(/\s+is already pre-made!?/i, '') : 'This item');
+
+        // Clean out any accidental residual prefixes like 'make', 'maaake', 'how to'
+        rawIng = rawIng.replace(/^(how\s+to\s+|how\s+2\s+|how\s+do\s+i\s+|make\s+|maaake\s+|maake\s+|cook\s+|prepare\s+|banao\s+)+/i, '').trim();
+        const ingName = rawIng ? (rawIng.charAt(0).toUpperCase() + rawIng.slice(1)) : 'This item';
 
         // Log exactly as requested: "<ingredients>, is already pre made"
         console.log(`${ingName}, is already pre made`);
 
         showToast(
-          isHindi ? `${ingName} पहले से ही तैयार सामग्री है!` : `${ingName}, is already pre made`,
+          isHindi ? `${ingName} पहले से ही तैयार सामग्री है!` : `${ingName} is already pre-made!`,
           'info'
         );
 
@@ -7734,7 +7794,7 @@ HTML_CONTENT = r"""<!DOCTYPE html>
           if (iconEl) iconEl.textContent = iconMap[cleanKey] || '🧺';
 
           if (title) {
-            title.textContent = isHindi ? (recipe.recipe_name_hi || `${ingName} पहले से ही तैयार सामग्री है!`) : `${ingName}, is already pre made!`;
+            title.textContent = isHindi ? (recipe.recipe_name_hi || `${ingName} पहले से ही तैयार सामग्री है!`) : `${ingName} is already pre-made!`;
           }
           if (desc) {
             desc.textContent = isHindi 
@@ -7746,15 +7806,17 @@ HTML_CONTENT = r"""<!DOCTYPE html>
             const suggestions = recipe.suggested_recipes || [];
             if (suggestions.length > 0) {
               suggestions.forEach(dish => {
+                // Ensure chip text never has repeated 'make' or 'maake' prefix
+                const cleanDish = dish.replace(/^(how\s+to\s+|make\s+|maaake\s+|maake\s+|cook\s+)+/i, '').trim();
                 const btn = document.createElement('button');
                 btn.type = 'button';
                 btn.className = 'px-3 py-1.5 rounded-xl bg-amber-100 hover:bg-amber-200 dark:bg-amber-900/60 dark:hover:bg-amber-800 text-amber-900 dark:text-amber-100 font-bold text-xs transition active:scale-95 cursor-pointer shadow-2xs flex items-center gap-1.5';
-                btn.innerHTML = `<span>✨</span><span>${dish}</span>`;
+                btn.innerHTML = `<span>✨</span><span>${cleanDish}</span>`;
                 btn.onclick = () => {
                   stopRecipeSpeech();
                   const rescueInput = document.getElementById('rescue-items-input');
-                  if (rescueInput) rescueInput.value = `how to make ${dish}`;
-                  triggerRecipeGeneration([`how to make ${dish}`]);
+                  if (rescueInput) rescueInput.value = `how to make ${cleanDish}`;
+                  triggerRecipeGeneration([`how to make ${cleanDish}`]);
                 };
                 chipsList.appendChild(btn);
               });
