@@ -340,13 +340,9 @@ def normalize_gemini_model_name(name: str) -> str:
         cleaned = f"gemini-{cleaned}"
     return cleaned
 
-_primary_model = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
+_primary_model = os.getenv("GEMINI_MODEL", "gemini-3.5-flash-lite")
 GEMINI_MODELS = list(dict.fromkeys([
     normalize_gemini_model_name(_primary_model),
-    "gemini-2.0-flash",
-    "gemini-1.5-flash",
-    "gemini-2.5-flash",
-    "gemini-2.0-flash-lite",
     "gemini-3.5-flash-lite",
     "gemini-3.5-flash",
     "gemini-3.6-flash-lite",
@@ -475,14 +471,13 @@ except ImportError:
     requests = None  # type: ignore
     HAVE_REQUESTS = False
 
-_primary_openrouter = os.getenv("OPENROUTER_MODEL", "meta-llama/llama-3.3-70b-instruct:free")
+_primary_openrouter = os.getenv("OPENROUTER_MODEL", "nvidia/nemotron-3.5-lightning:free")
 OPENROUTER_TEXT_MODELS = list(dict.fromkeys([
     _primary_openrouter,
-    "meta-llama/llama-3.3-70b-instruct:free",
-    "google/gemini-2.0-flash-exp:free",
-    "mistralai/mistral-small-24b-instruct-2501:free",
-    "deepseek/deepseek-r1:free",
-    "qwen/qwen-2.5-72b-instruct:free",
+    "nvidia/nemotron-3.5-lightning:free",
+    "minimax/minimax-m3.1-flash:free",
+    "poolside/laguna-s-2.1:free",
+    "thinkingmachines/inkling-small:free",
 ]))
 
 OPENROUTER_VISION_MODELS = [
@@ -3553,12 +3548,10 @@ async def api_benchmark_ai_throughput(
         if not api_key:
             return {"configured": False, "status": "error", "error": "OPENROUTER_API_KEY not configured"}
         target_models = [model] if (model and eng == "openrouter") else [
-            "meta-llama/llama-3.2-3b-instruct:free",
-            "meta-llama/llama-3.2-1b-instruct:free",
-            "google/gemma-2-9b-it:free",
-            "mistralai/mistral-7b-instruct:free",
-            "meta-llama/llama-3.3-70b-instruct:free",
-            "google/gemini-2.0-flash-exp:free",
+            "nvidia/nemotron-3.5-lightning:free",
+            "minimax/minimax-m3.1-flash:free",
+            "poolside/laguna-s-2.1:free",
+            "thinkingmachines/inkling-small:free",
         ]
         last_err = None
         headers = {
