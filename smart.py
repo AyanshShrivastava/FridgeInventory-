@@ -3558,21 +3558,31 @@ def api_rescue(payload: RescueRequest):
         )
     return generate_rescue_recipe(payload.items)
 
-
-@app.post("/api/debug/compare-recipes", summary="Benchmark Groq vs Gemini side-by-side with exact timing")
-def api_compare_recipes(payload: RescueRequest):
-    """Directly compares recipe generation between Groq and Gemini with live timing."""
-    items = payload.items or ["paneer", "tomatoes", "capsicum", "milk", "bread"]
-    clean_items, _ = correct_ingredients_list([str(i).strip() for i in items if str(i).strip()])
-    prompt = RESCUE_PROMPT_TEMPLATE.format(ingredients=", ".join(clean_items))
+@app.get("/api/debug/ai-diagnose")
+def api_ai_diagnose():
     results = {}
+    items = ["paneer", "tomatoes", "capsicum", "milk", "bread"]
+    clean_items, _ = correct_ingredients_list(items)
+    prompt = RESCUE_PROMPT_TEMPLATE.format(ingredients=", ".join(clean_items))
 
-    # 1. Test Groq
+    # 1. Groq models & test
     groq_client = get_groq_client()
     if groq_client:
-        start_g = time.time()
-        for g_model in GROQ_TEXT_MODELS:
+        try:
+            m_list = [m.id for m in groq_client.models.list().data]
+            results["groq_available_models"] = m_list
+        except Exception as e:
+            results["groq_available_models"] = f"Error: {e}"
+            m_list = []
+
+        test_groq_models = m_list or GROQ_TEXT_MODELS
+        groq_attempts = {}
+        for g_model in test_groq_models:
+            # Skip whisper/audio models
+            if "whisper" in g_model or "orpheus" in g_model or "guard" in g_model:
+                continue
             try:
+                start_t = time.time()
                 g_chat = groq_client.chat.completions.create(
                     model=g_model,
                     messages=[
@@ -3583,27 +3593,28 @@ def api_compare_recipes(payload: RescueRequest):
                     temperature=0.3,
                 )
                 g_raw = g_chat.choices[0].message.content or ""
-                recipe_g = RescueRecipe.model_validate_json(g_raw)
-                recipe_g.corrected_ingredients = clean_items
-                results["groq"] = {
-                    "ok": True,
-                    "model": g_model,
-                    "elapsed_seconds": round(time.time() - start_g, 2),
-                    "recipe": recipe_g.model_dump()
-                }
+                dur = round(time.time() - start_t, 2)
+                groq_attempts[g_model] = {"ok": True, "elapsed": dur}
+                if "groq_result" not in results:
+                    results["groq_result"] = {
+                        "model": g_model,
+                        "elapsed": dur,
+                        "recipe": json.loads(g_raw)
+                    }
                 break
             except Exception as e:
-                results["groq"] = {"ok": False, "error": str(e), "model": g_model}
+                groq_attempts[g_model] = {"ok": False, "error": str(e)}
+        results["groq_attempts"] = groq_attempts
     else:
-        results["groq"] = {"ok": False, "error": "Groq not configured"}
+        results["groq"] = "Not configured"
 
-    # 2. Test Gemini
-    client = get_gemini_client()
-    if client and types is not None:
-        start_gem = time.time()
+    # 2. Gemini test
+    gemini_client = get_gemini_client()
+    if gemini_client and types is not None:
+        start_t = time.time()
         for model_name in GEMINI_MODELS:
             try:
-                response = client.models.generate_content(
+                response = gemini_client.models.generate_content(
                     model=model_name,
                     contents=prompt,
                     config=types.GenerateContentConfig(
@@ -3613,24 +3624,20 @@ def api_compare_recipes(payload: RescueRequest):
                     ),
                 )
                 raw_text = (response.text or "").strip()
+                dur = round(time.time() - start_t, 2)
                 recipe_gem = RescueRecipe.model_validate_json(raw_text)
-                recipe_gem.corrected_ingredients = clean_items
-                results["gemini"] = {
-                    "ok": True,
+                results["gemini_result"] = {
                     "model": model_name,
-                    "elapsed_seconds": round(time.time() - start_gem, 2),
+                    "elapsed": dur,
                     "recipe": recipe_gem.model_dump()
                 }
                 break
-            except Exception as e:
-                results["gemini"] = {"ok": False, "error": str(e), "model": model_name}
+            except Exception as exc:
+                results["gemini_attempts"] = {model_name: str(exc)}
     else:
-        results["gemini"] = {"ok": False, "error": "Gemini not configured"}
+        results["gemini"] = "Not configured"
 
-    return {
-        "items": clean_items,
-        "results": results
-    }
+    return results
 
 
 @app.get("/api/inventory", response_model=List[InventoryItem], summary="Get All Inventory Items")
