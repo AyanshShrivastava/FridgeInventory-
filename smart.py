@@ -164,7 +164,7 @@ from fastapi import FastAPI, HTTPException, Request, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 import uvicorn
 
 # Firebase Admin SDK
@@ -617,6 +617,20 @@ class RescueRecipe(BaseModel):
     steps_hi: List[str] = Field(default_factory=list, description="Clear, numbered step-by-step cooking instructions in authentic Hindi (Devanagari script)")
     chef_tip: str = Field(default="", description="Pro home chef tip for zero-waste or flavor enhancement in English")
     chef_tip_hi: str = Field(default="", description="Pro home chef tip for zero-waste or flavor enhancement in Hindi ('दादी माँ का नुस्खा')")
+    response: int = Field(default=0, description="-1 if the requested item is pre-made, 0 otherwise")
+    premade_code: int = Field(default=0, description="-1 if the requested item is pre-made")
+    is_premade: bool = Field(default=False, description="True if item is already pre-made or raw natural produce")
+    premade_message: Optional[str] = Field(default="", description="Message explaining that item is already pre-made")
+    premade_message_hi: Optional[str] = Field(default="", description="Hindi message explaining that item is already pre-made")
+    suggested_recipes: List[str] = Field(default_factory=list, description="Suggested recipes that use this pre-made item")
+
+    @model_validator(mode='after')
+    def check_premade_status(self):
+        if self.response == -1 or self.premade_code == -1 or (self.recipe_name and self.recipe_name.strip() == "-1") or self.is_premade:
+            self.response = -1
+            self.premade_code = -1
+            self.is_premade = True
+        return self
 
     @field_validator('steps', 'steps_hi', mode='before')
     @classmethod
@@ -1940,11 +1954,125 @@ def classify_food_photo(
     )
 
 
+
+# ============================================================================
+# PRE-MADE / RAW NATURAL FOOD ITEMS LOOKUP
+# If user asks how to make a single raw produce (mango, apple) or pre-made grocery (milk, cheese),
+# return response=-1 with "<ingredient> is already pre-made!"
+# ============================================================================
+PREMADE_ITEMS: Dict[str, Tuple[str, str, str, List[str]]] = {
+    # Fruits
+    "mango": ("Mango", "आम", "🥭", ["Mango Lassi", "Mango Shake", "Aamras", "Mango Kulfi"]),
+    "aam": ("Mango", "आम", "🥭", ["Mango Lassi", "Mango Shake", "Aamras", "Mango Kulfi"]),
+    "apple": ("Apple", "सेब", "🍎", ["Apple Smoothie", "Apple Pie", "Apple Halwa"]),
+    "seb": ("Apple", "सेब", "🍎", ["Apple Smoothie", "Apple Pie", "Apple Halwa"]),
+    "banana": ("Banana", "केला", "🍌", ["Banana Shake", "Banana Bread", "Banana Smoothie", "Banana Pancakes"]),
+    "kela": ("Banana", "केला", "🍌", ["Banana Shake", "Banana Bread", "Banana Smoothie", "Banana Pancakes"]),
+    "orange": ("Orange", "संतरा", "🍊", ["Fresh Orange Juice", "Orange Cake", "Orange Salad"]),
+    "santra": ("Orange", "संतरा", "🍊", ["Fresh Orange Juice", "Orange Cake", "Orange Salad"]),
+    "grapes": ("Grapes", "अंगूर", "🍇", ["Grape Juice", "Fruit Salad"]),
+    "angoor": ("Grapes", "अंगूर", "🍇", ["Grape Juice", "Fruit Salad"]),
+    "watermelon": ("Watermelon", "तरबूज", "🍉", ["Watermelon Juice", "Watermelon Mint Salad"]),
+    "tarbooj": ("Watermelon", "तरबूज", "🍉", ["Watermelon Juice", "Watermelon Mint Salad"]),
+    "papaya": ("Papaya", "पपीता", "🍈", ["Papaya Shake", "Papaya Salad"]),
+    "papita": ("Papaya", "पपीता", "🍈", ["Papaya Shake", "Papaya Salad"]),
+    "strawberry": ("Strawberry", "स्ट्रॉबेरी", "🍓", ["Strawberry Shake", "Strawberry Smoothie", "Strawberry Jam"]),
+    "pineapple": ("Pineapple", "अनानास", "🍍", ["Pineapple Juice", "Pineapple Raita", "Grilled Pineapple"]),
+    "ananas": ("Pineapple", "अनानास", "🍍", ["Pineapple Juice", "Pineapple Raita", "Grilled Pineapple"]),
+    "guava": ("Guava", "अमरूद", "🍐", ["Guava Chutney", "Guava Juice"]),
+    "amrood": ("Guava", "अमरूद", "🍐", ["Guava Chutney", "Guava Juice"]),
+    "lemon": ("Lemon", "नींबू", "🍋", ["Nimbu Pani (Lemonade)", "Lemon Rice", "Lemon Pickle"]),
+    "lime": ("Lime", "नींबू", "🍋", ["Nimbu Pani (Lemonade)", "Lemon Rice", "Lemon Pickle"]),
+    "nimbu": ("Lemon", "नींबू", "🍋", ["Nimbu Pani (Lemonade)", "Lemon Rice", "Lemon Pickle"]),
+    "pomegranate": ("Pomegranate", "अनार", "🍒", ["Pomegranate Juice", "Fruit Chaat"]),
+    "anar": ("Pomegranate", "अनार", "🍒", ["Pomegranate Juice", "Fruit Chaat"]),
+    "coconut": ("Coconut", "नारियल", "🥥", ["Coconut Chutney", "Coconut Ladoo", "Coconut Rice"]),
+    "nariyal": ("Coconut", "नारियल", "🥥", ["Coconut Chutney", "Coconut Ladoo", "Coconut Rice"]),
+    "kiwi": ("Kiwi", "कीवी", "🥝", ["Kiwi Smoothie", "Kiwi Fruit Salad"]),
+    "avocado": ("Avocado", "एवोकाडो", "🥑", ["Guacamole", "Avocado Toast", "Avocado Salad"]),
+    "pear": ("Pear", "नाशपाती", "🍐", ["Pear Salad", "Poached Pears"]),
+    "peach": ("Peach", "आड़ू", "🍑", ["Peach Iced Tea", "Peach Cobbler"]),
+    "cherry": ("Cherry", "चेरी", "🍒", ["Cherry Pie", "Black Forest Cake"]),
+    "cherries": ("Cherry", "चेरी", "🍒", ["Cherry Pie", "Black Forest Cake"]),
+
+    # Dairy / Store-bought Groceries (as explicitly requested: milk, cheese)
+    "milk": ("Milk", "दूध", "🥛", ["Masala Milk", "Hot Chocolate", "Cold Coffee", "Kheer"]),
+    "doodh": ("Milk", "दूध", "🥛", ["Masala Milk", "Hot Chocolate", "Cold Coffee", "Kheer"]),
+    "cheese": ("Cheese", "चीज़", "🧀", ["Grilled Cheese Toast", "Cheese Garlic Bread", "Mac and Cheese", "Cheese Chilli Toast"]),
+    "curd": ("Curd (Dahi)", "दही", "🥣", ["Masala Chaas", "Sweet Lassi", "Boondi Raita", "Dahi Vada"]),
+    "dahi": ("Curd (Dahi)", "दही", "🥣", ["Masala Chaas", "Sweet Lassi", "Boondi Raita", "Dahi Vada"]),
+    "yogurt": ("Yogurt", "दही / योगर्ट", "🥣", ["Fruit Yogurt Parfait", "Greek Yogurt Smoothie"]),
+    "butter": ("Butter", "मक्खन", "🧈", ["Butter Garlic Naan", "Butter Cookies", "Pav Bhaji"]),
+    "makhan": ("Makhan", "मक्खन", "🧈", ["Makhan Mishri", "Paratha with Makhan"]),
+    "cream": ("Fresh Cream", "मलाई / क्रीम", "🥛", ["Fruit Cream", "Malai Kofta", "Cream Pasta"]),
+    "malai": ("Malai", "मलाई", "🥛", ["Malai Kulfi", "Fruit Cream", "Malai Ghevar"]),
+
+    # Staples & Packaged Snacks
+    "bread": ("Bread", "ब्रेड", "🍞", ["Bread Pakora", "French Toast", "Garlic Bread", "Bread Upma", "Bread Roll"]),
+    "double roti": ("Bread", "ब्रेड", "🍞", ["Bread Pakora", "French Toast", "Garlic Bread"]),
+    "egg": ("Egg", "अंडा", "🥚", ["Masala Omelette", "Egg Curry", "Egg Bhurji", "Egg Fried Rice", "Boiled Egg Salad"]),
+    "eggs": ("Eggs", "अंडे", "🥚", ["Masala Omelette", "Egg Curry", "Egg Bhurji", "Egg Fried Rice"]),
+    "anda": ("Egg", "अंडा", "🥚", ["Masala Omelette", "Egg Curry", "Egg Bhurji", "Egg Fried Rice"]),
+    "ande": ("Eggs", "अंडे", "🥚", ["Masala Omelette", "Egg Curry", "Egg Bhurji", "Egg Fried Rice"]),
+    "water": ("Water", "पानी", "💧", ["Nimbu Pani (Lemonade)", "Jeera Water", "Detox Mint Water"]),
+    "paani": ("Water", "पानी", "💧", ["Nimbu Pani (Lemonade)", "Jeera Water", "Detox Mint Water"]),
+    "salt": ("Salt", "नमक", "🧂", ["Herb Seasoned Salt"]),
+    "namak": ("Salt", "नमक", "🧂", ["Herb Seasoned Salt"]),
+    "sugar": ("Sugar", "चीनी", "🍬", ["Sugar Syrup (Chashni)", "Caramel Sauce"]),
+    "cheeni": ("Sugar", "चीनी", "🍬", ["Sugar Syrup (Chashni)", "Caramel Sauce"]),
+    "chips": ("Potato Chips", "चिप्स", "🥔", ["Loaded Chips Chaat", "Nachos with Dip"]),
+    "lays": ("Lays", "लेज़ चिप्स", "🥔", ["Lays Bhel Chaat", "Crunchy Lays Omelette"]),
+    "biscuit": ("Biscuits", "बिस्कुट", "🍪", ["Biscuit Cake", "Biscuit Pudding"]),
+    "biscuits": ("Biscuits", "बिस्कुट", "🍪", ["Biscuit Cake", "Biscuit Pudding"]),
+    "oreo": ("Oreo", "ओरियो", "🍪", ["Oreo Milkshake", "Oreo Mug Cake", "Oreo Ice Cream"]),
+    "chocolate": ("Chocolate", "चॉकलेट", "🍫", ["Hot Chocolate", "Chocolate Mug Cake", "Chocolate Fudge"]),
+    "coke": ("Coca-Cola", "कोक", "🥤", ["Coke Float (Ice Cream Soda)"]),
+    "pepsi": ("Pepsi", "पेप्सी", "🥤", ["Pepsi Float (Ice Cream Soda)"]),
+    "ice cream": ("Ice Cream", "आइसक्रीम", "🍦", ["Ice Cream Sundae", "Affogato", "Fried Ice Cream"]),
+    "icecream": ("Ice Cream", "आइसक्रीम", "🍦", ["Ice Cream Sundae", "Affogato", "Fried Ice Cream"]),
+}
+
+def check_premade_food_item(dish_query: str) -> Tuple[bool, str, str, str, List[str]]:
+    """Checks if a user's how-to query is for a single raw natural fruit or pre-made grocery item."""
+    if not dish_query:
+        return False, "", "", "", []
+    s = dish_query.strip().lower()
+    s = re.sub(r'^(a|an|the|some|fresh|raw|ripe|please)\s+', '', s)
+    s = s.strip(" ?.,!:")
+
+    if s in PREMADE_ITEMS:
+        en, hi, icon, sug = PREMADE_ITEMS[s]
+        return True, en, hi, icon, sug
+
+    if s.endswith("es") and s[:-2] in PREMADE_ITEMS:
+        en, hi, icon, sug = PREMADE_ITEMS[s[:-2]]
+        return True, en, hi, icon, sug
+
+    if s.endswith("s") and s[:-1] in PREMADE_ITEMS:
+        en, hi, icon, sug = PREMADE_ITEMS[s[:-1]]
+        return True, en, hi, icon, sug
+
+    return False, "", "", "", []
+
 HOWTO_RECIPE_PROMPT_TEMPLATE = """You are an expert master chef and cooking instructor for 'FridgeInventory'.
 A user is asking: "How to make {dish}?".
 Provide an authentic, mouth-watering, homestyle step-by-step recipe to make {dish}.
 
-Requirements:
+CRITICAL PRE-MADE / RAW NATURAL ITEM RULE:
+If {dish} is already a natural raw fruit/vegetable, agricultural produce, or store-bought pre-made grocery item that is not a cooked recipe (e.g. mango, milk, cheese, apple, banana, water, bread, butter, egg, etc.):
+You MUST return:
+- response: -1
+- premade_code: -1
+- is_premade: true
+- recipe_name: "-1"
+- recipe_name_hi: "-1"
+- premade_message: "{dish} is already pre-made!"
+- premade_message_hi: "{dish} पहले से ही तैयार सामग्री है!"
+- steps: ["{dish} is already a natural produce or pre-made item and does not need to be cooked from scratch."]
+- steps_hi: ["{dish} पहले से ही एक प्राकृतिक फल या तैयार सामग्री है जिसे शुरू से पकाने की ज़रूरत नहीं है।"]
+- suggested_recipes: ["{dish} Shake", "{dish} Lassi"]
+
+Requirements for Cooked Recipes:
 - recipe_name: Authentic dish name in English (e.g. 'Restaurant-Style Paneer Butter Masala')
 - recipe_name_hi: In authentic Hindi Devanagari script (e.g. 'शाही पनीर बटर मसाला')
 - meal_type: Dish type in English ('Main Course', 'Street Food Snack', 'Beverage / Drink', 'Traditional Dessert', 'Breakfast Special')
@@ -1970,14 +2098,15 @@ def detect_recipe_dish_query(items: List[str]) -> Tuple[bool, str]:
         return False, ""
     joined_clean = joined.lower()
 
-    # Prefixes like 'how to make', 'how to cook', 'recipe of'
+    # Prefixes like 'how to make', 'hw to make', 'how to cook', 'recipe of'
     prefixes = [
-        "how to make", "how to cook", "how to prepare", "how to bake",
-        "how do i make", "how can i make", "how do you make", "how to do",
-        "tell me how to make", "tell me how to cook", "tell me recipe of",
-        "tell me the recipe of", "recipe of", "recipe for",
-        "give me recipe of", "give me recipe for", "what is the recipe of",
-        "recipe", "vidhi"
+        "tell me the recipe of", "tell me recipe of", "what is the recipe of",
+        "give me recipe for", "give me recipe of", "tell me how to cook",
+        "tell me how to make", "how do you make", "how can i make",
+        "how do i make", "how to prepare", "hw to prepare", "how to cook",
+        "hw to cook", "how to make", "hw to make", "how 2 make", "hw 2 make",
+        "how to bake", "how to do", "hw to do", "how to", "hw to",
+        "recipe of", "recipe for", "recipe", "vidhi"
     ]
     for p in prefixes:
         if joined_clean.startswith(p):
@@ -2274,7 +2403,47 @@ def generate_rescue_recipe(items: List[str]) -> RescueRecipe:
 
     # Check if user is asking how to make a specific recipe / dish!
     is_recipe_ask, target_dish = detect_recipe_dish_query(raw_clean)
+    if not is_recipe_ask and len(raw_clean) == 1:
+        # Check if single item typed in recipe box is pre-made
+        _is_p, _en, _, _, _ = check_premade_food_item(raw_clean[0])
+        if _is_p:
+            is_recipe_ask = True
+            target_dish = raw_clean[0]
+
     if is_recipe_ask:
+        # 0. Instant check if the requested dish is already a pre-made or raw natural produce (e.g. mango, milk, cheese)
+        is_pre, en_name, hi_name, icon_char, suggestions = check_premade_food_item(target_dish)
+        if is_pre:
+            logger.info(f"Target dish '{target_dish}' is pre-made/natural produce ('{en_name}'). Returning response=-1.")
+            return RescueRecipe(
+                response=-1,
+                premade_code=-1,
+                is_premade=True,
+                recipe_name=f"{en_name} is already pre-made!",
+                recipe_name_hi=f"{hi_name} पहले से ही तैयार सामग्री है!",
+                meal_type="Pre-made / Natural Item",
+                meal_type_hi="तैयार / प्राकृतिक खाद्य",
+                prep_time_minutes=0,
+                ingredients_used=[en_name],
+                ingredients_used_hi=[hi_name],
+                pantry_items_needed=[],
+                pantry_items_needed_hi=[],
+                premade_message=f"{en_name} is already pre-made! You don't need to cook or make it from scratch.",
+                premade_message_hi=f"{hi_name} पहले से ही एक प्राकृतिक फल या तैयार सामग्री है! इसे शुरू से पकाने की आवश्यकता नहीं है।",
+                suggested_recipes=suggestions,
+                steps=[
+                    f"'{en_name}' is already pre-made or a natural food item that does not need cooking from scratch.",
+                    f"You can enjoy '{en_name}' fresh and ready to eat/drink!",
+                    f"If you'd like to prepare a delicious recipe USING {en_name}, try: {', '.join(suggestions)}."
+                ],
+                steps_hi=[
+                    f"'{hi_name}' पहले से ही एक प्राकृतिक फल या तैयार सामग्री है।",
+                    f"इसे शुरू से पकाने या बनाने की आवश्यकता नहीं है!",
+                    f"यदि आप {hi_name} से कोई स्वादिष्ट व्यंजन बनाना चाहते हैं, तो पूछें: {', '.join(suggestions)}।"
+                ],
+                chef_tip=f"Enjoy fresh {en_name} as is, or blend it into drinks or desserts!",
+                chef_tip_hi=f"{hi_name} का ताज़ा आनंद लें या इससे शेक, लस्सी या मिठाई बनाएँ!"
+            )
         # 1. Primary: Cascade through ALL Groq models for how-to recipe
         groq_client = get_groq_client()
         if groq_client is not None:
@@ -4550,7 +4719,39 @@ HTML_CONTENT = r"""<!DOCTYPE html>
 
           <!-- RECIPE RESULT CARD -->
           <div id="recipe-container" class="mt-6 hidden space-y-6">
-            <div class="bg-stone-50 dark:bg-stone-800/60 border border-stone-200 dark:border-stone-700 rounded-2xl p-6 relative">
+
+            <!-- PRE-MADE / RAW INGREDIENT NOTICE CARD (SHOWN WHEN RESPONSE = -1) -->
+            <div id="recipe-premade-card" class="hidden p-6 rounded-3xl bg-amber-50/95 dark:bg-amber-950/40 border-2 border-amber-300 dark:border-amber-700/80 shadow-md space-y-4">
+              <div class="flex items-start justify-between gap-3">
+                <div class="flex items-start gap-3.5">
+                  <div class="w-12 h-12 rounded-2xl bg-amber-200 dark:bg-amber-900/80 text-2xl flex items-center justify-center shrink-0 shadow-sm" id="premade-card-icon">
+                    🥭
+                  </div>
+                  <div>
+                    <span class="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-200/80 dark:bg-amber-900/90 text-amber-900 dark:text-amber-200 border border-amber-300 dark:border-amber-700" data-i18n="recipe_premade_tag">Pre-made / Natural Item</span>
+                    <h3 id="premade-item-title" class="font-extrabold text-base sm:text-lg text-amber-950 dark:text-amber-100 mt-1">
+                      Mango is already pre-made!
+                    </h3>
+                    <p id="premade-item-desc" class="text-xs text-stone-600 dark:text-stone-300 mt-1 leading-relaxed">
+                      You don't need to cook or make Mango from scratch — it is already a natural fruit / ready-to-eat grocery item!
+                    </p>
+                  </div>
+                </div>
+                <button type="button" onclick="document.getElementById('recipe-container').classList.add('hidden')" class="w-8 h-8 rounded-full bg-amber-100 dark:bg-amber-900/60 hover:bg-amber-200 dark:hover:bg-amber-800 text-stone-600 dark:text-stone-300 text-xs font-bold flex items-center justify-center transition cursor-pointer" title="Close">✕</button>
+              </div>
+
+              <!-- Suggested Recipes Row -->
+              <div id="premade-suggestions-container" class="pt-3 border-t border-amber-200/80 dark:border-amber-800/60">
+                <div class="text-[11px] font-bold text-stone-700 dark:text-stone-300 mb-2 flex items-center gap-1.5">
+                  <span>💡</span>
+                  <span data-i18n="premade_suggest_hdr">Did you mean a recipe using this item instead? Click to make:</span>
+                </div>
+                <div id="premade-chips-list" class="flex flex-wrap gap-2"></div>
+              </div>
+            </div>
+
+            <!-- STANDARD COOKING RECIPE CARD -->
+            <div id="recipe-standard-card" class="bg-stone-50 dark:bg-stone-800/60 border border-stone-200 dark:border-stone-700 rounded-2xl p-6 relative">
               <div class="flex items-start justify-between gap-3 border-b border-stone-200/60 dark:border-stone-700 pb-4">
                 <div class="min-w-0 flex-1">
                   <div class="flex items-center gap-2 mb-1 flex-wrap">
@@ -5370,6 +5571,8 @@ HTML_CONTENT = r"""<!DOCTYPE html>
         custom_rescue_label: "Ask How to Make Any Recipe or Enter Ingredients to Rescue:",
         close_recipe_btn: "Close Recipe",
         close_scanner_btn: "Close Scanner",
+        recipe_premade_tag: "Pre-made / Natural Item",
+        premade_suggest_hdr: "Did you mean a recipe using this item instead? Click to make:",
         recipe_card_tag: "Zero-Waste Homestyle Recipe",
         rescued_items_hdr: "Rescued Ingredients",
         pantry_items_hdr: "Pantry Spices & Staples",
@@ -5550,6 +5753,8 @@ HTML_CONTENT = r"""<!DOCTYPE html>
         custom_rescue_label: "कोई भी रेसिपी पूछें (जैसे: कैसे बनाएं) या सामग्री दर्ज करें:",
         close_recipe_btn: "रेसिपी बंद करें",
         close_scanner_btn: "स्कैनर बंद करें",
+        recipe_premade_tag: "तैयार / प्राकृतिक खाद्य सामग्री",
+        premade_suggest_hdr: "क्या आप इस सामग्री से कोई डिश बनाना चाहते हैं? देखने के लिए क्लिक करें:",
         recipe_card_tag: "जीरो-वेस्ट होमस्टाइल रेसिपी",
         rescued_items_hdr: "बचाई गई सामग्री",
         pantry_items_hdr: "रसोई के मसाले और आवश्यक सामान",
@@ -7463,6 +7668,84 @@ HTML_CONTENT = r"""<!DOCTYPE html>
       if (!recipe) return;
       latestRecipe = recipe;
       const isHindi = currentLang === 'hi';
+      const recipeContainer = document.getElementById('recipe-container');
+      const standardCard = document.getElementById('recipe-standard-card');
+      const premadeCard = document.getElementById('recipe-premade-card');
+
+      // Check if response is -1 or item is pre-made (e.g. milk, cheese, mango)
+      if (recipe.response === -1 || recipe.premade_code === -1 || recipe.is_premade || recipe.recipe_name === '-1') {
+        const ingName = (recipe.ingredients_used && recipe.ingredients_used.length > 0)
+          ? recipe.ingredients_used[0]
+          : (recipe.recipe_name && recipe.recipe_name !== '-1' ? recipe.recipe_name.replace(/\s+is already pre-made!?/i, '') : 'This item');
+
+        // Log exactly as requested: "<ingredients>, is already pre made"
+        console.log(`${ingName}, is already pre made`);
+
+        showToast(
+          isHindi ? `${ingName} पहले से ही तैयार सामग्री है!` : `${ingName}, is already pre made`,
+          'info'
+        );
+
+        if (standardCard) standardCard.classList.add('hidden');
+        if (premadeCard) {
+          premadeCard.classList.remove('hidden');
+          const title = document.getElementById('premade-item-title');
+          const desc = document.getElementById('premade-item-desc');
+          const iconEl = document.getElementById('premade-card-icon');
+          const chipsList = document.getElementById('premade-chips-list');
+
+          const iconMap = {
+            mango: '🥭', apple: '🍎', banana: '🍌', orange: '🍊', grapes: '🍇',
+            watermelon: '🍉', strawberry: '🍓', pineapple: '🍍', lemon: '🍋',
+            coconut: '🥥', milk: '🥛', cheese: '🧀', curd: '🥣', dahi: '🥣',
+            butter: '🧈', bread: '🍞', egg: '🥚', eggs: '🥚', potato: '🥔',
+            onion: '🧅', tomato: '🍅', water: '💧', chips: '🥔', lays: '🥔',
+            chocolate: '🍫', biscuit: '🍪', icecream: '🍦', coke: '🥤'
+          };
+          const cleanKey = ingName.toLowerCase().trim();
+          if (iconEl) iconEl.textContent = iconMap[cleanKey] || '🧺';
+
+          if (title) {
+            title.textContent = isHindi ? (recipe.recipe_name_hi || `${ingName} पहले से ही तैयार सामग्री है!`) : `${ingName}, is already pre made!`;
+          }
+          if (desc) {
+            desc.textContent = isHindi 
+              ? (recipe.premade_message_hi || `${ingName} एक प्राकृतिक या तैयार किराना सामग्री है जिसे शुरू से पकाने की आवश्यकता नहीं है।`)
+              : (recipe.premade_message || `You don't need to cook ${ingName} from scratch — it is already a natural fruit or ready-to-eat grocery item!`);
+          }
+          if (chipsList) {
+            chipsList.innerHTML = '';
+            const suggestions = recipe.suggested_recipes || [];
+            if (suggestions.length > 0) {
+              suggestions.forEach(dish => {
+                const btn = document.createElement('button');
+                btn.type = 'button';
+                btn.className = 'px-3 py-1.5 rounded-xl bg-amber-100 hover:bg-amber-200 dark:bg-amber-900/60 dark:hover:bg-amber-800 text-amber-900 dark:text-amber-100 font-bold text-xs transition active:scale-95 cursor-pointer shadow-2xs flex items-center gap-1.5';
+                btn.innerHTML = `<span>✨</span><span>${dish}</span>`;
+                btn.onclick = () => {
+                  stopRecipeSpeech();
+                  const rescueInput = document.getElementById('rescue-items-input');
+                  if (rescueInput) rescueInput.value = `how to make ${dish}`;
+                  triggerRecipeGeneration([`how to make ${dish}`]);
+                };
+                chipsList.appendChild(btn);
+              });
+              const suggestCont = document.getElementById('premade-suggestions-container');
+              if (suggestCont) suggestCont.classList.remove('hidden');
+            } else {
+              const suggestCont = document.getElementById('premade-suggestions-container');
+              if (suggestCont) suggestCont.classList.add('hidden');
+            }
+          }
+        }
+
+        if (recipeContainer) recipeContainer.classList.remove('hidden');
+        return;
+      }
+
+      // Standard Cooking Recipe: show standard card, hide premade card
+      if (premadeCard) premadeCard.classList.add('hidden');
+      if (standardCard) standardCard.classList.remove('hidden');
 
       // Title & Subtitle based on active language
       const titleEl = document.getElementById('recipe-name');
