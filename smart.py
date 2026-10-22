@@ -1520,18 +1520,20 @@ def classify_food(phrase: str) -> ClassifyResponse:
             analyzed_by="Food Knowledge Base",
         )
 
-    # If item is not in verified database and Gemini failed: request manual confirmation
+    # If item is not in verified database and all 3 AI models failed:
+    # Do NOT guess false categories or provide wrong information! Return clear error.
     return ClassifyResponse(
-        is_food=True,
-        name_en=clean_phrase.title(),
-        name_hi=clean_phrase,
-        category="cooked_dish",
+        is_food=False,
+        name_en="",
+        name_hi="",
+        category="not_food",
         shelf_life_days=None,
-        requires_expiry_date=True,
-        storage_tip="Store refrigerated in a clean container.",
-        message=f"'{clean_phrase.title()}' requires shelf-life confirmation.",
-        message_hi=f"'{clean_phrase}' के लिए शेल्फ-लाइफ की पुष्टि आवश्यक है।",
-        analyzed_by="Manual Confirmation Required",
+        requires_expiry_date=False,
+        storage_tip="",
+        message=f"All AI services (Groq, Gemini, OpenRouter) are unreachable. Could not safely identify '{clean_phrase}'. Please check connection or enter item manually.",
+        message_hi=f"सभी AI मॉडल (Groq, Gemini, OpenRouter) अनुपलब्ध हैं। '{clean_phrase}' की पहचान नहीं हो सकी। कृपया मैन्युअल रूप से जोड़ें।",
+        analyzed_by="All AI Models Unreachable",
+        scanner_failed=True,
         manual_confirmation_required=True,
     )
 
@@ -2290,8 +2292,13 @@ def generate_rescue_recipe(items: List[str]) -> RescueRecipe:
                 except Exception as e:
                     logger.warning(f"OpenRouter recipe parse error: {e}")
 
-        # 3. Final Fallback: Authentic homestyle preset database
-        return get_dish_recipe_fallback(target_dish)
+        # 3. If all 3 AI models (Groq, Gemini, OpenRouter) fail:
+        # Strictly raise an error instead of fabricating wrong or inaccurate recipes!
+        logger.error(f"All AI models (Groq, Gemini, OpenRouter) failed for dish query: '{target_dish}'")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"All AI recipe services (Groq, Gemini, OpenRouter) are currently unreachable. Cannot generate recipe for '{target_dish}'. Please try again in a moment."
+        )
 
     # 1. Automatic culinary spelling and typo correction
     clean_items, corrections = correct_ingredients_list(raw_clean)
@@ -2365,147 +2372,12 @@ def generate_rescue_recipe(items: List[str]) -> RescueRecipe:
                 return recipe
             except Exception as e:
                 logger.warning(f"OpenRouter leftover recipe parse error: {e}")
-
-    # 3. Intelligent Culinary Fallback (Supports Drink + Food Combos)
-    drink_kw = {"milk", "chocolate", "cocoa", "curd", "dahi", "yogurt", "shake", "smoothie",
-                "juice", "lemon", "nimbu", "mint", "pudina", "roohafza", "orange", "mango",
-                "coffee", "tea", "chai", "lassi", "buttermilk", "chaas", "soda", "syrup", "honey"}
-    savory_kw = {"bread", "cheese", "peri peri", "chilli", "paneer", "potato", "onion", "tomato",
-                 "capsicum", "chicken", "egg", "rice", "dal", "spinach", "palak", "garlic", "ginger",
-                 "chips", "snack", "masala", "curry", "paratha", "roti", "flour", "atta", "butter"}
-
-    drink_items = [it for it in clean_items if any(k in it.lower() for k in drink_kw)]
-    savory_items = [it for it in clean_items if any(k in it.lower() for k in savory_kw)]
-
-    # Case A: Food & Drink Combo (e.g. milk, chocolate, bread, cheese, peri-peri)
-    if drink_items and savory_items:
-        savory_title = " & ".join(savory_items[:2])
-        drink_title = " & ".join(drink_items[:2])
-        return RescueRecipe(
-            recipe_name=f"Zero-Waste Combo: Toasted {savory_title} & Chilled {drink_title} Shake",
-            recipe_name_hi=f"जीरो-वेस्ट कॉम्बो: क्रिस्पी {savory_title} टोस्ट और ठंडा {drink_title} शेक",
-            meal_type="Food & Drink Combo",
-            meal_type_hi="भोजन और पेय कॉम्बो",
-            pairing_notes="To avoid clashing savory seasonings with sweet cocoa or milk, these ingredients are crafted into a café-style hot melt and cold beverage pairing.",
-            pairing_notes_hi="मीठी और नमकीन चीज़ों का बेहतरीन स्वाद संतुलन बनाए रखने के लिए, इन्हें एक गरमा-गरम क्रिस्पी टोस्ट और ठंडे रिफ्रेशिंग शेक के कॉम्बो में तैयार किया गया है।",
-            prep_time_minutes=15,
-            ingredients_used=clean_items,
-            ingredients_used_hi=clean_items,
-            corrected_ingredients=clean_items,
-            pantry_items_needed=[
-                "1 tbsp Butter or Cooking Oil",
-                "1/2 tsp Cumin or Mixed Herbs",
-                "Pinch of Salt & Black Pepper",
-                "1 tsp Sugar or Honey (for drink)",
-                "Ice cubes",
-            ],
-            pantry_items_needed_hi=[
-                "1 बड़ा चम्मच मक्खन या कुकिंग ऑयल",
-                "1/2 छोटा चम्मच भुना जीरा या मिक्स्ड हर्ब्स",
-                "एक चुटकी नमक और काली मिर्च पाउडर",
-                "1 चम्मच चीनी या शहद (ड्रिंक के लिए)",
-                "बर्फ के टुकड़े (Ice cubes)",
-            ],
-            steps=[
-                f"Savory Course: Place {', '.join(savory_items)} between bread slices or onto a pan with butter and seasoning.",
-                "Toast over medium heat on a tawa until golden, crispy, and cheese is smoothly melted.",
-                f"Beverage: In a blender or shaker bottle, combine {', '.join(drink_items)} with ice and a touch of sweetener.",
-                "Blend or shake vigorously for 30 seconds until frothy and chilled.",
-                "Serve the piping hot savory sandwich immediately alongside the refreshing chilled drink for a satisfying zero-waste meal!",
-            ],
-            steps_hi=[
-                f"नमकीन व्यंजन: ब्रेड स्लाइस के बीच में {', '.join(savory_items)} रखें और ऊपर से थोड़ा मक्खन व पसंदीदा मसाला लगाएं।",
-                "तवे पर मध्यम आंच पर दोनों तरफ से तब तक सेकें जब तक कि टोस्ट सुनहरा, क्रिस्पी न हो जाए और चीज़ पिघल न जाए।",
-                f"ठंडा पेय: मिक्सर जार या शेकर में {', '.join(drink_items)}, बर्फ के टुकड़े और स्वादानुसार थोड़ा शहद या चीनी डालें।",
-                "30 सेकंड तक तेज़ी से ब्लेंड करें जब तक कि ऊपर बढ़िया झाग और गाढ़ा ठंडा शेक न बन जाए।",
-                "गरमा-गरम क्रिस्पी टोस्ट को तुरंत ठंडे ताज़ा शेक के साथ परोसें और ज़ीरो-वेस्ट स्वादिष्ट नाश्ते का आनंद लें!",
-            ],
-            chef_tip="Pairing a spicy or savory toasted snack with a cold creamy milkshake or fruit drink balances the palate and utilizes both sweet and savory fridge perishables!",
-            chef_tip_hi="तीखे या नमकीन स्नैक के साथ ठंडा क्रीमी शेक स्वाद का बेहतरीन संतुलन बनाता है और फ्रिज में रखी दोनों तरह की सामग्रियों की पूरी बर्बादी रोकता है!",
-        )
-
-    # Case B: Beverage Only
-    if drink_items and not savory_items:
-        primary_drink = drink_items[0]
-        return RescueRecipe(
-            recipe_name=f"Refreshing Homestyle {primary_drink} Cooler / Shake",
-            recipe_name_hi=f"ताज़ा होमस्टाइल {primary_drink} शेक",
-            meal_type="Beverage / Drink",
-            meal_type_hi="ताज़ा पेय / शेक",
-            pairing_notes="Perishable drink bases blended into a nutritious, refreshing homemade beverage.",
-            pairing_notes_hi="फ्रिज में रखे जल्दी खराब होने वाले पेय पदार्थों से बना ताज़ा और पौष्टिक होमस्टाइल शेक।",
-            prep_time_minutes=10,
-            ingredients_used=clean_items,
-            ingredients_used_hi=clean_items,
-            corrected_ingredients=clean_items,
-            pantry_items_needed=["1-2 tsp Honey or Sugar", "Pinch of Cardamom / Cinnamon", "Ice cubes"],
-            pantry_items_needed_hi=["1-2 चम्मच शहद या चीनी", "एक चुटकी इलायची या दालचीनी पाउडर", "बर्फ के टुकड़े"],
-            steps=[
-                f"Wash and measure the beverage ingredients ({', '.join(clean_items)}).",
-                "Add to a blender with ice cubes and a dash of cardamom or honey to taste.",
-                "Blend on high for 45 seconds until silky smooth and frothy.",
-                "Pour into tall glasses and serve chilled.",
-            ],
-            steps_hi=[
-                f"पेय सामग्री ({', '.join(clean_items)}) को अच्छी तरह नापकर मिक्सर जार में डालें।",
-                "जार में बर्फ के टुकड़े, एक चुटकी इलायची पाउडर और स्वादानुसार शहद या चीनी मिलाएँ।",
-                "तेज़ गति पर 45 सेकंड तक अच्छी तरह ब्लेंड करें जब तक कि शेक एकदम स्मूथ और झागदार न हो जाए।",
-                "ठंडे गिलासों में डालें, ऊपर से थोड़ी सी इलायची छिड़कें और तुरंत ठंडा-ठंडा परोसें।",
-            ],
-            chef_tip="Add a pinch of roasted cinnamon or cardamom powder to elevate dairy drinks and bring out natural sweetness!",
-            chef_tip_hi="दूध या फल वाले शेक में एक चुटकी भुनी हुई इलायची या दालचीनी पाउडर डालने से प्राकृतिक खुशबू और मिठास कई गुना बढ़ जाती है!",
-        )
-
-    # Case C: Homestyle Savory Dish / Masala Stir-Fry
-    primary = clean_items[0].title()
-    all_items_str = ", ".join(clean_items)
-    return RescueRecipe(
-        recipe_name=f"Homestyle Kitchen Masala Bhurji / Stir-Fry ({primary})",
-        recipe_name_hi=f"झटपट मसाला {primary} भुर्जी",
-        meal_type="Homestyle Meal",
-        meal_type_hi="घर का स्वादिष्ट भोजन",
-        pairing_notes="Perishable ingredients harmoniously sautéed with everyday Indian spices.",
-        pairing_notes_hi="फ्रिज में बची हुई सामग्री को रोज़मर्रा के भारतीय मसालों के साथ मिलाकर बनाई गई स्वादिष्ट झटपट सब्ज़ी।",
-        prep_time_minutes=20,
-        ingredients_used=clean_items,
-        ingredients_used_hi=clean_items,
-        corrected_ingredients=clean_items,
-        pantry_items_needed=[
-            "1-2 tbsp Cooking Mustard or Sunflower Oil",
-            "1/2 tsp Cumin seeds (Jeera)",
-            "1/4 tsp Turmeric powder (Haldi)",
-            "1/2 tsp Red chilli powder (Lal Mirch)",
-            "1/2 tsp Coriander powder (Dhaniya)",
-            "Salt to taste",
-            "1 green chilli & fresh coriander leaves (finely chopped)",
-        ],
-        pantry_items_needed_hi=[
-            "1-2 बड़े चम्मच सरसों या रिफाइंड तेल",
-            "1/2 छोटा चम्मच साबुत जीरा",
-            "1/4 छोटा चम्मच हल्दी पाउडर",
-            "1/2 छोटा चम्मच लाल मिर्च पाउडर",
-            "1/2 छोटा चम्मच धनिया पाउडर",
-            "स्वादानुसार नमक",
-            "1 बारीक कटी हरी मिर्च और ताज़ा हरा धनिया",
-        ],
-        steps=[
-            f"Thoroughly inspect and wash the expiring ingredients ({all_items_str}). Cut into uniform small pieces.",
-            "Heat 1.5 tablespoons of oil in a kadai or pan over medium flame. Add cumin seeds and let them crackle.",
-            f"Add any firm vegetables or {primary} first and sauté for 4-5 minutes until tender.",
-            "Lower the heat and add turmeric powder, red chilli powder, coriander powder, and salt. Toss well so spices coat the ingredients evenly.",
-            "Add softer ingredients (such as paneer, boiled potatoes, greens, or cooked rice) and cook for another 2-3 minutes.",
-            "Turn off the heat, garnish with fresh chopped coriander and a squeeze of fresh lemon juice. Serve hot with rotis, parathas, or toast.",
-        ],
-        steps_hi=[
-            f"फ्रिज के सामान ({all_items_str}) को अच्छी तरह धोकर एकसमान छोटे टुकड़ों में काट लें।",
-            "कड़ाही या पैन में 1.5 बड़े चम्मच तेल मध्यम आंच पर गर्म करें। जीरा डालें और चटकने दें।",
-            f"पहले सख्त सब्ज़ियों या {primary} को डालें और 4-5 मिनट तक नरम होने तक भूनें।",
-            "आंच धीमी करें और हल्दी, लाल मिर्च, धनिया पाउडर व नमक डालकर अच्छी तरह मिलाएँ ताकि मसाला लिपट जाए।",
-            "अब बाकी नरम सामग्री (जैसे पनीर, उबले आलू, हरी पत्तियाँ या पके चावल) डालें और 2-3 मिनट तक भूनें।",
-            "गैस बंद करें, ऊपर से ताज़ा हरा धनिया और थोड़ा सा नींबू का रस निचोड़ें। गरमा-गरम रोटी, पराठे या टोस्ट के साथ परोसें!",
-        ],
-        chef_tip="To revive vegetables that have lost their crispness, soak them in chilled water for 10 minutes before chopping. A pinch of amchur (dry mango powder) or chaat masala balances flavors beautifully!",
-        chef_tip_hi="मुरझाई हुई सब्ज़ियों को काटने से पहले 10 मिनट ठंडे पानी में भिगोकर रखें, वे एकदम ताज़ा हो जाएँगी। अंत में थोड़ा अमचूर या चाट मसाला डालने से स्वाद लाजवाब हो जाता है!",
+    # 3. If all 3 AI models (Groq, Gemini, OpenRouter) fail:
+    # Strictly raise an error instead of fabricating wrong or inaccurate recipes!
+    logger.error("All AI models (Groq, Gemini, OpenRouter) failed to generate zero-waste recipe.")
+    raise HTTPException(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        detail="All AI recipe services (Groq, Gemini, OpenRouter) are currently unreachable. Cannot generate recipe for these ingredients. Please try again in a moment."
     )
 
 
@@ -3257,9 +3129,9 @@ def health_check():
         "gemini_configured": gemini_ready,
         "openrouter_configured": openrouter_ready,
         "ai_engine_routing": {
-            "fridge_command_bar": "Groq LPU (Primary) -> Gemini AI (Fallback 1) -> OpenRouter (Fallback 2) -> Local DB (Safety Net)",
-            "food_scanner_vision": "Gemini Vision (Primary) -> Groq Vision (Fallback 1) -> OpenRouter Vision (Fallback 2) -> Manual / Local",
-            "rescue_recipe_chef": "Groq LPU (Primary) -> Gemini AI (Fallback 1) -> OpenRouter (Fallback 2) -> Preset Master Chef",
+            "fridge_command_bar": "Groq LPU (Primary) -> Gemini AI (Fallback 1) -> OpenRouter (Fallback 2) -> Verified Local DB -> Error Alert",
+            "food_scanner_vision": "Gemini Vision (Primary) -> Groq Vision (Fallback 1) -> OpenRouter Vision (Fallback 2) -> Unrecognized Alert (No Guessing)",
+            "rescue_recipe_chef": "Groq LPU (Primary) -> Gemini AI (Fallback 1) -> OpenRouter (Fallback 2) -> Error 503 (No Fabricated Recipes)",
         },
         "firebase_configured": db is not None,
         "firestore_status": "connected" if db is not None else db_err,
