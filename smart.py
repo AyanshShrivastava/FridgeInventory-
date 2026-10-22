@@ -2696,6 +2696,7 @@ def api_process_command(payload: CommandRequest, request: Request, fridge: Optio
             return {
                 "action": "removed_multi",
                 "removed": [{"id": it.id, "name_en": it.name_en, "name_hi": it.name_hi} for it in removed_items],
+                "removed_ids": [it.id for it in removed_items],
                 "not_found": not_found_items,
                 "message_en": f"{verb_en} {len(removed_items)} item(s): {names_en}.{not_found_msg_en}",
                 "message_hi": f"{len(removed_items)} सामान {verb_hi}: {names_hi}।{not_found_msg_hi}",
@@ -2864,6 +2865,60 @@ def api_auth_me(request: Request):
     }
 
 
+def ensure_demo_fridge_exists(db, fid="SharmaKitchen", pin="Secret123"):
+    """Auto-provisions the demo fridge SharmaKitchen with sample groceries so the 1-click Demo pill always works flawlessly."""
+    try:
+        salt = secrets.token_hex(16)
+        phash = hash_pin(pin, salt)
+        if db is not None:
+            f_ref = db.collection("fridges").document(fid)
+            f_doc = f_ref.get()
+            if not f_doc.exists:
+                f_ref.set({
+                    "pin_hash": phash,
+                    "pin_salt": salt,
+                    "created_at": datetime.now(timezone.utc).isoformat(),
+                    "timezone": "Asia/Kolkata",
+                    "is_demo": True
+                })
+                sample_items = [
+                    {"name_en": "Fresh Milk", "name_hi": "ताज़ा दूध", "category": "dairy", "days_left": 2, "shelf_life_days": 3, "storage_tip": "Keep in coldest fridge shelf"},
+                    {"name_en": "Paneer", "name_hi": "पनीर", "category": "dairy", "days_left": 1, "shelf_life_days": 3, "storage_tip": "Store submerged in clean water"},
+                    {"name_en": "Spinach (Palak)", "name_hi": "पालक", "category": "vegetable", "days_left": 1, "shelf_life_days": 3, "storage_tip": "Wrap in paper towel"},
+                    {"name_en": "Tomatoes", "name_hi": "टमाटर", "category": "vegetable", "days_left": 5, "shelf_life_days": 7, "storage_tip": "Keep dry at eye level"},
+                    {"name_en": "Brown Bread", "name_hi": "ब्राउन ब्रेड", "category": "snack_bakery", "days_left": 3, "shelf_life_days": 5, "storage_tip": "Seal airtight to avoid drying"},
+                    {"name_en": "Cooked Dal", "name_hi": "पकी दाल", "category": "cooked_dish", "days_left": 0, "shelf_life_days": 2, "storage_tip": "Reheat thoroughly before serving"}
+                ]
+                now_dt = datetime.now(timezone.utc)
+                for s in sample_items:
+                    s_id = str(uuid.uuid4())
+                    s_added = (now_dt - timedelta(days=s["shelf_life_days"] - s["days_left"])).strftime("%Y-%m-%d")
+                    s_expiry = (now_dt + timedelta(days=s["days_left"])).strftime("%Y-%m-%d")
+                    f_ref.collection("inventory").document(s_id).set({
+                        "id": s_id,
+                        "name_en": s["name_en"],
+                        "name_hi": s["name_hi"],
+                        "category": s["category"],
+                        "added_date": s_added,
+                        "expiry_date": s_expiry,
+                        "days_left": s["days_left"],
+                        "days_elapsed": s["shelf_life_days"] - s["days_left"],
+                        "shelf_life_days": s["shelf_life_days"],
+                        "storage_tip": s["storage_tip"],
+                        "source": "demo"
+                    })
+        else:
+            if fid not in _IN_MEMORY_FRIDGES:
+                _IN_MEMORY_FRIDGES[fid] = {
+                    "pin_hash": phash,
+                    "pin_salt": salt,
+                    "created_at": datetime.now(timezone.utc).isoformat(),
+                    "timezone": "Asia/Kolkata",
+                    "inventory": []
+                }
+    except Exception as e:
+        logger.warning(f"Could not auto-provision demo fridge: {e}")
+
 @app.post("/api/auth/login", summary="Login to existing family fridge")
 def api_auth_login(payload: AuthLoginRequest, request: Request, response: Response):
     """Authenticate with Fridge ID and PIN; sets 30-day cryptographically signed cookie."""
@@ -2885,6 +2940,9 @@ def api_auth_login(payload: AuthLoginRequest, request: Request, response: Respon
 
     db, _ = init_firestore()
     authenticated = False
+
+    if fid.lower() in ("sharmakitchen", "demo") and pin == "Secret123":
+        ensure_demo_fridge_exists(db, fid, pin)
 
     if db is not None:
         try:
@@ -3514,17 +3572,18 @@ HTML_CONTENT = r"""<!DOCTYPE html>
   <link rel="icon" type="image/x-icon" href="/favicon.ico?v=3">
   <!-- Tailwind CSS CDN -->
   <script src="https://cdn.tailwindcss.com"></script>
-  <!-- Google Fonts: Inter, Poppins, Noto Sans Devanagari -->
+  <!-- Google Fonts: Lively Cartoon Baloo 2, Fredoka, Noto Sans Devanagari, JetBrains Mono -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Noto+Sans+Devanagari:wght@400;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@400;500;600;700;800&family=Fredoka:wght@400;500;600;700&family=Noto+Sans+Devanagari:wght@400;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
   <script>
     tailwind.config = {
       darkMode: 'class',
       theme: {
         extend: {
           fontFamily: {
-            sans: ['Inter', 'Noto Sans Devanagari', 'sans-serif'],
+            sans: ['Baloo 2', 'Fredoka', 'Noto Sans Devanagari', 'system-ui', 'sans-serif'],
+            cartoon: ['Fredoka', 'Baloo 2', 'cursive', 'sans-serif'],
             mono: ['JetBrains Mono', 'monospace'],
           },
           colors: {
@@ -3566,6 +3625,48 @@ HTML_CONTENT = r"""<!DOCTYPE html>
     }
   </script>
   <style>
+    body {
+      font-family: 'Baloo 2', 'Fredoka', 'Noto Sans Devanagari', system-ui, -apple-system, sans-serif;
+      letter-spacing: 0.01em;
+    }
+    .font-cartoon {
+      font-family: 'Fredoka', 'Baloo 2', cursive, sans-serif;
+    }
+    @keyframes floatSticker {
+      0%, 100% { transform: translateY(0px) rotate(0deg); }
+      50% { transform: translateY(-7px) rotate(4deg); }
+    }
+    @keyframes floatStickerRev {
+      0%, 100% { transform: translateY(0px) rotate(0deg); }
+      50% { transform: translateY(7px) rotate(-4deg); }
+    }
+    .animate-float-sticker {
+      animation: floatSticker 3.2s ease-in-out infinite;
+    }
+    .animate-float-sticker-rev {
+      animation: floatStickerRev 3.8s ease-in-out infinite;
+    }
+    @keyframes toastBounceIn {
+      0% {
+        transform: translateX(110%) scale(0.9);
+        opacity: 0;
+      }
+      65% {
+        transform: translateX(-4%) scale(1.02);
+        opacity: 1;
+      }
+      100% {
+        transform: translateX(0) scale(1);
+        opacity: 1;
+      }
+    }
+    .toast-bounce-in {
+      animation: toastBounceIn 0.35s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+    }
+    @keyframes toastTimerBar {
+      from { width: 100%; }
+      to { width: 0%; }
+    }
     select option {
       background-color: #1c1917;
       color: #f5f5f4;
@@ -3788,54 +3889,209 @@ HTML_CONTENT = r"""<!DOCTYPE html>
   <!-- MAIN CONTAINER -->
   <main class="flex-grow max-w-6xl w-full mx-auto px-4 py-5 space-y-6">
 
-    <!-- LOGGED OUT WELCOME BUBBLE / CARD (SHOWN WHEN NOT LOGGED IN) -->
-    <div id="logged-out-bubble" class="max-w-2xl mx-auto my-6 sm:my-10 p-7 sm:p-10 bg-white dark:bg-stone-900 rounded-3xl border border-stone-200/90 dark:border-stone-800 shadow-xl text-center space-y-6 transition-all">
-      <img src="/static/icons/icon-192.png?v=3" alt="FridgeInventory" class="w-16 h-16 rounded-2xl shadow-md mx-auto object-contain">
+    <!-- LIVELY CARTOON KITCHEN LOGIN & WELCOME CARD (SHOWN WHEN NOT LOGGED IN) -->
+    <div id="logged-out-bubble" class="max-w-2xl mx-auto my-4 sm:my-8 p-6 sm:p-9 bg-white/95 dark:bg-stone-900/95 backdrop-blur-md rounded-3xl border-2 border-amber-300/80 dark:border-amber-900/50 shadow-2xl space-y-6 transition-all relative overflow-hidden">
+      <!-- Decorative Cartoon Ambient Blobs -->
+      <div class="absolute -top-12 -right-12 w-36 h-36 bg-amber-400/15 dark:bg-amber-500/15 rounded-full blur-2xl pointer-events-none"></div>
+      <div class="absolute -bottom-12 -left-12 w-36 h-36 bg-emerald-400/15 dark:bg-emerald-500/15 rounded-full blur-2xl pointer-events-none"></div>
 
-      <div>
+      <!-- Mascot & Cheerful Floating Badges Header -->
+      <div class="text-center relative">
+        <div class="relative inline-block mb-2.5">
+          <!-- Floating Cartoon Food Badges -->
+          <span class="absolute -top-2 -left-7 sm:-left-9 text-2xl sm:text-3xl animate-float-sticker select-none" title="Avocado">🥑</span>
+          <span class="absolute -top-3 -right-7 sm:-right-9 text-2xl sm:text-3xl animate-float-sticker-rev select-none" title="Cheese">🧀</span>
+          <span class="absolute -bottom-1 -left-8 sm:-left-10 text-xl sm:text-2xl animate-float-sticker-rev select-none" title="Milk">🥛</span>
+          <span class="absolute -bottom-1 -right-8 sm:-right-10 text-xl sm:text-2xl animate-float-sticker select-none" title="Tomato">🍅</span>
+
+          <!-- Main App Mascot Icon with Cartoon Ring -->
+          <div class="relative p-1.5 rounded-3xl bg-gradient-to-tr from-amber-400 via-orange-400 to-amber-500 shadow-xl ring-4 ring-amber-300/50 dark:ring-amber-500/30">
+            <img src="/static/icons/icon-192.png?v=3" alt="FridgeInventory" class="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl shadow-inner object-contain bg-white dark:bg-stone-800">
+            <span class="absolute -bottom-1 -right-1 px-2 py-0.5 rounded-full bg-emerald-500 text-white text-[10px] font-extrabold shadow ring-2 ring-white dark:ring-stone-900">AI</span>
+          </div>
+        </div>
+
+        <div class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-100/90 dark:bg-amber-950/70 border border-amber-300/70 dark:border-amber-700/60 text-amber-800 dark:text-amber-300 text-xs font-bold mb-2">
+          <span>✨</span>
+          <span>Smart Household Rasoi & Kitchen</span>
+          <span>✨</span>
+        </div>
+
         <h2 class="text-2xl sm:text-3xl font-extrabold tracking-tight text-stone-900 dark:text-white" data-i18n="bubble_title">
           Welcome to FridgeInventory
         </h2>
-        <p class="text-xs sm:text-sm text-stone-600 dark:text-stone-300 mt-2 max-w-lg mx-auto leading-relaxed" data-i18n="bubble_desc">
+        <p class="text-xs sm:text-sm text-stone-600 dark:text-stone-300 mt-1.5 max-w-lg mx-auto leading-relaxed" data-i18n="bubble_desc">
           Your smart household kitchen companion for effortless inventory tracking, offline push alerts, and AI-powered zero-waste cooking.
         </p>
       </div>
 
+      <!-- Quick 1-Click Demo Login Pill -->
+      <div class="bg-gradient-to-r from-amber-50 via-orange-50 to-amber-50 dark:from-stone-800/90 dark:via-amber-950/40 dark:to-stone-800/90 p-3 sm:p-3.5 rounded-2xl border-2 border-amber-200/90 dark:border-amber-800/60 flex flex-col sm:flex-row items-center justify-between gap-3 text-center sm:text-left shadow-sm">
+        <div class="flex items-center gap-2.5">
+          <div class="w-8 h-8 rounded-xl bg-amber-500 text-white flex items-center justify-center font-bold text-base shadow-sm shrink-0">⚡</div>
+          <div class="min-w-0">
+            <div class="text-xs font-bold text-stone-900 dark:text-white flex items-center gap-1.5 flex-wrap justify-center sm:justify-start">
+              <span>Quick Demo:</span>
+              <span class="font-mono px-1.5 py-0.5 rounded bg-white dark:bg-stone-900 border border-amber-200 dark:border-amber-800 text-amber-700 dark:text-amber-300">SharmaKitchen</span>
+              <span class="text-[11px] text-stone-500 dark:text-stone-400">(PIN: Secret123)</span>
+            </div>
+            <div class="text-[11px] text-stone-500 dark:text-stone-400">Click to instantly explore with live sample groceries!</div>
+          </div>
+        </div>
+        <button type="button" id="quick-demo-login-btn" class="w-full sm:w-auto px-4 py-2 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white font-extrabold text-xs shadow-md transition-all transform active:scale-95 shrink-0 cursor-pointer flex items-center justify-center gap-1.5">
+          <span>🚀 Explore Demo</span>
+        </button>
+      </div>
+
+      <!-- Interactive Cartoon Kitchen Login Box Directly on Page -->
+      <div class="bg-stone-50/90 dark:bg-stone-800/80 p-5 sm:p-6 rounded-2xl border-2 border-stone-200/90 dark:border-stone-700/80 shadow-sm text-left">
+        <!-- Tab Switcher -->
+        <div class="flex p-1 rounded-xl bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-700 mb-4 text-xs font-bold">
+          <button type="button" id="hero-tab-login" class="flex-1 py-2 px-3 rounded-lg bg-amber-500 text-white shadow-sm transition-all text-center flex items-center justify-center gap-1.5 cursor-pointer">
+            <span>🔑</span>
+            <span data-i18n="auth_login_tab">Login to Fridge</span>
+          </button>
+          <button type="button" id="hero-tab-create" class="flex-1 py-2 px-3 rounded-lg text-stone-500 dark:text-stone-400 hover:text-stone-800 dark:hover:text-stone-200 transition-all text-center flex items-center justify-center gap-1.5 cursor-pointer">
+            <span>✨</span>
+            <span data-i18n="auth_create_tab">Create New Fridge</span>
+          </button>
+        </div>
+
+        <!-- Inline Login Form -->
+        <form id="hero-login-form" class="space-y-3.5">
+          <div>
+            <div class="flex items-center justify-between mb-1">
+              <label class="block text-xs font-bold text-stone-800 dark:text-stone-200 flex items-center gap-1">
+                <span>🏷️</span>
+                <span data-i18n="auth_fid_label">Fridge Name / ID:</span>
+              </label>
+              <span class="text-[10px] text-amber-700 dark:text-amber-400 font-bold px-1.5 py-0.2 rounded bg-amber-100/70 dark:bg-amber-950/60" data-i18n="auth_case_sensitive">Case-Sensitive</span>
+            </div>
+            <input 
+              type="text" 
+              id="hero-login-fid" 
+              placeholder="e.g. SharmaKitchen (letters/numbers)" 
+              pattern="[a-zA-Z0-9]{3,30}"
+              class="w-full px-4 py-2.5 rounded-xl border-2 border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-900 text-sm font-semibold focus:outline-none focus:border-amber-500 font-mono transition-all"
+              required
+            />
+          </div>
+          <div>
+            <div class="flex items-center justify-between mb-1">
+              <label class="block text-xs font-bold text-stone-800 dark:text-stone-200 flex items-center gap-1">
+                <span>🔒</span>
+                <span data-i18n="auth_pin_label">Family PIN:</span>
+              </label>
+              <span class="text-[10px] text-amber-700 dark:text-amber-400 font-bold px-1.5 py-0.2 rounded bg-amber-100/70 dark:bg-amber-950/60" data-i18n="auth_case_sensitive">Case-Sensitive</span>
+            </div>
+            <div class="relative">
+              <input 
+                type="password" 
+                id="hero-login-pin" 
+                placeholder="Enter PIN (e.g. Secret123)" 
+                pattern="[a-zA-Z0-9]{4,30}"
+                class="w-full pl-4 pr-11 py-2.5 rounded-xl border-2 border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-900 text-sm font-semibold focus:outline-none focus:border-amber-500 font-mono transition-all"
+                required
+              />
+              <button 
+                type="button" 
+                id="toggle-hero-login-pin-btn" 
+                tabindex="-1"
+                class="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-lg text-stone-400 hover:text-amber-600 dark:hover:text-amber-400 transition cursor-pointer select-none"
+                title="Show / Hide PIN"
+              >
+                <svg class="w-4 h-4 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
+              </button>
+            </div>
+          </div>
+          <button type="submit" id="hero-login-submit-btn" class="w-full py-3 rounded-xl bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 hover:from-amber-600 hover:to-orange-600 text-white font-extrabold text-sm shadow-lg hover:shadow-orange-500/20 active:translate-y-0.5 active:shadow-sm transition-all flex items-center justify-center gap-2 cursor-pointer">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1"></path></svg>
+            <span data-i18n="auth_login_submit">Open Fridge 🍱</span>
+          </button>
+        </form>
+
+        <!-- Inline Create Form -->
+        <form id="hero-create-form" class="space-y-3.5 hidden">
+          <div>
+            <div class="flex items-center justify-between mb-1">
+              <label class="block text-xs font-bold text-stone-800 dark:text-stone-200 flex items-center gap-1">
+                <span>🏠</span>
+                <span data-i18n="auth_create_fid_label">Choose Fridge Name / ID:</span>
+              </label>
+              <span class="text-[10px] text-emerald-700 dark:text-emerald-400 font-bold px-1.5 py-0.2 rounded bg-emerald-100/70 dark:bg-emerald-950/60" data-i18n="auth_letters_numbers">Letters & Numbers</span>
+            </div>
+            <input 
+              type="text" 
+              id="hero-create-fid" 
+              placeholder="e.g. SharmaKitchen or MyFridge (3-30 chars)" 
+              pattern="[a-zA-Z0-9]{3,30}"
+              class="w-full px-4 py-2.5 rounded-xl border-2 border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-900 text-sm font-semibold focus:outline-none focus:border-emerald-500 font-mono transition-all"
+              required
+            />
+          </div>
+          <div>
+            <div class="flex items-center justify-between mb-1">
+              <label class="block text-xs font-bold text-stone-800 dark:text-stone-200 flex items-center gap-1">
+                <span>🔑</span>
+                <span data-i18n="auth_create_pin_label">Set Family PIN:</span>
+              </label>
+              <span class="text-[10px] text-emerald-700 dark:text-emerald-400 font-bold px-1.5 py-0.2 rounded bg-emerald-100/70 dark:bg-emerald-950/60" data-i18n="auth_min_chars">Min 4 Chars</span>
+            </div>
+            <div class="relative">
+              <input 
+                type="password" 
+                id="hero-create-pin" 
+                placeholder="e.g. SecretPin42" 
+                pattern="[a-zA-Z0-9]{4,30}"
+                class="w-full pl-4 pr-11 py-2.5 rounded-xl border-2 border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-900 text-sm font-semibold focus:outline-none focus:border-emerald-500 font-mono transition-all"
+                required
+              />
+              <button 
+                type="button" 
+                id="toggle-hero-create-pin-btn" 
+                tabindex="-1"
+                class="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-lg text-stone-400 hover:text-emerald-600 dark:hover:text-emerald-400 transition cursor-pointer select-none"
+                title="Show / Hide PIN"
+              >
+                <svg class="w-4 h-4 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
+              </button>
+            </div>
+          </div>
+          <button type="submit" id="hero-create-submit-btn" class="w-full py-3 rounded-xl bg-gradient-to-r from-emerald-500 via-teal-500 to-emerald-600 hover:from-emerald-600 hover:to-teal-600 text-white font-extrabold text-sm shadow-lg hover:shadow-emerald-500/20 active:translate-y-0.5 active:shadow-sm transition-all flex items-center justify-center gap-2 cursor-pointer">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
+            <span data-i18n="auth_create_submit">Create & Save Fridge 🌟</span>
+          </button>
+        </form>
+
+        <div class="mt-3.5 pt-3 border-t border-stone-200/80 dark:border-stone-700/80 flex items-center justify-center gap-1.5 text-[11px] text-stone-500 dark:text-stone-400 text-center">
+          <span>🔒</span>
+          <span>No email or password recovery needed. Your family PIN keeps your fridge secure & private.</span>
+        </div>
+      </div>
+
       <!-- Feature Highlight Cards -->
       <div class="grid grid-cols-1 sm:grid-cols-3 gap-3.5 text-left pt-1">
-        <div class="p-4 rounded-2xl bg-stone-50 dark:bg-stone-800/60 border border-stone-200/70 dark:border-stone-700/60">
-          <div class="w-8 h-8 rounded-xl bg-brand-100 dark:bg-stone-800 text-brand-700 dark:text-brand-300 flex items-center justify-center mb-2.5">
-            <svg class="w-4.5 h-4.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"></path></svg>
+        <div class="p-4 rounded-2xl bg-amber-50/70 dark:bg-stone-800/60 border border-amber-200/70 dark:border-stone-700/60 hover:scale-[1.02] transition-transform">
+          <div class="w-9 h-9 rounded-xl bg-amber-100 dark:bg-stone-800 text-amber-700 dark:text-amber-300 flex items-center justify-center mb-2.5 text-lg shadow-sm">
+            🥑
           </div>
           <h3 class="font-bold text-xs sm:text-sm text-stone-900 dark:text-white" data-i18n="feat_track_title">Smart Food Tracking</h3>
           <p class="text-xs text-stone-500 dark:text-stone-400 mt-1" data-i18n="feat_track_desc">Keep real-time tabs on fresh produce, dairy, groceries, and cooked meals.</p>
         </div>
-        <div class="p-4 rounded-2xl bg-stone-50 dark:bg-stone-800/60 border border-stone-200/70 dark:border-stone-700/60">
-          <div class="w-8 h-8 rounded-xl bg-indigo-100 dark:bg-stone-800 text-indigo-700 dark:text-indigo-300 flex items-center justify-center mb-2.5">
-            <svg class="w-4.5 h-4.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"></path></svg>
+        <div class="p-4 rounded-2xl bg-indigo-50/70 dark:bg-stone-800/60 border border-indigo-200/70 dark:border-stone-700/60 hover:scale-[1.02] transition-transform">
+          <div class="w-9 h-9 rounded-xl bg-indigo-100 dark:bg-stone-800 text-indigo-700 dark:text-indigo-300 flex items-center justify-center mb-2.5 text-lg shadow-sm">
+            🔔
           </div>
           <h3 class="font-bold text-xs sm:text-sm text-stone-900 dark:text-white" data-i18n="feat_expiry_title">Offline Push Alerts</h3>
           <p class="text-xs text-stone-500 dark:text-stone-400 mt-1" data-i18n="feat_expiry_desc">Background Service Worker alerts you before food expires, even when offline.</p>
         </div>
-        <div class="p-4 rounded-2xl bg-stone-50 dark:bg-stone-800/60 border border-stone-200/70 dark:border-stone-700/60">
-          <div class="w-8 h-8 rounded-xl bg-emerald-100 dark:bg-stone-800 text-emerald-700 dark:text-emerald-300 flex items-center justify-center mb-2.5">
-            <svg class="w-4.5 h-4.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+        <div class="p-4 rounded-2xl bg-emerald-50/70 dark:bg-stone-800/60 border border-emerald-200/70 dark:border-stone-700/60 hover:scale-[1.02] transition-transform">
+          <div class="w-9 h-9 rounded-xl bg-emerald-100 dark:bg-stone-800 text-emerald-700 dark:text-emerald-300 flex items-center justify-center mb-2.5 text-lg shadow-sm">
+            🧑‍🍳
           </div>
           <h3 class="font-bold text-xs sm:text-sm text-stone-900 dark:text-white" data-i18n="feat_ai_title">AI Rescue Chef</h3>
           <p class="text-xs text-stone-500 dark:text-stone-400 mt-1" data-i18n="feat_ai_desc">Turn expiring ingredients into homestyle recipes with one click.</p>
         </div>
-      </div>
-
-      <!-- Call to Action Buttons -->
-      <div class="pt-2 flex flex-col sm:flex-row items-center justify-center gap-3">
-        <button id="bubble-login-btn" class="w-full sm:w-auto px-7 py-3 rounded-2xl bg-brand-600 hover:bg-brand-700 text-white font-bold text-sm shadow-md transition-all transform active:scale-95 flex items-center justify-center gap-2">
-          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1"></path></svg>
-          <span data-i18n="bubble_login_btn">Login to Fridge</span>
-        </button>
-        <button id="bubble-create-btn" class="w-full sm:w-auto px-7 py-3 rounded-2xl border border-stone-300 dark:border-stone-700 hover:bg-stone-100 dark:hover:bg-stone-800 text-stone-800 dark:text-stone-200 font-bold text-sm transition-all transform active:scale-95 flex items-center justify-center gap-2">
-          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
-          <span data-i18n="bubble_create_btn">Create a New Fridge</span>
-        </button>
       </div>
     </div>
 
@@ -4483,20 +4739,44 @@ HTML_CONTENT = r"""<!DOCTYPE html>
 
   </main>
 
-  <!-- FRIDGE AUTH MODAL -->
-  <div id="auth-modal" class="fixed inset-0 bg-stone-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
-    <div class="bg-white dark:bg-stone-900 rounded-3xl max-w-md w-full p-6 shadow-2xl border border-stone-100 dark:border-stone-800 text-stone-800 dark:text-stone-100">
-      <div class="flex items-center justify-between border-b border-stone-100 dark:border-stone-800 pb-3">
-        <h3 class="font-bold text-base" data-i18n="auth_modal_title">Fridge Login & Setup</h3>
-        <button id="close-auth-modal-btn" class="text-stone-400 hover:text-stone-600 text-xl font-bold">&times;</button>
+  <!-- LIVELY CARTOON AUTH MODAL -->
+  <div id="auth-modal" class="fixed inset-0 bg-stone-900/60 backdrop-blur-md z-50 flex items-center justify-center p-4 hidden">
+    <div class="bg-white/95 dark:bg-stone-900/95 rounded-3xl max-w-md w-full p-6 sm:p-7 shadow-2xl border-2 border-amber-300/80 dark:border-amber-900/50 text-stone-800 dark:text-stone-100 relative overflow-hidden">
+      <!-- Decorative Cartoon Blobs -->
+      <div class="absolute -top-10 -right-10 w-28 h-28 bg-amber-400/20 dark:bg-amber-500/15 rounded-full blur-xl pointer-events-none"></div>
+
+      <div class="flex items-center justify-between border-b border-stone-200/80 dark:border-stone-800 pb-3.5">
+        <div class="flex items-center gap-2.5">
+          <div class="w-9 h-9 rounded-2xl bg-gradient-to-tr from-amber-400 to-orange-500 flex items-center justify-center text-lg shadow-sm">🍱</div>
+          <div>
+            <h3 class="font-extrabold text-base leading-tight" data-i18n="auth_modal_title">Fridge Login & Setup</h3>
+            <p class="text-[11px] text-stone-500 dark:text-stone-400">Manage your family inventory</p>
+          </div>
+        </div>
+        <button id="close-auth-modal-btn" class="w-8 h-8 rounded-full bg-stone-100 dark:bg-stone-800 hover:bg-stone-200 dark:hover:bg-stone-700 text-stone-500 dark:text-stone-300 text-lg font-bold flex items-center justify-center transition cursor-pointer">&times;</button>
       </div>
 
-      <div class="flex border-b border-stone-100 dark:border-stone-800 mt-4 text-xs font-bold">
-        <button id="auth-tab-login" class="flex-1 py-2 text-brand-600 dark:text-brand-400 border-b-2 border-brand-600 text-center" data-i18n="auth_login_tab">
-          Login to Fridge
+      <!-- Quick Demo Pill inside Modal -->
+      <div class="mt-3.5 bg-gradient-to-r from-amber-50 via-orange-50 to-amber-50 dark:from-stone-800 dark:via-amber-950/30 dark:to-stone-800 p-2.5 rounded-xl border border-amber-200/80 dark:border-amber-800/60 flex items-center justify-between gap-2">
+        <div class="text-[11px] font-bold text-stone-800 dark:text-stone-200 flex items-center gap-1.5 flex-wrap">
+          <span>⚡ Demo:</span> 
+          <span class="font-mono text-amber-700 dark:text-amber-400 bg-white dark:bg-stone-900 px-1 py-0.5 rounded border border-amber-200/60 dark:border-amber-800/60">SharmaKitchen</span>
+          <span class="text-stone-400">(Secret123)</span>
+        </div>
+        <button type="button" id="modal-quick-demo-btn" class="px-2.5 py-1 rounded-lg bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white font-extrabold text-[10px] shadow-sm transition active:scale-95 cursor-pointer shrink-0">
+          Fill Demo
         </button>
-        <button id="auth-tab-create" class="flex-1 py-2 text-stone-400 hover:text-stone-600 dark:hover:text-stone-200 border-b-2 border-transparent text-center" data-i18n="auth_create_tab">
-          Create New Fridge
+      </div>
+
+      <!-- Tab Switcher -->
+      <div class="flex p-1 rounded-xl bg-stone-100 dark:bg-stone-800/80 border border-stone-200 dark:border-stone-700 mt-3 text-xs font-bold">
+        <button id="auth-tab-login" class="flex-1 py-2 px-3 rounded-lg bg-amber-500 text-white shadow-sm transition-all text-center flex items-center justify-center gap-1.5 cursor-pointer">
+          <span>🔑</span>
+          <span data-i18n="auth_login_tab">Login to Fridge</span>
+        </button>
+        <button id="auth-tab-create" class="flex-1 py-2 px-3 rounded-lg text-stone-500 dark:text-stone-400 hover:text-stone-800 dark:hover:text-stone-200 transition-all text-center flex items-center justify-center gap-1.5 cursor-pointer">
+          <span>✨</span>
+          <span data-i18n="auth_create_tab">Create New Fridge</span>
         </button>
       </div>
 
@@ -4504,23 +4784,29 @@ HTML_CONTENT = r"""<!DOCTYPE html>
       <form id="login-form" class="mt-4 space-y-3.5">
         <div>
           <div class="flex items-center justify-between mb-1">
-            <label class="block text-xs font-semibold" data-i18n="auth_fid_label">Fridge ID:</label>
-            <span class="text-[10px] text-amber-600 dark:text-amber-400 font-semibold px-1.5 py-0.5 rounded bg-amber-50 dark:bg-amber-950/60 border border-amber-200/60 dark:border-amber-800/60" data-i18n="auth_case_sensitive">Case-Sensitive</span>
+            <label class="block text-xs font-bold flex items-center gap-1" data-i18n="auth_fid_label">
+              <span>🏷️</span>
+              <span>Fridge ID:</span>
+            </label>
+            <span class="text-[10px] text-amber-700 dark:text-amber-400 font-bold px-1.5 py-0.2 rounded bg-amber-100/70 dark:bg-amber-950/60" data-i18n="auth_case_sensitive">Case-Sensitive</span>
           </div>
           <input 
             type="text" 
             id="login-fid" 
-            placeholder="e.g. SharmaKitchen or test (3-30 letters/numbers)" 
+            placeholder="e.g. SharmaKitchen or test" 
             pattern="[a-zA-Z0-9]{3,30}"
-            class="w-full px-4 py-2.5 rounded-xl border border-stone-200 dark:border-stone-700 bg-stone-50 dark:bg-stone-800 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 font-mono"
+            class="w-full px-4 py-2.5 rounded-xl border-2 border-stone-200 dark:border-stone-700 bg-stone-50 dark:bg-stone-800 text-sm font-semibold focus:outline-none focus:border-amber-500 font-mono transition-all"
             required
           />
           <div class="text-[10px] text-stone-400 dark:text-stone-500 mt-1" data-i18n="auth_login_fid_hint">Letters (a-z, A-Z) and numbers (0-9) only. No symbols or spaces.</div>
         </div>
         <div>
           <div class="flex items-center justify-between mb-1">
-            <label class="block text-xs font-semibold" data-i18n="auth_pin_label">Family PIN / Password:</label>
-            <span class="text-[10px] text-amber-600 dark:text-amber-400 font-semibold px-1.5 py-0.5 rounded bg-amber-50 dark:bg-amber-950/60 border border-amber-200/60 dark:border-amber-800/60" data-i18n="auth_case_sensitive">Case-Sensitive</span>
+            <label class="block text-xs font-bold flex items-center gap-1" data-i18n="auth_pin_label">
+              <span>🔒</span>
+              <span>Family PIN:</span>
+            </label>
+            <span class="text-[10px] text-amber-700 dark:text-amber-400 font-bold px-1.5 py-0.2 rounded bg-amber-100/70 dark:bg-amber-950/60" data-i18n="auth_case_sensitive">Case-Sensitive</span>
           </div>
           <div class="relative">
             <input 
@@ -4528,24 +4814,23 @@ HTML_CONTENT = r"""<!DOCTYPE html>
               id="login-pin" 
               placeholder="Enter fridge PIN (e.g. Secret123)..." 
               pattern="[a-zA-Z0-9]{4,30}"
-              class="w-full pl-4 pr-10 py-2.5 rounded-xl border border-stone-200 dark:border-stone-700 bg-stone-50 dark:bg-stone-800 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 font-mono"
+              class="w-full pl-4 pr-11 py-2.5 rounded-xl border-2 border-stone-200 dark:border-stone-700 bg-stone-50 dark:bg-stone-800 text-sm font-semibold focus:outline-none focus:border-amber-500 font-mono transition-all"
               required
             />
             <button 
               type="button" 
               id="toggle-login-pin-btn" 
               tabindex="-1"
-              class="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-lg text-stone-400 hover:text-stone-600 dark:hover:text-stone-200 hover:bg-stone-100 dark:hover:bg-stone-700 transition cursor-pointer select-none"
+              class="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-lg text-stone-400 hover:text-amber-600 dark:hover:text-amber-400 transition cursor-pointer select-none"
               title="Show / Hide PIN"
-              aria-label="Toggle password visibility"
             >
               <svg class="w-4 h-4 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
             </button>
           </div>
           <div class="text-[10px] text-stone-400 dark:text-stone-500 mt-1" data-i18n="auth_login_pin_hint">Letters and numbers only. Exact casing verified.</div>
         </div>
-        <button type="submit" class="w-full py-2.5 bg-brand-600 hover:bg-brand-700 text-white font-semibold rounded-xl text-sm shadow transition" data-i18n="auth_login_submit">
-          Open Fridge
+        <button type="submit" class="w-full py-3 bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 hover:from-amber-600 hover:to-orange-600 text-white font-extrabold rounded-xl text-sm shadow-lg hover:shadow-orange-500/20 active:translate-y-0.5 active:shadow-sm transition-all flex items-center justify-center gap-2 cursor-pointer" data-i18n="auth_login_submit">
+          <span>Open Fridge 🍱</span>
         </button>
       </form>
 
@@ -4553,23 +4838,29 @@ HTML_CONTENT = r"""<!DOCTYPE html>
       <form id="create-form" class="mt-4 space-y-3.5 hidden">
         <div>
           <div class="flex items-center justify-between mb-1">
-            <label class="block text-xs font-semibold" data-i18n="auth_create_fid_label">Choose Fridge ID:</label>
-            <span class="text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold px-1.5 py-0.5 rounded bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200/60 dark:border-emerald-800/60" data-i18n="auth_letters_numbers">Letters & Numbers</span>
+            <label class="block text-xs font-bold flex items-center gap-1" data-i18n="auth_create_fid_label">
+              <span>🏠</span>
+              <span>Choose Fridge ID:</span>
+            </label>
+            <span class="text-[10px] text-emerald-700 dark:text-emerald-400 font-bold px-1.5 py-0.2 rounded bg-emerald-100/70 dark:bg-emerald-950/60" data-i18n="auth_letters_numbers">Letters & Numbers</span>
           </div>
           <input 
             type="text" 
             id="create-fid" 
-            placeholder="e.g. SharmaKitchen or MyFridge24 (3-30 chars)" 
+            placeholder="e.g. SharmaKitchen or MyFridge24" 
             pattern="[a-zA-Z0-9]{3,30}"
-            class="w-full px-4 py-2.5 rounded-xl border border-stone-200 dark:border-stone-700 bg-stone-50 dark:bg-stone-800 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 font-mono"
+            class="w-full px-4 py-2.5 rounded-xl border-2 border-stone-200 dark:border-stone-700 bg-stone-50 dark:bg-stone-800 text-sm font-semibold focus:outline-none focus:border-emerald-500 font-mono transition-all"
             required
           />
           <div class="text-[10px] text-stone-400 dark:text-stone-500 mt-1" data-i18n="auth_create_fid_hint">Case-sensitive: saved exactly as typed. Allowed: a-z, A-Z, 0-9.</div>
         </div>
         <div>
           <div class="flex items-center justify-between mb-1">
-            <label class="block text-xs font-semibold" data-i18n="auth_create_pin_label">Set Family PIN / Password:</label>
-            <span class="text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold px-1.5 py-0.5 rounded bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200/60 dark:border-emerald-800/60" data-i18n="auth_min_chars">Min 4 Alphanumeric</span>
+            <label class="block text-xs font-bold flex items-center gap-1" data-i18n="auth_create_pin_label">
+              <span>🔑</span>
+              <span>Set Family PIN:</span>
+            </label>
+            <span class="text-[10px] text-emerald-700 dark:text-emerald-400 font-bold px-1.5 py-0.2 rounded bg-emerald-100/70 dark:bg-emerald-950/60" data-i18n="auth_min_chars">Min 4 Alphanumeric</span>
           </div>
           <div class="relative">
             <input 
@@ -4577,24 +4868,23 @@ HTML_CONTENT = r"""<!DOCTYPE html>
               id="create-pin" 
               placeholder="e.g. SecretPin42 (letters & numbers only)" 
               pattern="[a-zA-Z0-9]{4,30}"
-              class="w-full pl-4 pr-10 py-2.5 rounded-xl border border-stone-200 dark:border-stone-700 bg-stone-50 dark:bg-stone-800 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 font-mono"
+              class="w-full pl-4 pr-11 py-2.5 rounded-xl border-2 border-stone-200 dark:border-stone-700 bg-stone-50 dark:bg-stone-800 text-sm font-semibold focus:outline-none focus:border-emerald-500 font-mono transition-all"
               required
             />
             <button 
               type="button" 
               id="toggle-create-pin-btn" 
               tabindex="-1"
-              class="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-lg text-stone-400 hover:text-stone-600 dark:hover:text-stone-200 hover:bg-stone-100 dark:hover:bg-stone-700 transition cursor-pointer select-none"
+              class="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-lg text-stone-400 hover:text-emerald-600 dark:hover:text-emerald-400 transition cursor-pointer select-none"
               title="Show / Hide PIN"
-              aria-label="Toggle password visibility"
             >
               <svg class="w-4 h-4 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
             </button>
           </div>
           <div class="text-[10px] text-stone-400 dark:text-stone-500 mt-1" data-i18n="auth_create_pin_hint">Letters (a-z, A-Z) and numbers (0-9) only. Strictly case-sensitive.</div>
         </div>
-        <button type="submit" class="w-full py-2.5 bg-leaf-600 hover:bg-leaf-700 text-white font-semibold rounded-xl text-sm shadow transition" data-i18n="auth_create_submit">
-          Create & Save Fridge
+        <button type="submit" class="w-full py-3 bg-gradient-to-r from-emerald-500 via-teal-500 to-emerald-600 hover:from-emerald-600 hover:to-teal-600 text-white font-extrabold rounded-xl text-sm shadow-lg hover:shadow-emerald-500/20 active:translate-y-0.5 active:shadow-sm transition-all flex items-center justify-center gap-2 cursor-pointer" data-i18n="auth_create_submit">
+          <span>Create & Save Fridge 🌟</span>
         </button>
       </form>
     </div>
@@ -4926,7 +5216,7 @@ HTML_CONTENT = r"""<!DOCTYPE html>
   </div>
 
   <!-- TOAST NOTIFICATION CONTAINER -->
-  <div id="toast-container" class="fixed bottom-4 right-4 z-50 flex flex-col gap-2 pointer-events-none"></div>
+  <div id="toast-container" class="fixed top-4 right-4 sm:top-5 sm:right-6 z-[100000] flex flex-col gap-2.5 pointer-events-none max-w-sm w-[calc(100vw-2rem)] sm:w-auto"></div>
 
   <!-- JAVASCRIPT APPLICATION LOGIC -->
   <script>
@@ -5584,21 +5874,66 @@ HTML_CONTENT = r"""<!DOCTYPE html>
 
     document.getElementById('theme-toggle-btn').addEventListener('click', toggleTheme);
 
-    // Toast Notifications (Bilingual English & Hindi)
+    // Lively Cartoon Toast Notifications (Bilingual English & Hindi with animated badges & progress timer)
     function showToast(message, type = 'info', messageHi = null) {
       const finalMsg = (currentLang === 'hi' && messageHi) ? messageHi : message;
-      const el = document.createElement('div');
-      el.className = `pointer-events-auto px-4 py-2.5 rounded-xl shadow-lg text-xs font-semibold flex items-center gap-2 transition-all transform translate-y-2 opacity-0 ${
-        type === 'success' ? 'bg-leaf-600 text-white' :
-        type === 'error' ? 'bg-rose-600 text-white' :
-        type === 'warning' ? 'bg-brand-600 text-white' : 'bg-stone-800 text-white'
-      }`;
-      el.textContent = finalMsg;
-      document.getElementById('toast-container').appendChild(el);
-      requestAnimationFrame(() => el.classList.remove('translate-y-2', 'opacity-0'));
+      const container = document.getElementById('toast-container');
+      if (!container) return;
+
+      const toast = document.createElement('div');
+      toast.className = 'pointer-events-auto toast-bounce-in w-full sm:max-w-md p-3.5 sm:p-4 rounded-2xl shadow-2xl border-2 flex items-start gap-3 backdrop-blur-md transition-all relative overflow-hidden select-none ' + (
+        type === 'success' 
+          ? 'bg-emerald-50/95 dark:bg-stone-900/95 border-emerald-400/90 text-emerald-950 dark:text-emerald-100'
+          : type === 'error'
+          ? 'bg-rose-50/95 dark:bg-stone-900/95 border-rose-400/90 text-rose-950 dark:text-rose-100'
+          : type === 'warning'
+          ? 'bg-amber-50/95 dark:bg-stone-900/95 border-amber-400/90 text-amber-950 dark:text-amber-100'
+          : 'bg-stone-50/95 dark:bg-stone-900/95 border-indigo-300 dark:border-indigo-700 text-stone-900 dark:text-stone-100'
+      );
+
+      const iconBadge = (
+        type === 'success'
+          ? '<div class="w-8 h-8 rounded-xl bg-emerald-500 text-white flex items-center justify-center font-bold text-sm shadow-sm shrink-0">✓</div>'
+          : type === 'error'
+          ? '<div class="w-8 h-8 rounded-xl bg-rose-500 text-white flex items-center justify-center font-bold text-sm shadow-sm shrink-0">✕</div>'
+          : type === 'warning'
+          ? '<div class="w-8 h-8 rounded-xl bg-amber-500 text-white flex items-center justify-center font-bold text-sm shadow-sm shrink-0">⚠️</div>'
+          : '<div class="w-8 h-8 rounded-xl bg-indigo-500 text-white flex items-center justify-center font-bold text-sm shadow-sm shrink-0">✨</div>'
+      );
+
+      const titleText = (
+        type === 'success' ? (currentLang === 'hi' ? 'सफल!' : 'Success!') :
+        type === 'error' ? (currentLang === 'hi' ? 'सूचना / त्रुटि' : 'Alert / Notice') :
+        type === 'warning' ? (currentLang === 'hi' ? 'ध्यान दें' : 'Heads Up') :
+        (currentLang === 'hi' ? 'जानकारी' : 'Info')
+      );
+
+      const progressColor = (
+        type === 'success' ? 'bg-emerald-500' :
+        type === 'error' ? 'bg-rose-500' :
+        type === 'warning' ? 'bg-amber-500' : 'bg-indigo-500'
+      );
+
+      toast.innerHTML = `
+        ${iconBadge}
+        <div class="flex-1 min-w-0 pr-2">
+          <div class="text-[10px] sm:text-[11px] font-extrabold uppercase tracking-wider opacity-75">${titleText}</div>
+          <div class="text-xs sm:text-sm font-bold leading-snug mt-0.5 break-words">${finalMsg}</div>
+        </div>
+        <button type="button" class="text-stone-400 hover:text-stone-700 dark:hover:text-stone-200 text-lg font-bold p-0.5 cursor-pointer leading-none" onclick="this.closest('.toast-bounce-in').remove()">&times;</button>
+        <div class="absolute bottom-0 left-0 right-0 h-1 bg-stone-200/50 dark:bg-stone-800/50">
+          <div class="h-full ${progressColor}" style="animation: toastTimerBar 3.5s linear forwards;"></div>
+        </div>
+      `;
+
+      container.appendChild(toast);
+
       setTimeout(() => {
-        el.classList.add('opacity-0', 'translate-y-2');
-        setTimeout(() => el.remove(), 300);
+        if (!toast.parentNode) return;
+        toast.style.transition = 'all 0.3s ease';
+        toast.style.opacity = '0';
+        toast.style.transform = 'translateX(100%) scale(0.9)';
+        setTimeout(() => { if (toast.parentNode) toast.remove(); }, 320);
       }, 3500);
     }
 
@@ -5822,39 +6157,209 @@ HTML_CONTENT = r"""<!DOCTYPE html>
     }
 
     const authModal = document.getElementById('auth-modal');
-    document.getElementById('open-auth-btn').addEventListener('click', () => {
-      authTabLogin.click();
-      authModal.classList.remove('hidden');
-    });
-    document.getElementById('close-auth-modal-btn').addEventListener('click', () => authModal.classList.add('hidden'));
-
-    document.getElementById('bubble-login-btn').addEventListener('click', () => {
-      authTabLogin.click();
-      authModal.classList.remove('hidden');
-    });
-
-    document.getElementById('bubble-create-btn').addEventListener('click', () => {
-      authTabCreate.click();
-      authModal.classList.remove('hidden');
-    });
-
     const authTabLogin = document.getElementById('auth-tab-login');
     const authTabCreate = document.getElementById('auth-tab-create');
     const loginForm = document.getElementById('login-form');
     const createForm = document.getElementById('create-form');
 
-    authTabLogin.addEventListener('click', () => {
-      authTabLogin.className = 'flex-1 py-2 text-brand-600 dark:text-brand-400 border-b-2 border-brand-600 text-center font-bold';
-      authTabCreate.className = 'flex-1 py-2 text-stone-400 hover:text-stone-600 dark:hover:text-stone-200 border-b-2 border-transparent text-center';
-      loginForm.classList.remove('hidden');
-      createForm.classList.add('hidden');
-    });
+    const heroTabLogin = document.getElementById('hero-tab-login');
+    const heroTabCreate = document.getElementById('hero-tab-create');
+    const heroLoginForm = document.getElementById('hero-login-form');
+    const heroCreateForm = document.getElementById('hero-create-form');
 
-    authTabCreate.addEventListener('click', () => {
-      authTabCreate.className = 'flex-1 py-2 text-leaf-600 dark:text-leaf-400 border-b-2 border-leaf-600 text-center font-bold';
-      authTabLogin.className = 'flex-1 py-2 text-stone-400 hover:text-stone-600 dark:hover:text-stone-200 border-b-2 border-transparent text-center';
-      createForm.classList.remove('hidden');
-      loginForm.classList.add('hidden');
+    // Central Unified Login Function
+    async function performLogin(fid, pin) {
+      fid = (fid || '').trim();
+      pin = (pin || '').trim();
+
+      if (!/^[a-zA-Z0-9]{3,30}$/.test(fid)) {
+        showToast('Fridge ID must be 3-30 characters with letters (a-z, A-Z) and numbers (0-9) only (case-sensitive).', 'error', 'फ्रिज ID में केवल 3-30 अक्षर और संख्याएँ (केस-सेंसिटिव) होने चाहिए।');
+        return false;
+      }
+      if (!/^[a-zA-Z0-9]{4,30}$/.test(pin)) {
+        showToast('PIN must be 4-30 characters with letters (a-z, A-Z) and numbers (0-9) only (case-sensitive).', 'error', 'पिन में केवल 4-30 अक्षर और संख्याएँ (केस-सेंसिटिव) होने चाहिए।');
+        return false;
+      }
+
+      const activeTz = getEffectiveTimezone();
+      try {
+        const res = await fetch('/api/auth/login', {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Client-Timezone': activeTz,
+          },
+          body: JSON.stringify({ fridge_id: fid, pin: pin, timezone: activeTz })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || 'Login failed');
+        currentFridgePin = pin;
+        pinRevealed = true;
+        if (authModal) authModal.classList.add('hidden');
+        setAuthenticatedState(data.fridge_id, data.pin || pin);
+        updateLiveClock();
+        showToast(data.message || 'Login successful! Welcome to your kitchen.', 'success', 'लॉग इन सफल! आपकी रसोई में स्वागत है।');
+        return true;
+      } catch (err) {
+        showToast(err.message, 'error');
+        return false;
+      }
+    }
+    window.performLogin = performLogin;
+
+    // Central Unified Create Function
+    async function performCreate(fid, pin) {
+      fid = (fid || '').trim();
+      pin = (pin || '').trim();
+
+      if (!/^[a-zA-Z0-9]{3,30}$/.test(fid)) {
+        showToast('Fridge ID must be 3-30 characters with letters (a-z, A-Z) and numbers (0-9) only (case-sensitive).', 'error', 'फ्रिज ID में केवल 3-30 अक्षर और संख्याएँ (केस-सेंसिटिव) होने चाहिए।');
+        return false;
+      }
+      if (!/^[a-zA-Z0-9]{4,30}$/.test(pin)) {
+        showToast('PIN must be 4-30 characters with letters (a-z, A-Z) and numbers (0-9) only (case-sensitive).', 'error', 'पिन में केवल 4-30 अक्षर और संख्याएँ (केस-सेंसिटिव) होने चाहिए।');
+        return false;
+      }
+
+      const activeTz = getEffectiveTimezone();
+      try {
+        const res = await fetch('/api/auth/create', {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Client-Timezone': activeTz,
+          },
+          body: JSON.stringify({ fridge_id: fid, pin: pin, timezone: activeTz })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || 'Fridge creation failed');
+        currentFridgePin = pin;
+        pinRevealed = true;
+        if (authModal) authModal.classList.add('hidden');
+        setAuthenticatedState(data.fridge_id, data.pin || pin);
+        updateLiveClock();
+        showToast(data.message || 'New Fridge created successfully!', 'success', 'नया फ्रिज सफलतापूर्वक बनाया गया!');
+        return true;
+      } catch (err) {
+        showToast(err.message, 'error');
+        return false;
+      }
+    }
+    window.performCreate = performCreate;
+
+    // Open Auth Modal from header or anywhere
+    const openAuthBtn = document.getElementById('open-auth-btn');
+    if (openAuthBtn) {
+      openAuthBtn.addEventListener('click', () => {
+        if (authTabLogin) authTabLogin.click();
+        if (authModal) authModal.classList.remove('hidden');
+      });
+    }
+
+    const closeAuthModalBtn = document.getElementById('close-auth-modal-btn');
+    if (closeAuthModalBtn && authModal) {
+      closeAuthModalBtn.addEventListener('click', () => authModal.classList.add('hidden'));
+    }
+
+    // Modal Tabs
+    if (authTabLogin && authTabCreate) {
+      authTabLogin.addEventListener('click', () => {
+        authTabLogin.className = 'flex-1 py-2 px-3 rounded-lg bg-amber-500 text-white shadow-sm transition-all text-center flex items-center justify-center gap-1.5 font-bold cursor-pointer';
+        authTabCreate.className = 'flex-1 py-2 px-3 rounded-lg text-stone-500 dark:text-stone-400 hover:text-stone-800 dark:hover:text-stone-200 transition-all text-center flex items-center justify-center gap-1.5 font-bold cursor-pointer';
+        if (loginForm) loginForm.classList.remove('hidden');
+        if (createForm) createForm.classList.add('hidden');
+      });
+
+      authTabCreate.addEventListener('click', () => {
+        authTabCreate.className = 'flex-1 py-2 px-3 rounded-lg bg-emerald-500 text-white shadow-sm transition-all text-center flex items-center justify-center gap-1.5 font-bold cursor-pointer';
+        authTabLogin.className = 'flex-1 py-2 px-3 rounded-lg text-stone-500 dark:text-stone-400 hover:text-stone-800 dark:hover:text-stone-200 transition-all text-center flex items-center justify-center gap-1.5 font-bold cursor-pointer';
+        if (createForm) createForm.classList.remove('hidden');
+        if (loginForm) loginForm.classList.add('hidden');
+      });
+    }
+
+    // On-page Hero Tabs
+    if (heroTabLogin && heroTabCreate) {
+      heroTabLogin.addEventListener('click', () => {
+        heroTabLogin.className = 'flex-1 py-2 px-3 rounded-lg bg-amber-500 text-white shadow-sm transition-all text-center flex items-center justify-center gap-1.5 font-bold cursor-pointer';
+        heroTabCreate.className = 'flex-1 py-2 px-3 rounded-lg text-stone-500 dark:text-stone-400 hover:text-stone-800 dark:hover:text-stone-200 transition-all text-center flex items-center justify-center gap-1.5 font-bold cursor-pointer';
+        if (heroLoginForm) heroLoginForm.classList.remove('hidden');
+        if (heroCreateForm) heroCreateForm.classList.add('hidden');
+      });
+
+      heroTabCreate.addEventListener('click', () => {
+        heroTabCreate.className = 'flex-1 py-2 px-3 rounded-lg bg-emerald-500 text-white shadow-sm transition-all text-center flex items-center justify-center gap-1.5 font-bold cursor-pointer';
+        heroTabLogin.className = 'flex-1 py-2 px-3 rounded-lg text-stone-500 dark:text-stone-400 hover:text-stone-800 dark:hover:text-stone-200 transition-all text-center flex items-center justify-center gap-1.5 font-bold cursor-pointer';
+        if (heroCreateForm) heroCreateForm.classList.remove('hidden');
+        if (heroLoginForm) heroLoginForm.classList.add('hidden');
+      });
+    }
+
+    // Modal Form Submissions
+    if (loginForm) {
+      loginForm.addEventListener('submit', (e) => {
+        e.preventDefault();
+        const fid = (document.getElementById('login-fid')?.value || '').trim();
+        const pin = (document.getElementById('login-pin')?.value || '').trim();
+        performLogin(fid, pin);
+      });
+    }
+
+    if (createForm) {
+      createForm.addEventListener('submit', (e) => {
+        e.preventDefault();
+        const fid = (document.getElementById('create-fid')?.value || '').trim();
+        const pin = (document.getElementById('create-pin')?.value || '').trim();
+        performCreate(fid, pin);
+      });
+    }
+
+    // Hero Form Submissions (Direct on welcome page)
+    if (heroLoginForm) {
+      heroLoginForm.addEventListener('submit', (e) => {
+        e.preventDefault();
+        const fid = (document.getElementById('hero-login-fid')?.value || '').trim();
+        const pin = (document.getElementById('hero-login-pin')?.value || '').trim();
+        performLogin(fid, pin);
+      });
+    }
+
+    if (heroCreateForm) {
+      heroCreateForm.addEventListener('submit', (e) => {
+        e.preventDefault();
+        const fid = (document.getElementById('hero-create-fid')?.value || '').trim();
+        const pin = (document.getElementById('hero-create-pin')?.value || '').trim();
+        performCreate(fid, pin);
+      });
+    }
+
+    // 1-Click Quick Demo Login Handlers
+    function triggerQuickDemo() {
+      const heroFid = document.getElementById('hero-login-fid');
+      const heroPin = document.getElementById('hero-login-pin');
+      if (heroFid) heroFid.value = 'SharmaKitchen';
+      if (heroPin) heroPin.value = 'Secret123';
+
+      const modalFid = document.getElementById('login-fid');
+      const modalPin = document.getElementById('login-pin');
+      if (modalFid) modalFid.value = 'SharmaKitchen';
+      if (modalPin) modalPin.value = 'Secret123';
+
+      performLogin('SharmaKitchen', 'Secret123');
+    }
+
+    const quickDemoBtn = document.getElementById('quick-demo-login-btn');
+    if (quickDemoBtn) quickDemoBtn.addEventListener('click', triggerQuickDemo);
+
+    const modalDemoBtn = document.getElementById('modal-quick-demo-btn');
+    if (modalDemoBtn) modalDemoBtn.addEventListener('click', () => {
+      const modalFid = document.getElementById('login-fid');
+      const modalPin = document.getElementById('login-pin');
+      if (modalFid) modalFid.value = 'SharmaKitchen';
+      if (modalPin) modalPin.value = 'Secret123';
+      performLogin('SharmaKitchen', 'Secret123');
     });
 
     // PIN / Password Input Visibility Eye Toggles
@@ -5873,7 +6378,7 @@ HTML_CONTENT = r"""<!DOCTYPE html>
 
       if (btnEl) {
         if (isPass) {
-          btnEl.innerHTML = '<svg class="w-4 h-4 text-brand-600 dark:text-brand-400 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l18 18"/></svg>';
+          btnEl.innerHTML = '<svg class="w-4 h-4 text-amber-600 dark:text-amber-400 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l18 18"/></svg>';
           btnEl.setAttribute('title', 'Hide PIN');
         } else {
           btnEl.innerHTML = '<svg class="w-4 h-4 text-stone-400 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>';
@@ -5883,102 +6388,15 @@ HTML_CONTENT = r"""<!DOCTYPE html>
     }
     window.toggleInputPasswordVisibility = toggleInputPasswordVisibility;
 
-    const toggleLoginPinBtn = document.getElementById('toggle-login-pin-btn');
-    if (toggleLoginPinBtn) {
-      toggleLoginPinBtn.addEventListener('click', (e) => {
-        if (e) {
-          e.preventDefault();
-          e.stopPropagation();
-        }
-        toggleInputPasswordVisibility('login-pin', toggleLoginPinBtn);
+    // Attach all eye buttons
+    ['toggle-login-pin-btn', 'toggle-create-pin-btn', 'toggle-hero-login-pin-btn', 'toggle-hero-create-pin-btn'].forEach(btnId => {
+      const btn = document.getElementById(btnId);
+      if (!btn) return;
+      const targetInputId = btnId.replace('toggle-', '').replace('-btn', '');
+      btn.addEventListener('click', (e) => {
+        if (e) { e.preventDefault(); e.stopPropagation(); }
+        toggleInputPasswordVisibility(targetInputId, btn);
       });
-    }
-
-    const toggleCreatePinBtn = document.getElementById('toggle-create-pin-btn');
-    if (toggleCreatePinBtn) {
-      toggleCreatePinBtn.addEventListener('click', (e) => {
-        if (e) {
-          e.preventDefault();
-          e.stopPropagation();
-        }
-        toggleInputPasswordVisibility('create-pin', toggleCreatePinBtn);
-      });
-    }
-
-    loginForm.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      const fid = document.getElementById('login-fid').value.trim();
-      const pin = document.getElementById('login-pin').value.trim();
-
-      if (!/^[a-zA-Z0-9]{3,30}$/.test(fid)) {
-        showToast('Fridge ID must be 3-30 characters with letters (a-z, A-Z) and numbers (0-9) only (case-sensitive).', 'error');
-        return;
-      }
-      if (!/^[a-zA-Z0-9]{4,30}$/.test(pin)) {
-        showToast('PIN must be 4-30 characters with letters (a-z, A-Z) and numbers (0-9) only (case-sensitive).', 'error');
-        return;
-      }
-
-      const activeTz = getEffectiveTimezone();
-      try {
-        const res = await fetch('/api/auth/login', {
-          method: 'POST',
-          credentials: 'same-origin',
-          headers: {
-            'Content-Type': 'application/json',
-            'X-Client-Timezone': activeTz,
-          },
-          body: JSON.stringify({ fridge_id: fid, pin: pin, timezone: activeTz })
-        });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.detail || 'Login failed');
-        currentFridgePin = pin;
-        pinRevealed = true;
-        authModal.classList.add('hidden');
-        setAuthenticatedState(data.fridge_id, data.pin || pin);
-        updateLiveClock();
-        showToast(data.message || 'Login successful!', 'success', 'लॉग इन सफल!');
-      } catch (err) {
-        showToast(err.message, 'error');
-      }
-    });
-
-    createForm.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      const fid = document.getElementById('create-fid').value.trim();
-      const pin = document.getElementById('create-pin').value.trim();
-
-      if (!/^[a-zA-Z0-9]{3,30}$/.test(fid)) {
-        showToast('Fridge ID must be 3-30 characters with letters (a-z, A-Z) and numbers (0-9) only (case-sensitive).', 'error');
-        return;
-      }
-      if (!/^[a-zA-Z0-9]{4,30}$/.test(pin)) {
-        showToast('PIN must be 4-30 characters with letters (a-z, A-Z) and numbers (0-9) only (case-sensitive).', 'error');
-        return;
-      }
-
-      const activeTz = getEffectiveTimezone();
-      try {
-        const res = await fetch('/api/auth/create', {
-          method: 'POST',
-          credentials: 'same-origin',
-          headers: {
-            'Content-Type': 'application/json',
-            'X-Client-Timezone': activeTz,
-          },
-          body: JSON.stringify({ fridge_id: fid, pin: pin, timezone: activeTz })
-        });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.detail || 'Fridge creation failed');
-        currentFridgePin = pin;
-        pinRevealed = true;
-        authModal.classList.add('hidden');
-        setAuthenticatedState(data.fridge_id, data.pin || pin);
-        updateLiveClock();
-        showToast(data.message, 'success', 'नया फ्रिज सफलतापूर्वक बनाया गया!');
-      } catch (err) {
-        showToast(err.message, 'error');
-      }
     });
 
     document.getElementById('logout-btn').addEventListener('click', handleLogout);
@@ -6001,7 +6419,8 @@ HTML_CONTENT = r"""<!DOCTYPE html>
           return;
         }
         if (!res.ok) throw new Error('Failed to load inventory');
-        inventory = await res.json();
+        const invPayload = await res.json();
+        inventory = Array.isArray(invPayload) ? invPayload : [];
         // Save to offline cache for disconnected access
         try {
           localStorage.setItem('fi_cached_inventory', JSON.stringify(inventory));
@@ -6031,6 +6450,7 @@ HTML_CONTENT = r"""<!DOCTYPE html>
     }
 
     function updateStats() {
+      if (!Array.isArray(inventory)) inventory = [];
       const total = inventory.length;
       const fresh = inventory.filter(i => i.days_left >= 3).length;
       const urgent = inventory.filter(i => i.days_left >= 0 && i.days_left <= 2).length;
@@ -6046,6 +6466,7 @@ HTML_CONTENT = r"""<!DOCTYPE html>
     }
 
     function renderInventory() {
+      if (!Array.isArray(inventory)) inventory = [];
       const grid = document.getElementById('inventory-grid');
       const empty = document.getElementById('empty-state');
       const urgentGrid = document.getElementById('urgent-grid');
@@ -6494,8 +6915,9 @@ HTML_CONTENT = r"""<!DOCTYPE html>
         }
         // 2b. Multi-Remove action (e.g. "ate milk, spinach" or "consumed bread and butter")
         else if (data.action === 'removed_multi') {
-          const removedIds = new Set(data.removed_ids || []);
-          inventory = inventory.filter(i => !removedIds.has(i.id));
+          const idsList = data.removed_ids || (Array.isArray(data.removed) ? data.removed.map(r => r.id) : []);
+          const removedIds = new Set(idsList);
+          inventory = (Array.isArray(inventory) ? inventory : []).filter(i => !removedIds.has(i.id));
           try { localStorage.setItem('fi_cached_inventory', JSON.stringify(inventory)); } catch(e){}
           renderInventory();
           updateStats();
