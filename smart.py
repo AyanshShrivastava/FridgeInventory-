@@ -388,22 +388,48 @@ except ImportError:
 
 _groq_client: Optional[Any] = None
 
-_primary_groq = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
+_primary_groq = os.getenv("GROQ_MODEL", "qwen/qwen3.8-27b")
 GROQ_TEXT_MODELS = list(dict.fromkeys([
     _primary_groq,
+    "qwen/qwen3.8-27b",
+    "openai/gpt-oss-120b",
+    "openai/gpt-oss-20b",
+    "allam-2-7b",
     "llama-3.3-70b-versatile",
     "llama-3.1-8b-instant",
-    "llama-3.2-3b-preview",
-    "llama-3.2-1b-preview",
-    "mixtral-8x7b-32768",
-    "gemma2-9b-it",
-    "deepseek-r1-distill-llama-70b",
 ]))
 
 GROQ_VISION_MODELS = [
+    "qwen/qwen3.8-27b",
+    "meta-models/muse-spark-open",
     "llama-3.2-11b-vision-preview",
     "llama-3.2-90b-vision-preview",
 ]
+
+_cached_groq_active_models: Optional[List[str]] = None
+
+def get_groq_active_text_models() -> List[str]:
+    """Retrieve verified active text models from GroqCloud dynamically or fallback list."""
+    global _cached_groq_active_models
+    if _cached_groq_active_models:
+        return _cached_groq_active_models
+    client = get_groq_client()
+    if client is not None:
+        try:
+            raw_models = [m.id for m in client.models.list().data]
+            filtered = [
+                m for m in raw_models 
+                if not any(skip in m.lower() for skip in ("whisper", "orpheus", "guard", "safeguard"))
+            ]
+            if filtered:
+                priority = ["qwen/qwen3.8-27b", "openai/gpt-oss-120b", "openai/gpt-oss-20b", "allam-2-7b"]
+                ordered = [p for p in priority if p in filtered] + [m for m in filtered if m not in priority]
+                _cached_groq_active_models = ordered
+                return _cached_groq_active_models
+        except Exception as e:
+            logger.warning(f"Could not fetch dynamic Groq model list: {e}")
+    return GROQ_TEXT_MODELS
+
 
 def get_groq_api_key() -> Optional[str]:
     """Retrieve Groq API key from environment, supporting GROQ_API_KEY, GROK_API_KEY, or PROQ_API_KEY."""
@@ -1318,7 +1344,7 @@ def classify_food(phrase: str) -> ClassifyResponse:
     # 1. Primary: Groq LPU (Blazing Fast sub-second natural language classification)
     groq_client = get_groq_client()
     if groq_client is not None:
-        for model_name in GROQ_TEXT_MODELS:
+        for model_name in get_groq_active_text_models():
             try:
                 chat_completion = groq_client.chat.completions.create(
                     messages=[
@@ -2200,31 +2226,10 @@ def generate_rescue_recipe(items: List[str]) -> RescueRecipe:
     # Check if user is asking how to make a specific recipe / dish!
     is_recipe_ask, target_dish = detect_recipe_dish_query(raw_clean)
     if is_recipe_ask:
-        # 1. Cascade through ALL Gemini models for how-to recipe
-        client = get_gemini_client()
-        if client is not None and types is not None:
-            for model_name in GEMINI_MODELS:
-                try:
-                    response = client.models.generate_content(
-                        model=model_name,
-                        contents=HOWTO_RECIPE_PROMPT_TEMPLATE.format(dish=target_dish),
-                        config=types.GenerateContentConfig(
-                            response_mime_type="application/json",
-                            response_schema=RescueRecipe,
-                            temperature=0.3,
-                        ),
-                    )
-                    raw_text = (response.text or "").strip()
-                    recipe = RescueRecipe.model_validate_json(raw_text)
-                    return recipe
-                except Exception as exc:
-                    logger.warning(f"Recipe how-to generation failed on Gemini {model_name}: {exc}. Trying next model...")
-                    continue
-
-        # 2. Fallback: Cascade through ALL Groq models for how-to recipe
+        # 1. Primary: Cascade through ALL Groq models for how-to recipe
         groq_client = get_groq_client()
         if groq_client is not None:
-            for g_model in GROQ_TEXT_MODELS:
+            for g_model in get_groq_active_text_models():
                 try:
                     g_chat = groq_client.chat.completions.create(
                         model=g_model,
@@ -2248,7 +2253,28 @@ def generate_rescue_recipe(items: List[str]) -> RescueRecipe:
                     logger.warning(f"Groq how-to recipe failed on {g_model}: {g_err}. Trying next model...")
                     continue
 
-        # 2c. Fallback: OpenRouter Cascade for how-to recipe
+        # 2. Fallback 1: Cascade through ALL Gemini models for how-to recipe
+        client = get_gemini_client()
+        if client is not None and types is not None:
+            for model_name in GEMINI_MODELS:
+                try:
+                    response = client.models.generate_content(
+                        model=model_name,
+                        contents=HOWTO_RECIPE_PROMPT_TEMPLATE.format(dish=target_dish),
+                        config=types.GenerateContentConfig(
+                            response_mime_type="application/json",
+                            response_schema=RescueRecipe,
+                            temperature=0.3,
+                        ),
+                    )
+                    raw_text = (response.text or "").strip()
+                    recipe = RescueRecipe.model_validate_json(raw_text)
+                    return recipe
+                except Exception as exc:
+                    logger.warning(f"Recipe how-to generation failed on Gemini {model_name}: {exc}. Trying next model...")
+                    continue
+
+        # 2c. Fallback 2: OpenRouter Cascade for how-to recipe
         if get_openrouter_api_key():
             or_dish = query_openrouter_chat(
                 messages=[
@@ -2270,33 +2296,10 @@ def generate_rescue_recipe(items: List[str]) -> RescueRecipe:
     # 1. Automatic culinary spelling and typo correction
     clean_items, corrections = correct_ingredients_list(raw_clean)
 
-    # 2. Try Gemini GenAI
-    client = get_gemini_client()
-    if client is not None and types is not None:
-        for model_name in GEMINI_MODELS:
-            try:
-                formatted_list = ", ".join(clean_items)
-                response = client.models.generate_content(
-                    model=model_name,
-                    contents=RESCUE_PROMPT_TEMPLATE.format(ingredients=formatted_list),
-                    config=types.GenerateContentConfig(
-                        response_mime_type="application/json",
-                        response_schema=RescueRecipe,
-                        temperature=0.3,
-                    ),
-                )
-                raw_text = (response.text or "").strip()
-                recipe = RescueRecipe.model_validate_json(raw_text)
-                recipe.corrected_ingredients = clean_items
-                return recipe
-            except Exception as exc:
-                logger.warning(f"Rescue recipe generation failed on {model_name}: {exc}")
-                continue
-
-    # 2b. Fallback: Cascade through ALL Groq models if Gemini is unavailable
+    # 2. Primary: Cascade through Groq LPU models for zero-waste rescue recipe
     groq_client = get_groq_client()
     if groq_client is not None:
-        for g_model in GROQ_TEXT_MODELS:
+        for g_model in get_groq_active_text_models():
             try:
                 formatted_list = ", ".join(clean_items)
                 g_chat = groq_client.chat.completions.create(
@@ -2322,7 +2325,30 @@ def generate_rescue_recipe(items: List[str]) -> RescueRecipe:
                 logger.warning(f"Groq rescue recipe fallback failed on {g_model}: {g_err}. Trying next model...")
                 continue
 
-    # 2c. Fallback: OpenRouter Cascade for leftover recipe
+    # 2b. Fallback 1: Cascade through Google GenAI (Gemini)
+    client = get_gemini_client()
+    if client is not None and types is not None:
+        for model_name in GEMINI_MODELS:
+            try:
+                formatted_list = ", ".join(clean_items)
+                response = client.models.generate_content(
+                    model=model_name,
+                    contents=RESCUE_PROMPT_TEMPLATE.format(ingredients=formatted_list),
+                    config=types.GenerateContentConfig(
+                        response_mime_type="application/json",
+                        response_schema=RescueRecipe,
+                        temperature=0.3,
+                    ),
+                )
+                raw_text = (response.text or "").strip()
+                recipe = RescueRecipe.model_validate_json(raw_text)
+                recipe.corrected_ingredients = clean_items
+                return recipe
+            except Exception as exc:
+                logger.warning(f"Rescue recipe generation failed on {model_name}: {exc}")
+                continue
+
+    # 2c. Fallback 2: OpenRouter Cascade for leftover recipe
     if get_openrouter_api_key():
         or_recipe = query_openrouter_chat(
             messages=[
@@ -3233,7 +3259,7 @@ def health_check():
         "ai_engine_routing": {
             "fridge_command_bar": "Groq LPU (Primary) -> Gemini AI (Fallback 1) -> OpenRouter (Fallback 2) -> Local DB (Safety Net)",
             "food_scanner_vision": "Gemini Vision (Primary) -> Groq Vision (Fallback 1) -> OpenRouter Vision (Fallback 2) -> Manual / Local",
-            "rescue_recipe_chef": "Gemini AI (Primary) -> Groq LPU (Fallback 1) -> OpenRouter (Fallback 2) -> Preset Master Chef",
+            "rescue_recipe_chef": "Groq LPU (Primary) -> Gemini AI (Fallback 1) -> OpenRouter (Fallback 2) -> Preset Master Chef",
         },
         "firebase_configured": db is not None,
         "firestore_status": "connected" if db is not None else db_err,
@@ -3557,87 +3583,6 @@ def api_rescue(payload: RescueRequest):
             detail="Please provide at least one expiring food item in the 'items' list.",
         )
     return generate_rescue_recipe(payload.items)
-
-@app.get("/api/debug/ai-diagnose")
-def api_ai_diagnose():
-    results = {}
-    items = ["paneer", "tomatoes", "capsicum", "milk", "bread"]
-    clean_items, _ = correct_ingredients_list(items)
-    prompt = RESCUE_PROMPT_TEMPLATE.format(ingredients=", ".join(clean_items))
-
-    # 1. Groq models & test
-    groq_client = get_groq_client()
-    if groq_client:
-        try:
-            m_list = [m.id for m in groq_client.models.list().data]
-            results["groq_available_models"] = m_list
-        except Exception as e:
-            results["groq_available_models"] = f"Error: {e}"
-            m_list = []
-
-        test_groq_models = m_list or GROQ_TEXT_MODELS
-        groq_attempts = {}
-        for g_model in test_groq_models:
-            # Skip whisper/audio models
-            if "whisper" in g_model or "orpheus" in g_model or "guard" in g_model:
-                continue
-            try:
-                start_t = time.time()
-                g_chat = groq_client.chat.completions.create(
-                    model=g_model,
-                    messages=[
-                        {"role": "system", "content": "You are an expert chef specializing in Indian home cooking, pairing intelligence, and zero-waste recipes. Output strictly valid JSON conforming to the recipe schema with English and Hindi fields."},
-                        {"role": "user", "content": prompt}
-                    ],
-                    response_format={"type": "json_object"},
-                    temperature=0.3,
-                )
-                g_raw = g_chat.choices[0].message.content or ""
-                dur = round(time.time() - start_t, 2)
-                groq_attempts[g_model] = {"ok": True, "elapsed": dur}
-                if "groq_result" not in results:
-                    results["groq_result"] = {
-                        "model": g_model,
-                        "elapsed": dur,
-                        "recipe": json.loads(g_raw)
-                    }
-                break
-            except Exception as e:
-                groq_attempts[g_model] = {"ok": False, "error": str(e)}
-        results["groq_attempts"] = groq_attempts
-    else:
-        results["groq"] = "Not configured"
-
-    # 2. Gemini test
-    gemini_client = get_gemini_client()
-    if gemini_client and types is not None:
-        start_t = time.time()
-        for model_name in GEMINI_MODELS:
-            try:
-                response = gemini_client.models.generate_content(
-                    model=model_name,
-                    contents=prompt,
-                    config=types.GenerateContentConfig(
-                        response_mime_type="application/json",
-                        response_schema=RescueRecipe,
-                        temperature=0.3,
-                    ),
-                )
-                raw_text = (response.text or "").strip()
-                dur = round(time.time() - start_t, 2)
-                recipe_gem = RescueRecipe.model_validate_json(raw_text)
-                results["gemini_result"] = {
-                    "model": model_name,
-                    "elapsed": dur,
-                    "recipe": recipe_gem.model_dump()
-                }
-                break
-            except Exception as exc:
-                results["gemini_attempts"] = {model_name: str(exc)}
-    else:
-        results["gemini"] = "Not configured"
-
-    return results
 
 
 @app.get("/api/inventory", response_model=List[InventoryItem], summary="Get All Inventory Items")
