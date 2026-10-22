@@ -164,7 +164,7 @@ from fastapi import FastAPI, HTTPException, Request, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 import uvicorn
 
 # Firebase Admin SDK
@@ -617,6 +617,53 @@ class RescueRecipe(BaseModel):
     steps_hi: List[str] = Field(default_factory=list, description="Clear, numbered step-by-step cooking instructions in authentic Hindi (Devanagari script)")
     chef_tip: str = Field(default="", description="Pro home chef tip for zero-waste or flavor enhancement in English")
     chef_tip_hi: str = Field(default="", description="Pro home chef tip for zero-waste or flavor enhancement in Hindi ('दादी माँ का नुस्खा')")
+
+    @field_validator('steps', 'steps_hi', mode='before')
+    @classmethod
+    def split_and_clean_steps(cls, v):
+        if not v:
+            return []
+        items = [v] if isinstance(v, str) else list(v) if isinstance(v, (list, tuple)) else []
+        result = []
+        for item in items:
+            if not isinstance(item, str):
+                continue
+            cleaned = item.strip()
+            if not cleaned:
+                continue
+            # Split on newlines OR on numbers followed by dot/paren and space (English or Devanagari numerals)
+            parts = re.split(r'(?:\r?\n+|(?:^|\s+)(?=(?:\d+|[१-९]+)[\.\)]\s+))', cleaned)
+            for part in parts:
+                p = part.strip()
+                # Strip leading numbering like "1. ", "1) ", "१. ", "• "
+                p = re.sub(r'^(?:(?:\d+|[१-९]+)[\.\)]\s*|[-*•]\s*)', '', p).strip()
+                if p:
+                    result.append(p)
+        return result if result else items
+
+    @field_validator('ingredients_used', 'ingredients_used_hi', 'pantry_items_needed', 'pantry_items_needed_hi', mode='before')
+    @classmethod
+    def clean_item_lists(cls, v):
+        if not v:
+            return []
+        items = [v] if isinstance(v, str) else list(v) if isinstance(v, (list, tuple)) else []
+        result = []
+        for item in items:
+            if not isinstance(item, str):
+                continue
+            cleaned = item.strip()
+            if not cleaned:
+                continue
+            if len(items) == 1 and (',' in cleaned or '\n' in cleaned):
+                for sp in re.split(r'[,;\n]+', cleaned):
+                    p = re.sub(r'^[-*•]\s*', '', sp.strip()).strip()
+                    if p:
+                        result.append(p)
+            else:
+                p = re.sub(r'^[-*•]\s*', '', cleaned).strip()
+                if p:
+                    result.append(p)
+        return result if result else items
 
 
 class InventoryItemCreate(BaseModel):
@@ -1910,8 +1957,8 @@ Requirements:
 - corrected_ingredients: Key ingredients list
 - pantry_items_needed: Spices, oils, aromatics, and seasoning needed with measurements
 - pantry_items_needed_hi: Spices and staples in Hindi with measurements
-- steps: Detailed step-by-step instructions on how to cook this recipe in English
-- steps_hi: Complete step-by-step instructions in natural, fluent Hindi (Devanagari script)
+- steps: Detailed step-by-step instructions on how to cook this recipe in English. MUST be a JSON array of individual strings, with ONE cooking step per string (e.g. ["Step 1 text", "Step 2 text"]). DO NOT put all steps inside a single string!
+- steps_hi: Complete step-by-step instructions in natural, fluent Hindi (Devanagari script) as a JSON array of individual strings, with ONE cooking step per string.
 - chef_tip: Grandma's secret culinary tip ('दादी माँ का सीक्रेट नुस्खा') for making this recipe perfect
 - chef_tip_hi: Secret culinary tip in Hindi
 """
@@ -2213,8 +2260,8 @@ Output Schema:
 - corrected_ingredients (list)
 - pantry_items_needed (list in English)
 - pantry_items_needed_hi (list in Hindi with quantities)
-- steps (list of clear step-by-step cooking steps in English)
-- steps_hi (list of clear, complete step-by-step cooking instructions in natural Hindi in Devanagari script)
+- steps (JSON array of individual strings with exactly ONE cooking step per string. DO NOT combine or concatenate all steps into one single string!)
+- steps_hi (JSON array of individual strings with ONE cooking step per string in natural Hindi in Devanagari script)
 - chef_tip (pro zero-waste tip in English)
 - chef_tip_hi (authentic Indian kitchen tip in Hindi: 'दादी माँ का नुस्खा')
 """
@@ -4591,9 +4638,20 @@ HTML_CONTENT = r"""<!DOCTYPE html>
           
           <div class="flex items-center justify-between gap-3 mb-1 flex-wrap">
             <h2 class="text-lg font-bold text-stone-900 dark:text-white" data-i18n="scanner_title">AI Food Inspector & Storage Advisor</h2>
-            <div class="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800/80 text-emerald-700 dark:text-emerald-300 text-[10px] font-bold">
-              <span class="w-2 h-2 rounded-full bg-emerald-500 animate-ping"></span>
-              <span data-i18n="scanner_ai_vision_badge">AI Vision Ready</span>
+            <div class="flex items-center gap-2">
+              <div class="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800/80 text-emerald-700 dark:text-emerald-300 text-[10px] font-bold">
+                <span class="w-2 h-2 rounded-full bg-emerald-500 animate-ping"></span>
+                <span data-i18n="scanner_ai_vision_badge">AI Vision Ready</span>
+              </div>
+              <button 
+                type="button" 
+                id="close-scanner-btn" 
+                class="px-2.5 py-1 bg-white dark:bg-stone-800 hover:bg-stone-100 dark:hover:bg-stone-700 border border-stone-200 dark:border-stone-700 rounded-xl text-stone-600 dark:text-stone-300 text-xs font-semibold inline-flex items-center gap-1 transition cursor-pointer shadow-2xs"
+                title="Close Food Scanner and return to Fridge Inventory"
+              >
+                <svg class="w-3.5 h-3.5 text-stone-500 dark:text-stone-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                <span data-i18n="close_scanner_btn">Close Scanner</span>
+              </button>
             </div>
           </div>
           
@@ -5311,6 +5369,7 @@ HTML_CONTENT = r"""<!DOCTYPE html>
         rescue_run_btn: "Generate Rescue Recipe",
         custom_rescue_label: "Ask How to Make Any Recipe or Enter Ingredients to Rescue:",
         close_recipe_btn: "Close Recipe",
+        close_scanner_btn: "Close Scanner",
         recipe_card_tag: "Zero-Waste Homestyle Recipe",
         rescued_items_hdr: "Rescued Ingredients",
         pantry_items_hdr: "Pantry Spices & Staples",
@@ -5490,6 +5549,7 @@ HTML_CONTENT = r"""<!DOCTYPE html>
         rescue_run_btn: "रेस्क्यू रेसिपी बनाएँ",
         custom_rescue_label: "कोई भी रेसिपी पूछें (जैसे: कैसे बनाएं) या सामग्री दर्ज करें:",
         close_recipe_btn: "रेसिपी बंद करें",
+        close_scanner_btn: "स्कैनर बंद करें",
         recipe_card_tag: "जीरो-वेस्ट होमस्टाइल रेसिपी",
         rescued_items_hdr: "बचाई गई सामग्री",
         pantry_items_hdr: "रसोई के मसाले और आवश्यक सामान",
@@ -7331,6 +7391,39 @@ HTML_CONTENT = r"""<!DOCTYPE html>
       recipeContainer.classList.add('hidden');
     });
 
+    // Food Scanner Close Button & Helper Functions
+    const closeScannerBtn = document.getElementById('close-scanner-btn');
+    if (closeScannerBtn) {
+      closeScannerBtn.addEventListener('click', () => {
+        closeFoodScanner();
+      });
+    }
+
+    function closeFoodScanner() {
+      const scannerInput = document.getElementById('scanner-input');
+      if (scannerInput) scannerInput.value = '';
+      const resBox = document.getElementById('scanner-result');
+      if (resBox) {
+        resBox.classList.add('hidden');
+        resBox.innerHTML = '';
+      }
+      if (typeof switchTab === 'function' && tabInvBtn && secInv) {
+        switchTab(tabInvBtn, secInv);
+      }
+    }
+    window.closeFoodScanner = closeFoodScanner;
+
+    function closeScannerResult() {
+      const resBox = document.getElementById('scanner-result');
+      if (resBox) {
+        resBox.classList.add('hidden');
+        resBox.innerHTML = '';
+      }
+      const scannerInput = document.getElementById('scanner-input');
+      if (scannerInput) scannerInput.value = '';
+    }
+    window.closeScannerResult = closeScannerResult;
+
     async function triggerRecipeGeneration(itemsList) {
       if (!itemsList || itemsList.length === 0) {
         showToast(currentLang === 'hi' ? 'कृपया कम से कम एक सामान चुनें' : 'Please select at least one ingredient', 'warning');
@@ -7441,16 +7534,40 @@ HTML_CONTENT = r"""<!DOCTYPE html>
         pantryList.appendChild(li);
       });
 
-      // Cooking Steps
+      // Normalizer helper: splits combined paragraphs or numbered strings into distinct individual steps
+      function normalizeRecipeSteps(rawSteps) {
+        if (!rawSteps) return [];
+        if (typeof rawSteps === 'string') rawSteps = [rawSteps];
+        if (!Array.isArray(rawSteps)) return [];
+        const result = [];
+        rawSteps.forEach(item => {
+          if (typeof item !== 'string') return;
+          const trimmed = item.trim();
+          if (!trimmed) return;
+          // Split on newlines OR on numbers followed by dot/paren and space (English or Devanagari numerals)
+          const parts = trimmed.split(/(?:\r?\n+|(?:^|\s+)(?=(?:\d+|[१-९]+)[\.\)]\s+))/);
+          parts.forEach(part => {
+            if (!part) return;
+            let p = part.trim();
+            // Strip leading "1. ", "1) ", "१. ", "• "
+            p = p.replace(/^(?:(?:\d+|[१-९]+)[\.\)]\s*|[-*•]\s*)/, '').trim();
+            if (p) result.push(p);
+          });
+        });
+        return result.length > 0 ? result : rawSteps;
+      }
+
+      // Cooking Steps: Render each step as its own distinct numbered step card
       const stepsList = document.getElementById('recipe-steps-list');
       stepsList.innerHTML = '';
-      const steps = isHindi && recipe.steps_hi && recipe.steps_hi.length > 0
+      const rawSteps = isHindi && recipe.steps_hi && recipe.steps_hi.length > 0
         ? recipe.steps_hi
         : (recipe.steps || []);
+      const steps = normalizeRecipeSteps(rawSteps);
       steps.forEach((step, idx) => {
         const li = document.createElement('li');
-        li.className = 'flex items-start gap-2.5';
-        li.innerHTML = `<span class="w-5 h-5 rounded-full bg-brand-100 dark:bg-stone-800 text-brand-800 dark:text-brand-300 font-bold text-xs flex items-center justify-center shrink-0 mt-0.5">${idx + 1}</span><span>${step}</span>`;
+        li.className = 'flex items-start gap-3 p-3 rounded-2xl bg-orange-50/50 dark:bg-stone-850/80 border border-orange-200/50 dark:border-stone-700/60 shadow-2xs transition-all';
+        li.innerHTML = `<span class="w-6 h-6 rounded-full bg-gradient-to-tr from-orange-400 to-amber-500 text-white font-extrabold text-xs flex items-center justify-center shrink-0 mt-0.5 shadow-2xs">${idx + 1}</span><span class="text-xs sm:text-sm text-stone-700 dark:text-stone-200 leading-relaxed font-medium flex-1">${step}</span>`;
         stepsList.appendChild(li);
       });
 
@@ -7630,12 +7747,13 @@ HTML_CONTENT = r"""<!DOCTYPE html>
       if (!data.is_food || data.scanner_failed) {
         resBox.innerHTML = `
           <div class="p-6 rounded-3xl bg-amber-50/90 dark:bg-amber-950/40 border-2 border-amber-300 dark:border-amber-700/80 text-xs text-amber-900 dark:text-amber-100 space-y-4 shadow-md transition-all">
-            <div class="flex items-start gap-3">
-              <div class="w-10 h-10 rounded-2xl bg-amber-200 dark:bg-amber-900/80 text-amber-800 dark:text-amber-200 flex items-center justify-center shrink-0 shadow-sm">
-                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
-              </div>
-              <div class="flex-1 min-w-0">
-                <h4 class="font-bold text-sm text-amber-900 dark:text-amber-200">${currentLang === 'hi' ? 'भोजन की पहचान नहीं हो सकी' : 'Could Not Identify Food in Photo'}</h4>
+            <div class="flex items-start justify-between gap-3">
+              <div class="flex items-start gap-3 flex-1 min-w-0">
+                <div class="w-10 h-10 rounded-2xl bg-amber-200 dark:bg-amber-900/80 text-amber-800 dark:text-amber-200 flex items-center justify-center shrink-0 shadow-sm">
+                  <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
+                </div>
+                <div class="flex-1 min-w-0">
+                  <h4 class="font-bold text-sm text-amber-900 dark:text-amber-200">${currentLang === 'hi' ? 'भोजन की पहचान नहीं हो सकी' : 'Could Not Identify Food in Photo'}</h4>
                 <p class="mt-1 text-stone-600 dark:text-stone-300 text-xs leading-relaxed">
                   ${currentLang === 'hi' 
                     ? (data.message_hi || data.message || 'AI इस फ़ोटो में किसी खाद्य सामग्री को स्पष्ट रूप से नहीं पहचान सका, या AI विज़न मॉडल अस्थायी रूप से अनुपलब्ध हैं। कृपया साफ़ रोशनी में फ़ोटो लें या मैन्युअल रूप से आइटम दर्ज करें।') 
@@ -7662,6 +7780,10 @@ HTML_CONTENT = r"""<!DOCTYPE html>
               <button type="button" onclick="openCommandPhotoCapture()" class="w-full sm:w-auto py-2.5 px-4 rounded-xl bg-stone-200 dark:bg-stone-800 hover:bg-stone-300 dark:hover:bg-stone-700 text-stone-800 dark:text-stone-200 font-semibold text-xs transition flex items-center justify-center gap-1.5">
                 <svg class="w-4 h-4 text-stone-600 dark:text-stone-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
                 <span>${currentLang === 'hi' ? 'दोबारा फ़ोटो लें' : 'Retake Photo'}</span>
+              </button>
+              <button type="button" onclick="closeScannerResult()" class="w-full sm:w-auto py-2.5 px-4 rounded-xl bg-stone-200/80 dark:bg-stone-800/80 hover:bg-stone-300 dark:hover:bg-stone-700 text-stone-700 dark:text-stone-300 font-semibold text-xs transition cursor-pointer flex items-center justify-center gap-1">
+                <span>✕</span>
+                <span>${currentLang === 'hi' ? 'बंद करें' : 'Close'}</span>
               </button>
             </div>
           </div>
@@ -7695,6 +7817,9 @@ HTML_CONTENT = r"""<!DOCTYPE html>
                     AI identified ${totalItemsCount} food item${totalItemsCount > 1 ? 's' : ''} in photo
                   </div>
                 </div>
+                <button type="button" onclick="closeScannerResult()" class="text-stone-400 hover:text-stone-600 dark:hover:text-stone-200 p-1.5 rounded-xl hover:bg-stone-200/60 dark:hover:bg-stone-700/60 text-xs font-bold transition cursor-pointer self-start" title="Close Food Scanner Results">
+                  ✕
+                </button>
               </div>
             ` : ''}
 
@@ -7745,6 +7870,12 @@ HTML_CONTENT = r"""<!DOCTYPE html>
                 </div>
               </div>
             ` : ''}
+            <div class="pt-1 flex items-center justify-end">
+              <button type="button" onclick="closeScannerResult()" class="px-4 py-2 rounded-xl bg-stone-200 dark:bg-stone-700 hover:bg-stone-300 dark:hover:bg-stone-600 text-stone-700 dark:text-stone-200 font-bold text-xs transition cursor-pointer flex items-center gap-1.5">
+                <span>✕</span>
+                <span>${currentLang === 'hi' ? 'स्कैनर बंद करें' : 'Close Result'}</span>
+              </button>
+            </div>
           </div>
         `;
         return;
@@ -7777,6 +7908,24 @@ HTML_CONTENT = r"""<!DOCTYPE html>
       resBox.innerHTML = `
         <div class="p-5 rounded-3xl bg-stone-50 dark:bg-stone-800/90 border border-stone-200 dark:border-stone-700 text-xs space-y-4 shadow-sm transition-all">
           
+          <div class="flex items-center justify-between pb-2 border-b border-stone-200/80 dark:border-stone-700/60">
+            <div class="flex items-center gap-2">
+              <span class="px-2.5 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 font-bold text-[10px] tracking-wide flex items-center gap-1">
+                <svg class="w-3 h-3 text-emerald-600 dark:text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                <span>${photoUrl ? 'AI VISION SCANNED' : 'FOOD INSPECTION RESULT'}</span>
+              </span>
+              <span class="text-[10px] text-stone-400 truncate">• ${data.analyzed_by || 'Food Intelligence'}</span>
+            </div>
+            <button 
+              type="button" 
+              onclick="closeScannerResult()" 
+              class="w-7 h-7 rounded-full bg-stone-100 dark:bg-stone-800 hover:bg-stone-200 dark:hover:bg-stone-700 text-stone-500 dark:text-stone-300 text-xs font-bold flex items-center justify-center transition cursor-pointer"
+              title="Close food inspection result"
+            >
+              ✕
+            </button>
+          </div>
+
           ${photoUrl ? `
             <div class="flex items-center gap-3 pb-3 border-b border-stone-200 dark:border-stone-700/60">
               <div class="relative w-16 h-16 rounded-2xl overflow-hidden shrink-0 border-2 border-emerald-500/40 shadow-sm bg-black">
@@ -7784,14 +7933,7 @@ HTML_CONTENT = r"""<!DOCTYPE html>
                 <span class="absolute bottom-0 inset-x-0 bg-stone-900/80 text-white text-[8px] text-center font-bold py-0.5">PHOTO</span>
               </div>
               <div class="min-w-0">
-                <div class="flex items-center gap-2">
-                  <span class="px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 font-bold text-[10px] tracking-wide flex items-center gap-1">
-                    <svg class="w-3 h-3 text-emerald-600 dark:text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
-                    <span>AI VISION SCANNED</span>
-                  </span>
-                  <span class="text-[10px] text-stone-400 truncate">• ${data.analyzed_by || 'Gemini Vision AI'}</span>
-                </div>
-                <div class="text-[11px] text-stone-500 dark:text-stone-400 mt-1">Identified dish & shelf-life from camera snapshot</div>
+                <div class="text-[11px] text-stone-500 dark:text-stone-400">Identified dish & shelf-life from camera snapshot</div>
               </div>
             </div>
           ` : ''}
@@ -7837,19 +7979,24 @@ HTML_CONTENT = r"""<!DOCTYPE html>
             <div class="text-stone-700 dark:text-stone-300 text-xs leading-relaxed">${data.storage_tip || 'Keep refrigerated in an airtight container.'}</div>
           </div>
 
-          <!-- Action Button: 1-Tap Add to Fridge -->
-          <div class="pt-1 flex items-center justify-between gap-3 flex-wrap">
+          <!-- Action Buttons: 1-Tap Add to Fridge + Close Result Button -->
+          <div class="pt-1 flex items-center justify-between gap-2.5 flex-wrap">
             <button 
               type="button" 
               onclick="addScannedItemDirectly('${encodedPayload}', this)"
-              class="w-full sm:w-auto flex-1 inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-sm hover:shadow transition active:scale-95"
+              class="w-full sm:flex-1 inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-sm hover:shadow transition active:scale-95 cursor-pointer"
             >
               <svg class="w-3.5 h-3.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
               <span>Add to Fridge Inventory</span>
             </button>
-            <span class="text-[10px] text-stone-400 text-right w-full sm:w-auto">
-              Added today • Non-negative accurate expiry
-            </span>
+            <button 
+              type="button" 
+              onclick="closeScannerResult()"
+              class="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-stone-200 dark:bg-stone-800 hover:bg-stone-300 dark:hover:bg-stone-700 text-stone-700 dark:text-stone-300 font-semibold text-xs transition active:scale-95 cursor-pointer text-center"
+              title="Close food inspector card"
+            >
+              <span>✕ ${currentLang === 'hi' ? 'बंद करें' : 'Close'}</span>
+            </button>
           </div>
         </div>
       `;
@@ -8201,7 +8348,15 @@ HTML_CONTENT = r"""<!DOCTYPE html>
 
       const resBox = document.getElementById('scanner-result');
       resBox.classList.remove('hidden');
-      resBox.innerHTML = '<div class="text-xs text-stone-500 animate-pulse">Inspecting food data...</div>';
+      resBox.innerHTML = `
+        <div class="p-4 rounded-2xl bg-stone-50 dark:bg-stone-800 border border-stone-200 dark:border-stone-700 flex items-center justify-between text-xs text-stone-500 dark:text-stone-400 animate-pulse">
+          <div class="flex items-center gap-2">
+            <svg class="w-4 h-4 text-brand-600 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path></svg>
+            <span>${currentLang === 'hi' ? 'खाद्य डेटा का विश्लेषण किया जा रहा है...' : 'Inspecting food data & shelf life...'}</span>
+          </div>
+          <button type="button" onclick="closeScannerResult()" class="text-stone-400 hover:text-stone-600 dark:hover:text-stone-200 text-xs font-bold">✕</button>
+        </div>
+      `;
 
       try {
         const res = await fetch('/classify', {
@@ -8212,7 +8367,12 @@ HTML_CONTENT = r"""<!DOCTYPE html>
         const data = await res.json();
         renderScannerResult(data, null, text);
       } catch (err) {
-        resBox.innerHTML = '<div class="text-xs text-rose-500">Failed to inspect item.</div>';
+        resBox.innerHTML = `
+          <div class="p-4 rounded-2xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 flex items-center justify-between text-xs text-rose-700 dark:text-rose-300">
+            <span>${currentLang === 'hi' ? 'भोजन की जानकारी प्राप्त करने में विफल।' : 'Failed to inspect food item.'}</span>
+            <button type="button" onclick="closeScannerResult()" class="text-rose-500 hover:text-rose-700 text-xs font-bold">✕ Close</button>
+          </div>
+        `;
       }
     });
 
