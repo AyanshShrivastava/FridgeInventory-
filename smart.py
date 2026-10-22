@@ -340,9 +340,13 @@ def normalize_gemini_model_name(name: str) -> str:
         cleaned = f"gemini-{cleaned}"
     return cleaned
 
-_primary_model = os.getenv("GEMINI_MODEL", "gemini-3.5-flash-lite")
+_primary_model = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
 GEMINI_MODELS = list(dict.fromkeys([
     normalize_gemini_model_name(_primary_model),
+    "gemini-2.0-flash",
+    "gemini-1.5-flash",
+    "gemini-2.5-flash",
+    "gemini-2.0-flash-lite",
     "gemini-3.5-flash-lite",
     "gemini-3.5-flash",
     "gemini-3.6-flash-lite",
@@ -3509,75 +3513,87 @@ async def api_benchmark_ai_throughput(
         client = get_gemini_client()
         if not client or types is None:
             return {"configured": False, "status": "error", "error": "GEMINI_API_KEY or google-genai not configured"}
-        model_used = GEMINI_MODELS[0] if GEMINI_MODELS else "gemini-2.0-flash"
-        t0 = time.perf_counter()
-        try:
-            resp = client.models.generate_content(
-                model=model_used,
-                contents=prompt,
-            )
-            elapsed_ms = round((time.perf_counter() - t0) * 1000, 2)
-            content = (resp.text or "").strip()
-            return {
-                "configured": True,
-                "status": "success",
-                "engine": "Google Gemini",
-                "model": model_used,
-                "latency_ms": elapsed_ms,
-                "sample": content[:120].strip(),
-            }
-        except Exception as e:
-            elapsed_ms = round((time.perf_counter() - t0) * 1000, 2)
-            return {
-                "configured": True,
-                "status": "error",
-                "engine": "Google Gemini",
-                "model": model_used,
-                "latency_ms": elapsed_ms,
-                "error": str(e),
-            }
+        last_err = None
+        for model_used in GEMINI_MODELS:
+            t0 = time.perf_counter()
+            try:
+                resp = client.models.generate_content(
+                    model=model_used,
+                    contents=prompt,
+                )
+                elapsed_ms = round((time.perf_counter() - t0) * 1000, 2)
+                content = (resp.text or "").strip()
+                if content:
+                    return {
+                        "configured": True,
+                        "status": "success",
+                        "engine": "Google Gemini",
+                        "model": model_used,
+                        "latency_ms": elapsed_ms,
+                        "sample": content[:120].strip(),
+                    }
+            except Exception as e:
+                elapsed_ms = round((time.perf_counter() - t0) * 1000, 2)
+                last_err = f"{model_used}: {e}"
+                continue
+        return {
+            "configured": True,
+            "status": "error",
+            "engine": "Google Gemini",
+            "model": GEMINI_MODELS[0] if GEMINI_MODELS else "unknown",
+            "latency_ms": 0,
+            "error": last_err or "All Gemini models failed",
+        }
 
     def _test_openrouter():
         api_key = get_openrouter_api_key()
         if not api_key:
             return {"configured": False, "status": "error", "error": "OPENROUTER_API_KEY not configured"}
-        model_used = OPENROUTER_TEXT_MODELS[0] if OPENROUTER_TEXT_MODELS else "meta-llama/llama-3.3-70b-instruct:free"
-        t0 = time.perf_counter()
-        try:
-            content = query_openrouter_chat(
-                messages=[{"role": "user", "content": prompt}],
-                models=[model_used],
-                json_mode=False,
-            )
-            elapsed_ms = round((time.perf_counter() - t0) * 1000, 2)
-            if content:
-                return {
-                    "configured": True,
-                    "status": "success",
-                    "engine": "OpenRouter",
+        last_err = None
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+            "HTTP-Referer": "https://fridgeinventory.onrender.com",
+            "X-Title": "FridgeInventory",
+        }
+        for model_used in OPENROUTER_TEXT_MODELS:
+            t0 = time.perf_counter()
+            try:
+                payload = {
                     "model": model_used,
-                    "latency_ms": elapsed_ms,
-                    "sample": content[:120].strip(),
+                    "messages": [{"role": "user", "content": prompt}],
+                    "temperature": 0.2,
                 }
-            else:
-                return {
-                    "configured": True,
-                    "status": "error",
-                    "engine": "OpenRouter",
-                    "model": model_used,
-                    "latency_ms": elapsed_ms,
-                    "error": "No content returned from OpenRouter",
-                }
-        except Exception as e:
-            elapsed_ms = round((time.perf_counter() - t0) * 1000, 2)
-            return {
-                "configured": True,
-                "status": "error",
-                "engine": "OpenRouter",
-                "model": model_used,
-                "latency_ms": elapsed_ms,
-                "error": str(e),
-            }
+                resp = requests.post("https://openrouter.ai/api/v1/chat/completions", headers=headers, json=payload, timeout=8)
+                elapsed_ms = round((time.perf_counter() - t0) * 1000, 2)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
+                    if content:
+                        return {
+                            "configured": True,
+                            "status": "success",
+                            "engine": "OpenRouter",
+                            "model": model_used,
+                            "latency_ms": elapsed_ms,
+                            "sample": content[:120].strip(),
+                        }
+                    else:
+                        last_err = f"{model_used}: Empty content returned (status 200)"
+                else:
+                    last_err = f"{model_used}: HTTP {resp.status_code} - {resp.text[:120]}"
+            except Exception as e:
+                elapsed_ms = round((time.perf_counter() - t0) * 1000, 2)
+                last_err = f"{model_used}: {e}"
+                continue
+        return {
+            "configured": True,
+            "status": "error",
+            "engine": "OpenRouter",
+            "model": OPENROUTER_TEXT_MODELS[0] if OPENROUTER_TEXT_MODELS else "unknown",
+            "latency_ms": 0,
+            "error": last_err or "No content returned from OpenRouter",
+        }
 
     wall_start = time.perf_counter()
     results = {}
