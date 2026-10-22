@@ -2865,60 +2865,6 @@ def api_auth_me(request: Request):
     }
 
 
-def ensure_demo_fridge_exists(db, fid="SharmaKitchen", pin="Secret123"):
-    """Auto-provisions the demo fridge SharmaKitchen with sample groceries so the 1-click Demo pill always works flawlessly."""
-    try:
-        salt = secrets.token_hex(16)
-        phash = hash_pin(pin, salt)
-        if db is not None:
-            f_ref = db.collection("fridges").document(fid)
-            f_doc = f_ref.get()
-            if not f_doc.exists:
-                f_ref.set({
-                    "pin_hash": phash,
-                    "pin_salt": salt,
-                    "created_at": datetime.now(timezone.utc).isoformat(),
-                    "timezone": "Asia/Kolkata",
-                    "is_demo": True
-                })
-                sample_items = [
-                    {"name_en": "Fresh Milk", "name_hi": "ताज़ा दूध", "category": "dairy", "days_left": 2, "shelf_life_days": 3, "storage_tip": "Keep in coldest fridge shelf"},
-                    {"name_en": "Paneer", "name_hi": "पनीर", "category": "dairy", "days_left": 1, "shelf_life_days": 3, "storage_tip": "Store submerged in clean water"},
-                    {"name_en": "Spinach (Palak)", "name_hi": "पालक", "category": "vegetable", "days_left": 1, "shelf_life_days": 3, "storage_tip": "Wrap in paper towel"},
-                    {"name_en": "Tomatoes", "name_hi": "टमाटर", "category": "vegetable", "days_left": 5, "shelf_life_days": 7, "storage_tip": "Keep dry at eye level"},
-                    {"name_en": "Brown Bread", "name_hi": "ब्राउन ब्रेड", "category": "snack_bakery", "days_left": 3, "shelf_life_days": 5, "storage_tip": "Seal airtight to avoid drying"},
-                    {"name_en": "Cooked Dal", "name_hi": "पकी दाल", "category": "cooked_dish", "days_left": 0, "shelf_life_days": 2, "storage_tip": "Reheat thoroughly before serving"}
-                ]
-                now_dt = datetime.now(timezone.utc)
-                for s in sample_items:
-                    s_id = str(uuid.uuid4())
-                    s_added = (now_dt - timedelta(days=s["shelf_life_days"] - s["days_left"])).strftime("%Y-%m-%d")
-                    s_expiry = (now_dt + timedelta(days=s["days_left"])).strftime("%Y-%m-%d")
-                    f_ref.collection("inventory").document(s_id).set({
-                        "id": s_id,
-                        "name_en": s["name_en"],
-                        "name_hi": s["name_hi"],
-                        "category": s["category"],
-                        "added_date": s_added,
-                        "expiry_date": s_expiry,
-                        "days_left": s["days_left"],
-                        "days_elapsed": s["shelf_life_days"] - s["days_left"],
-                        "shelf_life_days": s["shelf_life_days"],
-                        "storage_tip": s["storage_tip"],
-                        "source": "demo"
-                    })
-        else:
-            if fid not in _IN_MEMORY_FRIDGES:
-                _IN_MEMORY_FRIDGES[fid] = {
-                    "pin_hash": phash,
-                    "pin_salt": salt,
-                    "created_at": datetime.now(timezone.utc).isoformat(),
-                    "timezone": "Asia/Kolkata",
-                    "inventory": []
-                }
-    except Exception as e:
-        logger.warning(f"Could not auto-provision demo fridge: {e}")
-
 @app.post("/api/auth/login", summary="Login to existing family fridge")
 def api_auth_login(payload: AuthLoginRequest, request: Request, response: Response):
     """Authenticate with Fridge ID and PIN; sets 30-day cryptographically signed cookie."""
@@ -2940,9 +2886,6 @@ def api_auth_login(payload: AuthLoginRequest, request: Request, response: Respon
 
     db, _ = init_firestore()
     authenticated = False
-
-    if fid.lower() in ("sharmakitchen", "demo") and pin == "Secret123":
-        ensure_demo_fridge_exists(db, fid, pin)
 
     if db is not None:
         try:
@@ -3163,7 +3106,49 @@ def api_auth_logout(request: Request, response: Response):
             _IN_MEMORY_SESSIONS[token_hash]["revoked"] = True
 
     response.delete_cookie(key=SESSION_COOKIE_NAME, path="/")
-    return {"ok": True, "message": "Successfully logged out."}
+    return {"ok": True, "message": "Successfully logged out.", "message_hi": "सफलतापूर्वक लॉगआउट किया गया।"}
+
+
+@app.post("/api/fridge/delete", summary="Permanently delete current family fridge and all items")
+def api_delete_fridge(request: Request, response: Response):
+    """Permanently deletes the authenticated fridge, all inventory items, and revokes sessions."""
+    fid = require_authenticated_fridge(request)
+    db, _ = init_firestore()
+
+    if db is not None:
+        try:
+            inv_ref = db.collection("fridges").document(fid).collection("inventory")
+            docs = list(inv_ref.stream())
+            for d in docs:
+                d.reference.delete()
+            db.collection("fridges").document(fid).delete()
+            logger.info(f"Permanently deleted Firestore fridge '{fid}' and {len(docs)} inventory items.")
+        except Exception as e:
+            logger.error(f"Error deleting Firestore fridge '{fid}': {e}")
+            raise HTTPException(status_code=500, detail="Database error while deleting fridge.")
+
+    if fid in _IN_MEMORY_FRIDGES:
+        del _IN_MEMORY_FRIDGES[fid]
+
+    cookie_val = request.cookies.get(SESSION_COOKIE_NAME)
+    auth_header = request.headers.get("Authorization") or request.headers.get("X-Fridge-Session")
+    token = verify_and_extract_token(cookie_val) or verify_and_extract_token(auth_header)
+    if token:
+        token_hash = _session_token_hash(token)
+        if db is not None:
+            try:
+                db.collection("fridge_sessions").document(token_hash).set({"revoked": True}, merge=True)
+            except Exception:
+                pass
+        if token_hash in _IN_MEMORY_SESSIONS:
+            _IN_MEMORY_SESSIONS[token_hash]["revoked"] = True
+
+    response.delete_cookie(key=SESSION_COOKIE_NAME, path="/")
+    return {
+        "ok": True,
+        "message": f"Fridge '{fid}' and all its inventory items were permanently deleted.",
+        "message_hi": f"फ्रिज '{fid}' और सभी सामान हमेशा के लिए मिटा दिए गए।"
+    }
 
 
 # ============================================================================
@@ -3588,17 +3573,17 @@ HTML_CONTENT = r"""<!DOCTYPE html>
           },
           colors: {
             brand: {
-              50: '#fffbeb',
-              100: '#fef3c7',
-              200: '#fde68a',
-              300: '#fcd34d',
-              400: '#fbbf24',
-              500: '#f59e0b',
-              600: '#d97706',
-              700: '#b45309',
-              800: '#92400e',
-              900: '#78350f',
-              950: '#451a03'
+              50: '#fff7ed',
+              100: '#ffedd5',
+              200: '#fed7aa',
+              300: '#fdba74',
+              400: '#fb923c',
+              500: '#f97316',
+              600: '#ea580c',
+              700: '#c2410c',
+              800: '#9a3412',
+              900: '#7c2d12',
+              950: '#431407'
             },
             leaf: {
               50: '#ecfdf5',
@@ -3651,8 +3636,8 @@ HTML_CONTENT = r"""<!DOCTYPE html>
         transform: translateX(110%) scale(0.9);
         opacity: 0;
       }
-      65% {
-        transform: translateX(-4%) scale(1.02);
+      70% {
+        transform: translateX(-3%) scale(1.02);
         opacity: 1;
       }
       100% {
@@ -3661,7 +3646,7 @@ HTML_CONTENT = r"""<!DOCTYPE html>
       }
     }
     .toast-bounce-in {
-      animation: toastBounceIn 0.35s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+      animation: toastBounceIn 0.2s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
     }
     @keyframes toastTimerBar {
       from { width: 100%; }
@@ -3806,10 +3791,14 @@ HTML_CONTENT = r"""<!DOCTYPE html>
         </button>
 
         <!-- Auth Actions -->
-        <div id="auth-logged-in" class="hidden items-center shrink-0">
-          <button id="logout-btn" class="px-2 sm:px-2.5 py-1.5 rounded-xl bg-stone-100 dark:bg-stone-800 hover:bg-rose-50 dark:hover:bg-rose-950/60 hover:text-rose-600 text-stone-600 dark:text-stone-300 font-semibold text-xs border border-stone-200 dark:border-stone-700 transition flex items-center gap-1 shrink-0" title="Logout" data-i18n="logout_btn">
+        <div id="auth-logged-in" class="hidden items-center gap-1.5 shrink-0">
+          <button id="logout-btn" class="px-2 sm:px-2.5 py-1.5 rounded-xl bg-stone-100 dark:bg-stone-800 hover:bg-orange-50 dark:hover:bg-orange-950/60 hover:text-orange-600 text-stone-600 dark:text-stone-300 font-semibold text-xs border border-stone-200 dark:border-stone-700 transition flex items-center gap-1 shrink-0 cursor-pointer" title="Logout" data-i18n="logout_btn">
             <svg class="w-3.5 h-3.5 inline sm:hidden pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/></svg>
             <span class="hidden sm:inline">Logout</span>
+          </button>
+          <button id="delete-fridge-btn" class="px-2 sm:px-2.5 py-1.5 rounded-xl bg-rose-50 dark:bg-rose-950/50 hover:bg-rose-600 hover:text-white text-rose-700 dark:text-rose-300 font-bold text-xs border border-rose-200 dark:border-rose-800 transition flex items-center gap-1 shrink-0 cursor-pointer" title="Delete Fridge" data-i18n="delete_fridge_btn">
+            <svg class="w-3.5 h-3.5 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+            <span class="hidden sm:inline">Delete Fridge</span>
           </button>
         </div>
 
@@ -3925,23 +3914,7 @@ HTML_CONTENT = r"""<!DOCTYPE html>
         </p>
       </div>
 
-      <!-- Quick 1-Click Demo Login Pill -->
-      <div class="bg-gradient-to-r from-amber-50 via-orange-50 to-amber-50 dark:from-stone-800/90 dark:via-amber-950/40 dark:to-stone-800/90 p-3 sm:p-3.5 rounded-2xl border-2 border-amber-200/90 dark:border-amber-800/60 flex flex-col sm:flex-row items-center justify-between gap-3 text-center sm:text-left shadow-sm">
-        <div class="flex items-center gap-2.5">
-          <div class="w-8 h-8 rounded-xl bg-amber-500 text-white flex items-center justify-center font-bold text-base shadow-sm shrink-0">⚡</div>
-          <div class="min-w-0">
-            <div class="text-xs font-bold text-stone-900 dark:text-white flex items-center gap-1.5 flex-wrap justify-center sm:justify-start">
-              <span>Quick Demo:</span>
-              <span class="font-mono px-1.5 py-0.5 rounded bg-white dark:bg-stone-900 border border-amber-200 dark:border-amber-800 text-amber-700 dark:text-amber-300">SharmaKitchen</span>
-              <span class="text-[11px] text-stone-500 dark:text-stone-400">(PIN: Secret123)</span>
-            </div>
-            <div class="text-[11px] text-stone-500 dark:text-stone-400">Click to instantly explore with live sample groceries!</div>
-          </div>
-        </div>
-        <button type="button" id="quick-demo-login-btn" class="w-full sm:w-auto px-4 py-2 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white font-extrabold text-xs shadow-md transition-all transform active:scale-95 shrink-0 cursor-pointer flex items-center justify-center gap-1.5">
-          <span>🚀 Explore Demo</span>
-        </button>
-      </div>
+
 
       <!-- Interactive Cartoon Kitchen Login Box Directly on Page -->
       <div class="bg-stone-50/90 dark:bg-stone-800/80 p-5 sm:p-6 rounded-2xl border-2 border-stone-200/90 dark:border-stone-700/80 shadow-sm text-left">
@@ -3970,7 +3943,7 @@ HTML_CONTENT = r"""<!DOCTYPE html>
             <input 
               type="text" 
               id="hero-login-fid" 
-              placeholder="e.g. SharmaKitchen (letters/numbers)" 
+              placeholder="e.g. MyKitchen or FamilyFridge (letters/numbers)" 
               pattern="[a-zA-Z0-9]{3,30}"
               class="w-full px-4 py-2.5 rounded-xl border-2 border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-900 text-sm font-semibold focus:outline-none focus:border-amber-500 font-mono transition-all"
               required
@@ -3988,7 +3961,7 @@ HTML_CONTENT = r"""<!DOCTYPE html>
               <input 
                 type="password" 
                 id="hero-login-pin" 
-                placeholder="Enter PIN (e.g. Secret123)" 
+                placeholder="Enter family PIN (min 4 chars)" 
                 pattern="[a-zA-Z0-9]{4,30}"
                 class="w-full pl-4 pr-11 py-2.5 rounded-xl border-2 border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-900 text-sm font-semibold focus:outline-none focus:border-amber-500 font-mono transition-all"
                 required
@@ -4023,7 +3996,7 @@ HTML_CONTENT = r"""<!DOCTYPE html>
             <input 
               type="text" 
               id="hero-create-fid" 
-              placeholder="e.g. SharmaKitchen or MyFridge (3-30 chars)" 
+              placeholder="e.g. MyKitchen or FamilyFridge (3-30 chars)" 
               pattern="[a-zA-Z0-9]{3,30}"
               class="w-full px-4 py-2.5 rounded-xl border-2 border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-900 text-sm font-semibold focus:outline-none focus:border-emerald-500 font-mono transition-all"
               required
@@ -4041,7 +4014,7 @@ HTML_CONTENT = r"""<!DOCTYPE html>
               <input 
                 type="password" 
                 id="hero-create-pin" 
-                placeholder="e.g. SecretPin42" 
+                placeholder="Set a 4-30 char family PIN" 
                 pattern="[a-zA-Z0-9]{4,30}"
                 class="w-full pl-4 pr-11 py-2.5 rounded-xl border-2 border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-900 text-sm font-semibold focus:outline-none focus:border-emerald-500 font-mono transition-all"
                 required
@@ -4078,8 +4051,8 @@ HTML_CONTENT = r"""<!DOCTYPE html>
           <h3 class="font-bold text-xs sm:text-sm text-stone-900 dark:text-white" data-i18n="feat_track_title">Smart Food Tracking</h3>
           <p class="text-xs text-stone-500 dark:text-stone-400 mt-1" data-i18n="feat_track_desc">Keep real-time tabs on fresh produce, dairy, groceries, and cooked meals.</p>
         </div>
-        <div class="p-4 rounded-2xl bg-indigo-50/70 dark:bg-stone-800/60 border border-indigo-200/70 dark:border-stone-700/60 hover:scale-[1.02] transition-transform">
-          <div class="w-9 h-9 rounded-xl bg-indigo-100 dark:bg-stone-800 text-indigo-700 dark:text-indigo-300 flex items-center justify-center mb-2.5 text-lg shadow-sm">
+        <div class="p-4 rounded-2xl bg-orange-50/70 dark:bg-stone-800/60 border border-orange-200/70 dark:border-stone-700/60 hover:scale-[1.02] transition-transform">
+          <div class="w-9 h-9 rounded-xl bg-orange-100 dark:bg-stone-800 text-orange-700 dark:text-orange-300 flex items-center justify-center mb-2.5 text-lg shadow-sm">
             🔔
           </div>
           <h3 class="font-bold text-xs sm:text-sm text-stone-900 dark:text-white" data-i18n="feat_expiry_title">Offline Push Alerts</h3>
@@ -4739,6 +4712,36 @@ HTML_CONTENT = r"""<!DOCTYPE html>
 
   </main>
 
+  <!-- LIVELY CARTOON CONFIRMATION MODAL -->
+  <div id="confirm-dialog-modal" class="fixed inset-0 bg-stone-900/60 backdrop-blur-md z-[100001] flex items-center justify-center p-4 hidden">
+    <div class="bg-white/95 dark:bg-stone-900/95 rounded-3xl max-w-sm w-full p-6 shadow-2xl border-2 border-orange-300/80 dark:border-orange-900/60 text-center space-y-4 relative overflow-hidden">
+      <!-- Decorative Cartoon Blob -->
+      <div class="absolute -top-10 -right-10 w-28 h-28 bg-orange-400/20 dark:bg-orange-500/15 rounded-full blur-xl pointer-events-none"></div>
+
+      <div id="confirm-icon" class="w-12 h-12 rounded-2xl bg-orange-100 dark:bg-stone-800 text-orange-600 dark:text-orange-400 flex items-center justify-center text-2xl mx-auto shadow-sm">
+        🚪
+      </div>
+
+      <div>
+        <h3 id="confirm-title" class="font-extrabold text-base sm:text-lg text-stone-900 dark:text-white">
+          Logout from Fridge
+        </h3>
+        <p id="confirm-message" class="text-xs sm:text-sm text-stone-600 dark:text-stone-300 mt-1 leading-relaxed">
+          Are you sure you want to logout?
+        </p>
+      </div>
+
+      <div class="pt-1 flex items-center justify-center gap-2.5">
+        <button type="button" id="confirm-cancel-btn" class="flex-1 py-2.5 px-4 rounded-xl border border-stone-200 dark:border-stone-700 bg-stone-100 dark:bg-stone-800 hover:bg-stone-200 dark:hover:bg-stone-700 text-stone-700 dark:text-stone-300 font-bold text-xs transition active:scale-95 cursor-pointer">
+          Cancel
+        </button>
+        <button type="button" id="confirm-action-btn" class="flex-1 py-2.5 px-4 rounded-xl bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white font-extrabold text-xs shadow-md transition active:scale-95 cursor-pointer">
+          Confirm
+        </button>
+      </div>
+    </div>
+  </div>
+
   <!-- LIVELY CARTOON AUTH MODAL -->
   <div id="auth-modal" class="fixed inset-0 bg-stone-900/60 backdrop-blur-md z-50 flex items-center justify-center p-4 hidden">
     <div class="bg-white/95 dark:bg-stone-900/95 rounded-3xl max-w-md w-full p-6 sm:p-7 shadow-2xl border-2 border-amber-300/80 dark:border-amber-900/50 text-stone-800 dark:text-stone-100 relative overflow-hidden">
@@ -4754,18 +4757,6 @@ HTML_CONTENT = r"""<!DOCTYPE html>
           </div>
         </div>
         <button id="close-auth-modal-btn" class="w-8 h-8 rounded-full bg-stone-100 dark:bg-stone-800 hover:bg-stone-200 dark:hover:bg-stone-700 text-stone-500 dark:text-stone-300 text-lg font-bold flex items-center justify-center transition cursor-pointer">&times;</button>
-      </div>
-
-      <!-- Quick Demo Pill inside Modal -->
-      <div class="mt-3.5 bg-gradient-to-r from-amber-50 via-orange-50 to-amber-50 dark:from-stone-800 dark:via-amber-950/30 dark:to-stone-800 p-2.5 rounded-xl border border-amber-200/80 dark:border-amber-800/60 flex items-center justify-between gap-2">
-        <div class="text-[11px] font-bold text-stone-800 dark:text-stone-200 flex items-center gap-1.5 flex-wrap">
-          <span>⚡ Demo:</span> 
-          <span class="font-mono text-amber-700 dark:text-amber-400 bg-white dark:bg-stone-900 px-1 py-0.5 rounded border border-amber-200/60 dark:border-amber-800/60">SharmaKitchen</span>
-          <span class="text-stone-400">(Secret123)</span>
-        </div>
-        <button type="button" id="modal-quick-demo-btn" class="px-2.5 py-1 rounded-lg bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white font-extrabold text-[10px] shadow-sm transition active:scale-95 cursor-pointer shrink-0">
-          Fill Demo
-        </button>
       </div>
 
       <!-- Tab Switcher -->
@@ -4793,7 +4784,7 @@ HTML_CONTENT = r"""<!DOCTYPE html>
           <input 
             type="text" 
             id="login-fid" 
-            placeholder="e.g. SharmaKitchen or test" 
+            placeholder="e.g. MyKitchen or FamilyFridge" 
             pattern="[a-zA-Z0-9]{3,30}"
             class="w-full px-4 py-2.5 rounded-xl border-2 border-stone-200 dark:border-stone-700 bg-stone-50 dark:bg-stone-800 text-sm font-semibold focus:outline-none focus:border-amber-500 font-mono transition-all"
             required
@@ -4812,7 +4803,7 @@ HTML_CONTENT = r"""<!DOCTYPE html>
             <input 
               type="password" 
               id="login-pin" 
-              placeholder="Enter fridge PIN (e.g. Secret123)..." 
+              placeholder="Enter family PIN (min 4 chars)..." 
               pattern="[a-zA-Z0-9]{4,30}"
               class="w-full pl-4 pr-11 py-2.5 rounded-xl border-2 border-stone-200 dark:border-stone-700 bg-stone-50 dark:bg-stone-800 text-sm font-semibold focus:outline-none focus:border-amber-500 font-mono transition-all"
               required
@@ -4847,7 +4838,7 @@ HTML_CONTENT = r"""<!DOCTYPE html>
           <input 
             type="text" 
             id="create-fid" 
-            placeholder="e.g. SharmaKitchen or MyFridge24" 
+            placeholder="e.g. MyKitchen or FamilyFridge" 
             pattern="[a-zA-Z0-9]{3,30}"
             class="w-full px-4 py-2.5 rounded-xl border-2 border-stone-200 dark:border-stone-700 bg-stone-50 dark:bg-stone-800 text-sm font-semibold focus:outline-none focus:border-emerald-500 font-mono transition-all"
             required
@@ -5269,6 +5260,7 @@ HTML_CONTENT = r"""<!DOCTYPE html>
         app_subtitle: "Smart Food Inventory & Zero-Waste Kitchen",
         lang_btn: "हिन्दी",
         logout_btn: "Logout",
+        delete_fridge_btn: "Delete Fridge",
         login_create_btn: "Login",
         sidebar_title: "Fridge Space",
         sidebar_connected: "Active & Connected",
@@ -5445,6 +5437,7 @@ HTML_CONTENT = r"""<!DOCTYPE html>
         app_subtitle: "स्मार्ट फूड इन्वेंटरी और ज़ीरो-वेस्ट किचन",
         lang_btn: "English",
         logout_btn: "लॉगआउट",
+        delete_fridge_btn: "फ्रिज हटाएँ",
         login_create_btn: "लॉग इन",
         sidebar_title: "फ्रिज स्पेस",
         sidebar_connected: "सक्रिय और कनेक्टेड",
@@ -5874,55 +5867,47 @@ HTML_CONTENT = r"""<!DOCTYPE html>
 
     document.getElementById('theme-toggle-btn').addEventListener('click', toggleTheme);
 
-    // Lively Cartoon Toast Notifications (Bilingual English & Hindi with animated badges & progress timer)
+    // Fast, Compact Cartoon Toast Notifications (Warm Orange Layout, 1.6s auto-dismiss)
     function showToast(message, type = 'info', messageHi = null) {
       const finalMsg = (currentLang === 'hi' && messageHi) ? messageHi : message;
       const container = document.getElementById('toast-container');
       if (!container) return;
 
       const toast = document.createElement('div');
-      toast.className = 'pointer-events-auto toast-bounce-in w-full sm:max-w-md p-3.5 sm:p-4 rounded-2xl shadow-2xl border-2 flex items-start gap-3 backdrop-blur-md transition-all relative overflow-hidden select-none ' + (
+      toast.className = 'pointer-events-auto toast-bounce-in w-auto max-w-[290px] sm:max-w-xs py-2 px-3 rounded-2xl shadow-xl border-2 flex items-center gap-2.5 backdrop-blur-md transition-all relative overflow-hidden select-none ' + (
         type === 'success' 
           ? 'bg-emerald-50/95 dark:bg-stone-900/95 border-emerald-400/90 text-emerald-950 dark:text-emerald-100'
           : type === 'error'
           ? 'bg-rose-50/95 dark:bg-stone-900/95 border-rose-400/90 text-rose-950 dark:text-rose-100'
           : type === 'warning'
           ? 'bg-amber-50/95 dark:bg-stone-900/95 border-amber-400/90 text-amber-950 dark:text-amber-100'
-          : 'bg-stone-50/95 dark:bg-stone-900/95 border-indigo-300 dark:border-indigo-700 text-stone-900 dark:text-stone-100'
+          : 'bg-orange-50/95 dark:bg-stone-900/95 border-orange-400/90 text-orange-950 dark:text-orange-100'
       );
 
       const iconBadge = (
         type === 'success'
-          ? '<div class="w-8 h-8 rounded-xl bg-emerald-500 text-white flex items-center justify-center font-bold text-sm shadow-sm shrink-0">✓</div>'
+          ? '<div class="w-6 h-6 rounded-lg bg-emerald-500 text-white flex items-center justify-center font-bold text-xs shadow-sm shrink-0">✓</div>'
           : type === 'error'
-          ? '<div class="w-8 h-8 rounded-xl bg-rose-500 text-white flex items-center justify-center font-bold text-sm shadow-sm shrink-0">✕</div>'
+          ? '<div class="w-6 h-6 rounded-lg bg-rose-500 text-white flex items-center justify-center font-bold text-xs shadow-sm shrink-0">✕</div>'
           : type === 'warning'
-          ? '<div class="w-8 h-8 rounded-xl bg-amber-500 text-white flex items-center justify-center font-bold text-sm shadow-sm shrink-0">⚠️</div>'
-          : '<div class="w-8 h-8 rounded-xl bg-indigo-500 text-white flex items-center justify-center font-bold text-sm shadow-sm shrink-0">✨</div>'
-      );
-
-      const titleText = (
-        type === 'success' ? (currentLang === 'hi' ? 'सफल!' : 'Success!') :
-        type === 'error' ? (currentLang === 'hi' ? 'सूचना / त्रुटि' : 'Alert / Notice') :
-        type === 'warning' ? (currentLang === 'hi' ? 'ध्यान दें' : 'Heads Up') :
-        (currentLang === 'hi' ? 'जानकारी' : 'Info')
+          ? '<div class="w-6 h-6 rounded-lg bg-amber-500 text-white flex items-center justify-center font-bold text-xs shadow-sm shrink-0">⚠️</div>'
+          : '<div class="w-6 h-6 rounded-lg bg-orange-500 text-white flex items-center justify-center font-bold text-xs shadow-sm shrink-0">✨</div>'
       );
 
       const progressColor = (
         type === 'success' ? 'bg-emerald-500' :
         type === 'error' ? 'bg-rose-500' :
-        type === 'warning' ? 'bg-amber-500' : 'bg-indigo-500'
+        type === 'warning' ? 'bg-amber-500' : 'bg-orange-500'
       );
 
       toast.innerHTML = `
         ${iconBadge}
-        <div class="flex-1 min-w-0 pr-2">
-          <div class="text-[10px] sm:text-[11px] font-extrabold uppercase tracking-wider opacity-75">${titleText}</div>
-          <div class="text-xs sm:text-sm font-bold leading-snug mt-0.5 break-words">${finalMsg}</div>
+        <div class="flex-1 min-w-0 pr-1">
+          <div class="text-xs font-bold leading-tight break-words">${finalMsg}</div>
         </div>
-        <button type="button" class="text-stone-400 hover:text-stone-700 dark:hover:text-stone-200 text-lg font-bold p-0.5 cursor-pointer leading-none" onclick="this.closest('.toast-bounce-in').remove()">&times;</button>
-        <div class="absolute bottom-0 left-0 right-0 h-1 bg-stone-200/50 dark:bg-stone-800/50">
-          <div class="h-full ${progressColor}" style="animation: toastTimerBar 3.5s linear forwards;"></div>
+        <button type="button" class="text-stone-400 hover:text-stone-700 dark:hover:text-stone-200 text-base font-bold p-0.5 cursor-pointer leading-none shrink-0" onclick="this.closest('.toast-bounce-in').remove()">&times;</button>
+        <div class="absolute bottom-0 left-0 right-0 h-0.5 bg-stone-200/50 dark:bg-stone-800/50">
+          <div class="h-full ${progressColor}" style="animation: toastTimerBar 1.6s linear forwards;"></div>
         </div>
       `;
 
@@ -5930,11 +5915,11 @@ HTML_CONTENT = r"""<!DOCTYPE html>
 
       setTimeout(() => {
         if (!toast.parentNode) return;
-        toast.style.transition = 'all 0.3s ease';
+        toast.style.transition = 'all 0.18s ease';
         toast.style.opacity = '0';
         toast.style.transform = 'translateX(100%) scale(0.9)';
-        setTimeout(() => { if (toast.parentNode) toast.remove(); }, 320);
-      }, 3500);
+        setTimeout(() => { if (toast.parentNode) toast.remove(); }, 190);
+      }, 1600);
     }
 
     // Helper: URL-safe base64 to Uint8Array for VAPID key
@@ -6335,32 +6320,92 @@ HTML_CONTENT = r"""<!DOCTYPE html>
       });
     }
 
-    // 1-Click Quick Demo Login Handlers
-    function triggerQuickDemo() {
-      const heroFid = document.getElementById('hero-login-fid');
-      const heroPin = document.getElementById('hero-login-pin');
-      if (heroFid) heroFid.value = 'SharmaKitchen';
-      if (heroPin) heroPin.value = 'Secret123';
+    // Cartoon Confirmation Dialog Helper
+    function showCartoonConfirm({ title, message, icon, confirmText, confirmClass, onConfirm }) {
+      const modal = document.getElementById('confirm-dialog-modal');
+      const titleEl = document.getElementById('confirm-title');
+      const msgEl = document.getElementById('confirm-message');
+      const iconEl = document.getElementById('confirm-icon');
+      const actionBtn = document.getElementById('confirm-action-btn');
+      const cancelBtn = document.getElementById('confirm-cancel-btn');
+      if (!modal) return;
 
-      const modalFid = document.getElementById('login-fid');
-      const modalPin = document.getElementById('login-pin');
-      if (modalFid) modalFid.value = 'SharmaKitchen';
-      if (modalPin) modalPin.value = 'Secret123';
+      titleEl.textContent = title;
+      msgEl.textContent = message;
+      if (iconEl && icon) iconEl.textContent = icon;
+      actionBtn.textContent = confirmText || (currentLang === 'hi' ? 'पुष्टि करें' : 'Confirm');
+      actionBtn.className = confirmClass || 'flex-1 py-2.5 px-4 rounded-xl bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white font-extrabold text-xs shadow-md transition active:scale-95 cursor-pointer';
 
-      performLogin('SharmaKitchen', 'Secret123');
+      modal.classList.remove('hidden');
+
+      const cleanup = () => {
+        modal.classList.add('hidden');
+        actionBtn.onclick = null;
+        cancelBtn.onclick = null;
+      };
+
+      cancelBtn.onclick = () => cleanup();
+      actionBtn.onclick = () => {
+        cleanup();
+        if (onConfirm) onConfirm();
+      };
     }
 
-    const quickDemoBtn = document.getElementById('quick-demo-login-btn');
-    if (quickDemoBtn) quickDemoBtn.addEventListener('click', triggerQuickDemo);
+    // 1-Step Confirmation for Logout
+    function requestLogout() {
+      showCartoonConfirm({
+        title: currentLang === 'hi' ? 'लॉगआउट की पुष्टि' : 'Logout from Fridge',
+        message: currentLang === 'hi' ? 'क्या आप इस फ्रिज से लॉगआउट करना चाहते हैं?' : 'Are you sure you want to logout from this fridge?',
+        icon: '🚪',
+        confirmText: currentLang === 'hi' ? 'हाँ, लॉगआउट करें' : 'Yes, Logout',
+        confirmClass: 'flex-1 py-2.5 px-4 rounded-xl bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white font-extrabold text-xs shadow-md transition active:scale-95 cursor-pointer',
+        onConfirm: () => handleLogout()
+      });
+    }
 
-    const modalDemoBtn = document.getElementById('modal-quick-demo-btn');
-    if (modalDemoBtn) modalDemoBtn.addEventListener('click', () => {
-      const modalFid = document.getElementById('login-fid');
-      const modalPin = document.getElementById('login-pin');
-      if (modalFid) modalFid.value = 'SharmaKitchen';
-      if (modalPin) modalPin.value = 'Secret123';
-      performLogin('SharmaKitchen', 'Secret123');
-    });
+    // 2-Step Confirmation for Deletion (Prompt 1: Delete this fridge? -> Prompt 2: Are you sure you want to delete this fridge?)
+    function requestDeleteFridge() {
+      if (!currentFridge) return;
+      const targetFid = currentFridge;
+
+      // First confirmation: "delete this fridge"
+      showCartoonConfirm({
+        title: currentLang === 'hi' ? 'फ्रिज डिलीट करें?' : 'Delete This Fridge?',
+        message: currentLang === 'hi' ? `क्या आप फ्रिज '${targetFid}' को हटाना चाहते हैं? सभी खाद्य सामग्री और डेटा हमेशा के लिए मिट जाएंगे।` : `Delete fridge '${targetFid}'? All food items and data will be permanently deleted.`,
+        icon: '⚠️',
+        confirmText: currentLang === 'hi' ? 'फ्रिज डिलीट करें' : 'Delete This Fridge',
+        confirmClass: 'flex-1 py-2.5 px-4 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-extrabold text-xs shadow-md transition active:scale-95 cursor-pointer',
+        onConfirm: () => {
+          // Second confirmation: "are you sure you want to delete this fridgge"
+          setTimeout(() => {
+            showCartoonConfirm({
+              title: currentLang === 'hi' ? 'अंतिम पुष्टि: क्या आप निश्चित हैं?' : 'Are you sure you want to delete this fridge?',
+              message: currentLang === 'hi' ? `यह क्रिया वापस नहीं ली जा सकती! फ्रिज '${targetFid}' और सभी रिकॉर्ड हमेशा के लिए नष्ट हो जाएंगे।` : `This action CANNOT be undone! Fridge '${targetFid}' and all its inventory will be permanently erased.`,
+              icon: '🚨',
+              confirmText: currentLang === 'hi' ? 'हाँ, हमेशा के लिए मिटाएँ' : 'Yes, Delete Permanently',
+              confirmClass: 'flex-1 py-2.5 px-4 rounded-xl bg-gradient-to-r from-rose-600 to-red-700 hover:from-rose-700 hover:to-red-800 text-white font-extrabold text-xs shadow-lg transition active:scale-95 cursor-pointer ring-2 ring-rose-500/40',
+              onConfirm: () => executeDeleteFridge()
+            });
+          }, 150);
+        }
+      });
+    }
+
+    async function executeDeleteFridge() {
+      if (!currentFridge) return;
+      try {
+        const res = await fetch('/api/fridge/delete', {
+          method: 'POST',
+          credentials: 'same-origin'
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || 'Failed to delete fridge');
+        setLoggedOutState();
+        showToast(currentLang === 'hi' ? (data.message_hi || data.message) : data.message, 'success');
+      } catch (err) {
+        showToast(err.message, 'error');
+      }
+    }
 
     // PIN / Password Input Visibility Eye Toggles
     let _lastInputToggleTime = 0;
@@ -6378,7 +6423,7 @@ HTML_CONTENT = r"""<!DOCTYPE html>
 
       if (btnEl) {
         if (isPass) {
-          btnEl.innerHTML = '<svg class="w-4 h-4 text-amber-600 dark:text-amber-400 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l18 18"/></svg>';
+          btnEl.innerHTML = '<svg class="w-4 h-4 text-orange-600 dark:text-orange-400 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l18 18"/></svg>';
           btnEl.setAttribute('title', 'Hide PIN');
         } else {
           btnEl.innerHTML = '<svg class="w-4 h-4 text-stone-400 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>';
@@ -6399,7 +6444,11 @@ HTML_CONTENT = r"""<!DOCTYPE html>
       });
     });
 
-    document.getElementById('logout-btn').addEventListener('click', handleLogout);
+    const logoutBtn = document.getElementById('logout-btn');
+    if (logoutBtn) logoutBtn.addEventListener('click', requestLogout);
+
+    const deleteFridgeBtn = document.getElementById('delete-fridge-btn');
+    if (deleteFridgeBtn) deleteFridgeBtn.addEventListener('click', requestDeleteFridge);
 
     // Load Inventory Items with Strict Authorization & Offline Caching
     async function loadInventory(silent = false) {
