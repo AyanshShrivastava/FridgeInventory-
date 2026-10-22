@@ -347,11 +347,6 @@ GEMINI_MODELS = list(dict.fromkeys([
     "gemini-3.6-flash",
     "gemini-3.7-flash",
     "gemini-3.8-flash",
-    "gemini-2.5-flash",
-    "gemini-2.0-flash",
-    "gemini-2.0-flash-lite",
-    "gemini-1.5-flash",
-    "gemini-1.5-pro",
 ]))
 
 def get_gemini_client() -> Optional[Any]:
@@ -397,9 +392,9 @@ GROQ_TEXT_MODELS = list(dict.fromkeys([
     _primary_groq,
     "llama-3.3-70b-versatile",
     "llama-3.1-8b-instant",
+    "llama-3.2-3b-preview",
+    "llama-3.2-1b-preview",
     "mixtral-8x7b-32768",
-    "llama3-70b-8192",
-    "llama3-8b-8192",
     "gemma2-9b-it",
     "deepseek-r1-distill-llama-70b",
 ]))
@@ -435,6 +430,77 @@ def get_groq_client() -> Optional[Any]:
     except Exception as exc:
         logger.error(f"Failed to initialize Groq client: {exc}")
         return None
+    return None
+
+
+# ----------------------------------------------------------------------------
+# OpenRouter Integration (Universal Fallback Multi-Model Aggregator)
+# ----------------------------------------------------------------------------
+try:
+    import requests
+    HAVE_REQUESTS = True
+except ImportError:
+    requests = None  # type: ignore
+    HAVE_REQUESTS = False
+
+_primary_openrouter = os.getenv("OPENROUTER_MODEL", "meta-llama/llama-3.3-70b-instruct:free")
+OPENROUTER_TEXT_MODELS = list(dict.fromkeys([
+    _primary_openrouter,
+    "meta-llama/llama-3.3-70b-instruct:free",
+    "google/gemini-2.0-flash-exp:free",
+    "mistralai/mistral-small-24b-instruct-2501:free",
+    "deepseek/deepseek-r1:free",
+    "qwen/qwen-2.5-72b-instruct:free",
+]))
+
+OPENROUTER_VISION_MODELS = [
+    "google/gemini-2.0-flash-exp:free",
+    "qwen/qwen-2-vl-72b-instruct:free",
+    "meta-llama/llama-3.2-11b-vision-instruct:free",
+]
+
+def get_openrouter_api_key() -> Optional[str]:
+    """Retrieve OpenRouter API key from environment."""
+    val = os.getenv("OPENROUTER_API_KEY")
+    return val.strip() if val and val.strip() else None
+
+def query_openrouter_chat(messages: List[dict], models: Optional[List[str]] = None, json_mode: bool = True) -> Optional[str]:
+    """Query OpenRouter API with cascade across free models."""
+    if not HAVE_REQUESTS or requests is None:
+        return None
+    api_key = get_openrouter_api_key()
+    if not api_key:
+        return None
+
+    to_try = models or OPENROUTER_TEXT_MODELS
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+        "HTTP-Referer": "https://fridgeinventory.onrender.com",
+        "X-Title": "FridgeInventory",
+    }
+
+    for m in to_try:
+        try:
+            payload = {
+                "model": m,
+                "messages": messages,
+                "temperature": 0.2,
+            }
+            if json_mode:
+                payload["response_format"] = {"type": "json_object"}
+            resp = requests.post("https://openrouter.ai/api/v1/chat/completions", headers=headers, json=payload, timeout=12)
+            if resp.status_code == 200:
+                data = resp.json()
+                content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
+                if content:
+                    logger.info(f"OpenRouter query succeeded via {m}")
+                    return content
+            else:
+                logger.warning(f"OpenRouter model {m} returned {resp.status_code}: {resp.text[:120]}")
+        except Exception as exc:
+            logger.warning(f"OpenRouter model {m} failed: {exc}")
+            continue
     return None
 
 
@@ -1349,6 +1415,40 @@ def classify_food(phrase: str) -> ClassifyResponse:
                 logger.warning(f"Gemini fallback model {model_name} failed on '{clean_phrase}': {exc}")
                 continue
 
+    # 2c. Fallback: OpenRouter Free Models Cascade (if configured)
+    if get_openrouter_api_key():
+        or_res = query_openrouter_chat(
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "You are a professional culinary AI food classifier for Indian household refrigerators. "
+                        "Output strictly valid JSON matching schema with keys: is_food (bool), name_en (str), name_hi (str), "
+                        "category (str), shelf_life_days (int), requires_expiry_date (bool), storage_tip (str)."
+                    )
+                },
+                {"role": "user", "content": CLASSIFY_PROMPT_TEMPLATE.format(query=clean_phrase)}
+            ],
+            models=OPENROUTER_TEXT_MODELS,
+            json_mode=True
+        )
+        if or_res:
+            try:
+                verdict = FoodClassificationVerdict.model_validate_json(or_res)
+                if verdict.is_food and verdict.name_en and verdict.category != FoodCategory.NOT_FOOD:
+                    return ClassifyResponse(
+                        is_food=True,
+                        name_en=verdict.name_en,
+                        name_hi=verdict.name_hi or verdict.name_en,
+                        category=verdict.category.value,
+                        shelf_life_days=None if verdict.requires_expiry_date else verdict.shelf_life_days,
+                        requires_expiry_date=verdict.requires_expiry_date,
+                        storage_tip=verdict.storage_tip or "Keep refrigerated or in a cool dry space.",
+                        analyzed_by="OpenRouter AI (Fallback)",
+                    )
+            except Exception as e:
+                logger.warning(f"OpenRouter classification parse error: {e}")
+
     # 2. Check for packaged snacks & brand drinks heuristic (e.g. "lays", "red bull", "potato bites")
     tokens = set(clean_phrase.lower().split())
     clean_lower = clean_phrase.lower()
@@ -1667,8 +1767,84 @@ def classify_food_photo(
                 logger.warning(f"Groq Vision model {vmodel} failed: {g_exc}")
                 continue
 
-    # When both Gemini and Groq Vision are unable to identify or unreachable:
-    logger.warning("Gemini Vision and Groq Vision were unreachable or unable to identify food in photo.")
+    # 2c. Fallback: OpenRouter Vision Models Cascade
+    if get_openrouter_api_key() and HAVE_REQUESTS and requests is not None:
+        prompt_vision = PHOTO_CLASSIFY_PROMPT + "\n\nOutput strictly valid JSON with root object having keys: is_food (bool), items (list of objects with name_en, name_hi, category, shelf_life_days, requires_expiry_date, storage_tip), message (str)."
+        or_vis = query_openrouter_chat(
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": prompt_vision},
+                        {"type": "image_url", "image_url": {"url": f"data:{detected_mime};base64,{b64_str}"}}
+                    ]
+                }
+            ],
+            models=OPENROUTER_VISION_MODELS,
+            json_mode=True
+        )
+        if or_vis:
+            try:
+                verdict = MultiFoodClassificationVerdict.model_validate_json(or_vis)
+                if verdict.is_food and verdict.items:
+                    valid_items = [it for it in verdict.items if it.name_en and it.category != FoodCategory.NOT_FOOD]
+                    if valid_items:
+                        auto_added: List[InventoryItem] = []
+                        needs_expiry: List[dict] = []
+                        all_items_dicts: List[dict] = []
+                        for it in valid_items:
+                            cat_str = it.category.value if hasattr(it.category, "value") else str(it.category)
+                            item_dict = {
+                                "name_en": it.name_en,
+                                "name_hi": it.name_hi or it.name_en,
+                                "category": cat_str,
+                                "shelf_life_days": it.shelf_life_days if not it.requires_expiry_date else None,
+                                "requires_expiry_date": it.requires_expiry_date,
+                                "storage_tip": it.storage_tip or "Store refrigerated.",
+                            }
+                            all_items_dicts.append(item_dict)
+                            if not it.requires_expiry_date:
+                                if fridge_id:
+                                    try:
+                                        item_create = InventoryItemCreate(
+                                            name_en=it.name_en,
+                                            name_hi=it.name_hi or it.name_en,
+                                            category=cat_str,
+                                            shelf_life_days=it.shelf_life_days if it.shelf_life_days > 0 else 2,
+                                            requires_expiry_date=False,
+                                            expiry_date=None,
+                                            storage_tip=it.storage_tip or "Keep refrigerated in an airtight container.",
+                                        )
+                                        saved = save_fridge_inventory_item(fridge_id, item_create, client_tz=client_tz)
+                                        auto_added.append(saved)
+                                    except Exception as save_err:
+                                        needs_expiry.append(item_dict)
+                                else:
+                                    needs_expiry.append(item_dict)
+                            else:
+                                needs_expiry.append(item_dict)
+
+                        primary = valid_items[0]
+                        cat_primary = primary.category.value if hasattr(primary.category, "value") else str(primary.category)
+                        return ClassifyResponse(
+                            is_food=True,
+                            name_en=primary.name_en,
+                            name_hi=primary.name_hi or primary.name_en,
+                            category=cat_primary,
+                            shelf_life_days=None if primary.requires_expiry_date else primary.shelf_life_days,
+                            requires_expiry_date=primary.requires_expiry_date,
+                            storage_tip=primary.storage_tip or "Keep refrigerated.",
+                            message="Photo analyzed via OpenRouter Vision.",
+                            analyzed_by="OpenRouter Vision",
+                            items=all_items_dicts,
+                            auto_added=[it.model_dump() for it in auto_added],
+                            needs_expiry=needs_expiry,
+                        )
+            except Exception as e:
+                logger.warning(f"OpenRouter vision parse error: {e}")
+
+    # When all configured cloud AI vision models fail:
+    logger.warning("All configured cloud AI vision models (Gemini, Groq, OpenRouter) were unreachable or unable to identify food in photo.")
     return ClassifyResponse(
         is_food=False,
         name_en="",
@@ -2071,6 +2247,22 @@ def generate_rescue_recipe(items: List[str]) -> RescueRecipe:
                     logger.warning(f"Groq how-to recipe failed on {g_model}: {g_err}. Trying next model...")
                     continue
 
+        # 2c. Fallback: OpenRouter Cascade for how-to recipe
+        if get_openrouter_api_key():
+            or_dish = query_openrouter_chat(
+                messages=[
+                    {"role": "system", "content": "You are a master Indian culinary chef. Output strictly valid JSON conforming to the recipe schema with English and Hindi fields."},
+                    {"role": "user", "content": HOWTO_RECIPE_PROMPT_TEMPLATE.format(dish=target_dish)}
+                ],
+                models=OPENROUTER_TEXT_MODELS,
+                json_mode=True
+            )
+            if or_dish:
+                try:
+                    return RescueRecipe.model_validate_json(or_dish)
+                except Exception as e:
+                    logger.warning(f"OpenRouter recipe parse error: {e}")
+
         # 3. Final Fallback: Authentic homestyle preset database
         return get_dish_recipe_fallback(target_dish)
 
@@ -2128,6 +2320,24 @@ def generate_rescue_recipe(items: List[str]) -> RescueRecipe:
             except Exception as g_err:
                 logger.warning(f"Groq rescue recipe fallback failed on {g_model}: {g_err}. Trying next model...")
                 continue
+
+    # 2c. Fallback: OpenRouter Cascade for leftover recipe
+    if get_openrouter_api_key():
+        or_recipe = query_openrouter_chat(
+            messages=[
+                {"role": "system", "content": "You are an expert chef specializing in Indian home cooking, pairing intelligence, and zero-waste recipes. Output strictly valid JSON conforming to the recipe schema with English and Hindi fields."},
+                {"role": "user", "content": RESCUE_PROMPT_TEMPLATE.format(ingredients=", ".join(clean_items))}
+            ],
+            models=OPENROUTER_TEXT_MODELS,
+            json_mode=True
+        )
+        if or_recipe:
+            try:
+                recipe = RescueRecipe.model_validate_json(or_recipe)
+                recipe.corrected_ingredients = clean_items
+                return recipe
+            except Exception as e:
+                logger.warning(f"OpenRouter leftover recipe parse error: {e}")
 
     # 3. Intelligent Culinary Fallback (Supports Drink + Food Combos)
     drink_kw = {"milk", "chocolate", "cocoa", "curd", "dahi", "yogurt", "shake", "smoothie",
@@ -3009,6 +3219,7 @@ def health_check():
     db, db_err = init_firestore()
     gemini_ready = get_gemini_client() is not None
     groq_ready = bool(get_groq_api_key())
+    openrouter_ready = bool(get_openrouter_api_key())
     now_ist = datetime.now(IST).strftime("%Y-%m-%d %H:%M:%S %Z")
     
     return {
@@ -3017,10 +3228,11 @@ def health_check():
         "timestamp_ist": now_ist,
         "groq_configured": groq_ready,
         "gemini_configured": gemini_ready,
+        "openrouter_configured": openrouter_ready,
         "ai_engine_routing": {
-            "fridge_command_bar": "Groq LPU (Primary) -> Gemini AI (Fallback) -> Local DB (Safety Net)",
-            "food_scanner_vision": "Gemini Vision (Primary) -> Groq Vision (Fallback) -> Manual / Local",
-            "rescue_recipe_chef": "Gemini AI (Primary) -> Groq LPU (Fallback) -> Preset Master Chef",
+            "fridge_command_bar": "Groq LPU (Primary) -> Gemini AI (Fallback 1) -> OpenRouter (Fallback 2) -> Local DB (Safety Net)",
+            "food_scanner_vision": "Gemini Vision (Primary) -> Groq Vision (Fallback 1) -> OpenRouter Vision (Fallback 2) -> Manual / Local",
+            "rescue_recipe_chef": "Gemini AI (Primary) -> Groq LPU (Fallback 1) -> OpenRouter (Fallback 2) -> Preset Master Chef",
         },
         "firebase_configured": db is not None,
         "firestore_status": "connected" if db is not None else db_err,
