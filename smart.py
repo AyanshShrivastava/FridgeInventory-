@@ -20,6 +20,7 @@ Features:
 from __future__ import annotations
 
 import os
+import time
 import json
 import logging
 import re
@@ -3556,6 +3557,80 @@ def api_rescue(payload: RescueRequest):
             detail="Please provide at least one expiring food item in the 'items' list.",
         )
     return generate_rescue_recipe(payload.items)
+
+
+@app.post("/api/debug/compare-recipes", summary="Benchmark Groq vs Gemini side-by-side with exact timing")
+def api_compare_recipes(payload: RescueRequest):
+    """Directly compares recipe generation between Groq and Gemini with live timing."""
+    items = payload.items or ["paneer", "tomatoes", "capsicum", "milk", "bread"]
+    clean_items, _ = correct_ingredients_list([str(i).strip() for i in items if str(i).strip()])
+    prompt = RESCUE_PROMPT_TEMPLATE.format(ingredients=", ".join(clean_items))
+    results = {}
+
+    # 1. Test Groq
+    groq_client = get_groq_client()
+    if groq_client:
+        start_g = time.time()
+        for g_model in GROQ_TEXT_MODELS:
+            try:
+                g_chat = groq_client.chat.completions.create(
+                    model=g_model,
+                    messages=[
+                        {"role": "system", "content": "You are an expert chef specializing in Indian home cooking, pairing intelligence, and zero-waste recipes. Output strictly valid JSON conforming to the recipe schema with English and Hindi fields."},
+                        {"role": "user", "content": prompt}
+                    ],
+                    response_format={"type": "json_object"},
+                    temperature=0.3,
+                )
+                g_raw = g_chat.choices[0].message.content or ""
+                recipe_g = RescueRecipe.model_validate_json(g_raw)
+                recipe_g.corrected_ingredients = clean_items
+                results["groq"] = {
+                    "ok": True,
+                    "model": g_model,
+                    "elapsed_seconds": round(time.time() - start_g, 2),
+                    "recipe": recipe_g.model_dump()
+                }
+                break
+            except Exception as e:
+                results["groq"] = {"ok": False, "error": str(e), "model": g_model}
+    else:
+        results["groq"] = {"ok": False, "error": "Groq not configured"}
+
+    # 2. Test Gemini
+    client = get_gemini_client()
+    if client and types is not None:
+        start_gem = time.time()
+        for model_name in GEMINI_MODELS:
+            try:
+                response = client.models.generate_content(
+                    model=model_name,
+                    contents=prompt,
+                    config=types.GenerateContentConfig(
+                        response_mime_type="application/json",
+                        response_schema=RescueRecipe,
+                        temperature=0.3,
+                    ),
+                )
+                raw_text = (response.text or "").strip()
+                recipe_gem = RescueRecipe.model_validate_json(raw_text)
+                recipe_gem.corrected_ingredients = clean_items
+                results["gemini"] = {
+                    "ok": True,
+                    "model": model_name,
+                    "elapsed_seconds": round(time.time() - start_gem, 2),
+                    "recipe": recipe_gem.model_dump()
+                }
+                break
+            except Exception as e:
+                results["gemini"] = {"ok": False, "error": str(e), "model": model_name}
+    else:
+        results["gemini"] = {"ok": False, "error": "Gemini not configured"}
+
+    return {
+        "items": clean_items,
+        "results": results
+    }
 
 
 @app.get("/api/inventory", response_model=List[InventoryItem], summary="Get All Inventory Items")
