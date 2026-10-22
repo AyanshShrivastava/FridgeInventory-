@@ -3457,6 +3457,7 @@ def health_check():
 @app.api_route("/api/benchmark/ai-throughput", methods=["GET", "POST"], summary="AI Engines Live Throughput & Latency Diagnostic Benchmark")
 async def api_benchmark_ai_throughput(
     engine: str = "all",
+    model: Optional[str] = None,
     prompt: str = "Classify food item: 1L cow milk. Return JSON: is_food, category, shelf_life_days.",
     request: Request = None,
 ):
@@ -3466,6 +3467,7 @@ async def api_benchmark_ai_throughput(
             body = await request.json()
             if isinstance(body, dict):
                 engine = body.get("engine", engine)
+                model = body.get("model", model)
                 prompt = body.get("prompt", prompt)
         except Exception:
             pass
@@ -3477,7 +3479,7 @@ async def api_benchmark_ai_throughput(
         if not client:
             return {"configured": False, "status": "error", "error": "GROQ_API_KEY not configured"}
         models = get_groq_active_text_models()
-        model_used = models[0] if models else "llama-3.3-70b-versatile"
+        model_used = model if (model and eng == "groq") else (models[0] if models else "llama-3.3-70b-versatile")
         t0 = time.perf_counter()
         try:
             resp = client.chat.completions.create(
@@ -3513,8 +3515,9 @@ async def api_benchmark_ai_throughput(
         client = get_gemini_client()
         if not client or types is None:
             return {"configured": False, "status": "error", "error": "GEMINI_API_KEY or google-genai not configured"}
+        target_models = [model] if (model and eng in ("gemini", "google")) else ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-2.5-flash", "gemini-3.5-flash-lite"]
         last_err = None
-        for model_used in GEMINI_MODELS:
+        for model_used in target_models:
             t0 = time.perf_counter()
             try:
                 resp = client.models.generate_content(
@@ -3540,7 +3543,7 @@ async def api_benchmark_ai_throughput(
             "configured": True,
             "status": "error",
             "engine": "Google Gemini",
-            "model": GEMINI_MODELS[0] if GEMINI_MODELS else "unknown",
+            "model": target_models[0],
             "latency_ms": 0,
             "error": last_err or "All Gemini models failed",
         }
@@ -3549,6 +3552,14 @@ async def api_benchmark_ai_throughput(
         api_key = get_openrouter_api_key()
         if not api_key:
             return {"configured": False, "status": "error", "error": "OPENROUTER_API_KEY not configured"}
+        target_models = [model] if (model and eng == "openrouter") else [
+            "meta-llama/llama-3.2-3b-instruct:free",
+            "meta-llama/llama-3.2-1b-instruct:free",
+            "google/gemma-2-9b-it:free",
+            "mistralai/mistral-7b-instruct:free",
+            "meta-llama/llama-3.3-70b-instruct:free",
+            "google/gemini-2.0-flash-exp:free",
+        ]
         last_err = None
         headers = {
             "Authorization": f"Bearer {api_key}",
@@ -3556,7 +3567,8 @@ async def api_benchmark_ai_throughput(
             "HTTP-Referer": "https://fridgeinventory.onrender.com",
             "X-Title": "FridgeInventory",
         }
-        for model_used in OPENROUTER_TEXT_MODELS:
+        attempts = []
+        for model_used in target_models:
             t0 = time.perf_counter()
             try:
                 payload = {
@@ -3577,22 +3589,24 @@ async def api_benchmark_ai_throughput(
                             "model": model_used,
                             "latency_ms": elapsed_ms,
                             "sample": content[:120].strip(),
+                            "attempts": attempts,
                         }
                     else:
-                        last_err = f"{model_used}: Empty content returned (status 200)"
+                        attempts.append({"model": model_used, "err": "Empty content returned (status 200)"})
                 else:
-                    last_err = f"{model_used}: HTTP {resp.status_code} - {resp.text[:120]}"
+                    attempts.append({"model": model_used, "code": resp.status_code, "err": resp.text[:100]})
             except Exception as e:
                 elapsed_ms = round((time.perf_counter() - t0) * 1000, 2)
-                last_err = f"{model_used}: {e}"
+                attempts.append({"model": model_used, "err": str(e)[:100]})
                 continue
         return {
             "configured": True,
             "status": "error",
             "engine": "OpenRouter",
-            "model": OPENROUTER_TEXT_MODELS[0] if OPENROUTER_TEXT_MODELS else "unknown",
+            "model": target_models[0],
             "latency_ms": 0,
-            "error": last_err or "No content returned from OpenRouter",
+            "error": "All OpenRouter models failed",
+            "attempts": attempts,
         }
 
     wall_start = time.perf_counter()
