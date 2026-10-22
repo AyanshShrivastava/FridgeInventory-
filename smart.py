@@ -340,14 +340,15 @@ def normalize_gemini_model_name(name: str) -> str:
         cleaned = f"gemini-{cleaned}"
     return cleaned
 
-_primary_model = os.getenv("GEMINI_MODEL", "gemini-3.5-flash-lite")
+_primary_model = os.getenv("GEMINI_MODEL", "gemini-3.5-flash")
 GEMINI_MODELS = list(dict.fromkeys([
     normalize_gemini_model_name(_primary_model),
-    "gemini-3.5-flash-lite",
     "gemini-3.5-flash",
-    "gemini-3.6-flash-lite",
-    "gemini-3.6-flash",
-    "gemini-3.7-flash",
+    "gemini-3.1-flash-lite",
+    "gemma-4-26b-a4b-it",
+    "gemini-3.5-flash-lite",
+    "gemini-flash-latest",
+    "gemini-flash-lite-latest",
     "gemini-3.8-flash",
 ]))
 
@@ -396,8 +397,6 @@ GROQ_TEXT_MODELS = list(dict.fromkeys([
     "openai/gpt-oss-120b",
     "openai/gpt-oss-20b",
     "allam-2-7b",
-    "llama-3.3-70b-versatile",
-    "llama-3.1-8b-instant",
 ]))
 
 GROQ_VISION_MODELS = [
@@ -471,13 +470,15 @@ except ImportError:
     requests = None  # type: ignore
     HAVE_REQUESTS = False
 
-_primary_openrouter = os.getenv("OPENROUTER_MODEL", "nvidia/nemotron-3.5-lightning:free")
+_primary_openrouter = os.getenv("OPENROUTER_MODEL", "google/gemma-4-26b-a4b-it:free")
 OPENROUTER_TEXT_MODELS = list(dict.fromkeys([
     _primary_openrouter,
-    "nvidia/nemotron-3.5-lightning:free",
-    "minimax/minimax-m3.1-flash:free",
+    "google/gemma-4-26b-a4b-it:free",
+    "cohere/north-mini-code:free",
+    "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
     "poolside/laguna-s-2.1:free",
-    "thinkingmachines/inkling-small:free",
+    "nvidia/nemotron-3.5-lightning:free",
+    "nvidia/nemotron-3-ultra-550b-a55b:free",
 ]))
 
 OPENROUTER_VISION_MODELS = [
@@ -3516,7 +3517,7 @@ async def api_benchmark_ai_throughput(
                 return {"configured": True, "status": "success", "available_models": active_list}
             except Exception as e:
                 return {"configured": True, "status": "error", "error": f"Failed to list models: {e}"}
-        target_models = [model] if (model and eng in ("gemini", "google")) else ["gemini-3.5-flash-lite"]
+        target_models = [model] if (model and eng in ("gemini", "google")) else ["gemini-3.5-flash", "gemini-3.1-flash-lite", "gemma-4-26b-a4b-it", "gemini-3.5-flash-lite"]
         last_err = None
         for model_used in target_models:
             t0 = time.perf_counter()
@@ -3554,10 +3555,11 @@ async def api_benchmark_ai_throughput(
         if not api_key:
             return {"configured": False, "status": "error", "error": "OPENROUTER_API_KEY not configured"}
         target_models = [model] if (model and eng == "openrouter") else [
-            "nvidia/nemotron-3.5-lightning:free",
-            "minimax/minimax-m3.1-flash:free",
+            "google/gemma-4-26b-a4b-it:free",
+            "cohere/north-mini-code:free",
+            "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
             "poolside/laguna-s-2.1:free",
-            "thinkingmachines/inkling-small:free",
+            "nvidia/nemotron-3.5-lightning:free",
         ]
         last_err = None
         headers = {
