@@ -1,0 +1,361 @@
+{
+  "timestamp_utc": "2026-10-22 13:21:48 UTC",
+  "target_url": "https://fridge-a.onrender.com",
+  "benchmarks": {
+    "groq_5_concurrent": {
+      "engine": "groq",
+      "model_requested": "default",
+      "concurrency_sent": 5,
+      "successful_count": 5,
+      "failed_count": 0,
+      "wall_elapsed_sec": 1.724,
+      "measured_rps": 2.9,
+      "client_rtt_metrics": {
+        "min_ms": 1208.0,
+        "max_ms": 1721.06,
+        "mean_ms": 1471.23,
+        "p50_ms": 1471.7,
+        "p95_ms": 1721.06
+      },
+      "server_inference_metrics": {
+        "min_ms": 109.64,
+        "max_ms": 194.38,
+        "mean_ms": 142.5,
+        "p50_ms": 122.66,
+        "p95_ms": 194.38
+      },
+      "models_observed": [
+        "qwen/qwen3.8-27b"
+      ],
+      "errors": [],
+      "raw_responses": [
+        {
+          "http_status": 200,
+          "total_rtt_ms": 1208.0,
+          "server_latency_ms": 166.83,
+          "model": "qwen/qwen3.8-27b",
+          "status": "success",
+          "completion_tokens": 34,
+          "error": null,
+          "sample": "```json\n{\n  \"is_food\": true,\n  \"category\": \"produce\",\n  \"shelf_life_days\": 7\n}\n```"
+        },
+        {
+          "http_status": 200,
+          "total_rtt_ms": 1350.02,
+          "server_latency_ms": 194.38,
+          "model": "qwen/qwen3.8-27b",
+          "status": "success",
+          "completion_tokens": 34,
+          "error": null,
+          "sample": "```json\n{\n  \"is_food\": true,\n  \"category\": \"produce\",\n  \"shelf_life_days\": 7\n}\n```"
+        },
+        {
+          "http_status": 200,
+          "total_rtt_ms": 1471.7,
+          "server_latency_ms": 118.98,
+          "model": "qwen/qwen3.8-27b",
+          "status": "success",
+          "completion_tokens": 34,
+          "error": null,
+          "sample": "```json\n{\n  \"is_food\": true,\n  \"category\": \"produce\",\n  \"shelf_life_days\": 7\n}\n```"
+        },
+        {
+          "http_status": 200,
+          "total_rtt_ms": 1605.38,
+          "server_latency_ms": 109.64,
+          "model": "qwen/qwen3.8-27b",
+          "status": "success",
+          "completion_tokens": 29,
+          "error": null,
+          "sample": "{\n  \"is_food\": true,\n  \"category\": \"produce\",\n  \"shelf_life_days\": 7\n}"
+        },
+        {
+          "http_status": 200,
+          "total_rtt_ms": 1721.06,
+          "server_latency_ms": 122.66,
+          "model": "qwen/qwen3.8-27b",
+          "status": "success",
+          "completion_tokens": 34,
+          "error": null,
+          "sample": "```json\n{\n  \"is_food\": true,\n  \"category\": \"produce\",\n  \"shelf_life_days\": 7\n}\n```"
+        }
+      ]
+    },
+    "groq_10_concurrent": {
+      "engine": "groq",
+      "model_requested": "default",
+      "concurrency_sent": 10,
+      "successful_count": 10,
+      "failed_count": 0,
+      "wall_elapsed_sec": 2.138,
+      "measured_rps": 4.68,
+      "client_rtt_metrics": {
+        "min_ms": 407.14,
+        "max_ms": 2130.79,
+        "mean_ms": 1152.21,
+        "p50_ms": 915.91,
+        "p95_ms": 2130.79
+      },
+      "server_inference_metrics": {
+        "min_ms": 115.95,
+        "max_ms": 624.53,
+        "mean_ms": 182.82,
+        "p50_ms": 120.59,
+        "p95_ms": 624.53
+      },
+      "models_observed": [
+        "qwen/qwen3.8-27b"
+      ],
+      "errors": [],
+      "raw_responses": [
+        {
+          "http_status": 200,
+          "total_rtt_ms": 407.14,
+          "server_latency_ms": 118.43,
+          "model": "qwen/qwen3.8-27b",
+          "status": "success",
+          "completion_tokens": 34,
+          "error": null,
+          "sample": "```json\n{\n  \"is_food\": true,\n  \"category\": \"produce\",\n  \"shelf_life_days\": 7\n}\n```"
+        },
+        {
+          "http_status": 200,
+          "total_rtt_ms": 513.79,
+          "server_latency_ms": 120.31,
+          "model": "qwen/qwen3.8-27b",
+          "status": "success",
+          "completion_tokens": 34,
+          "error": null,
+          "sample": "```json\n{\n  \"is_food\": true,\n  \"category\": \"produce\",\n  \"shelf_life_days\": 7\n}\n```"
+        },
+        {
+          "http_status": 200,
+          "total_rtt_ms": 708.12,
+          "server_latency_ms": 125.12,
+          "model": "qwen/qwen3.8-27b",
+          "status": "success",
+          "completion_tokens": 34,
+          "error": null,
+          "sample": "```json\n{\n  \"is_food\": true,\n  \"category\": \"produce\",\n  \"shelf_life_days\": 7\n}\n```"
+        },
+        {
+          "http_status": 200,
+          "total_rtt_ms": 775.77,
+          "server_latency_ms": 124.36,
+          "model": "qwen/qwen3.8-27b",
+          "status": "success",
+          "completion_tokens": 35,
+          "error": null,
+          "sample": "```json\n{\n  \"is_food\": true,\n  \"category\": \"Produce\",\n  \"shelf_life_days\": 7\n}\n```"
+        },
+        {
+          "http_status": 200,
+          "total_rtt_ms": 915.91,
+          "server_latency_ms": 117.37,
+          "model": "qwen/qwen3.8-27b",
+          "status": "success",
+          "completion_tokens": 34,
+          "error": null,
+          "sample": "```json\n{\n  \"is_food\": true,\n  \"category\": \"produce\",\n  \"shelf_life_days\": 7\n}\n```"
+        },
+        {
+          "http_status": 200,
+          "total_rtt_ms": 1041.12,
+          "server_latency_ms": 120.59,
+          "model": "qwen/qwen3.8-27b",
+          "status": "success",
+          "completion_tokens": 34,
+          "error": null,
+          "sample": "```json\n{\n  \"is_food\": true,\n  \"category\": \"produce\",\n  \"shelf_life_days\": 7\n}\n```"
+        },
+        {
+          "http_status": 200,
+          "total_rtt_ms": 1171.53,
+          "server_latency_ms": 129.65,
+          "model": "qwen/qwen3.8-27b",
+          "status": "success",
+          "completion_tokens": 34,
+          "error": null,
+          "sample": "```json\n{\n  \"is_food\": true,\n  \"category\": \"produce\",\n  \"shelf_life_days\": 7\n}\n```"
+        },
+        {
+          "http_status": 200,
+          "total_rtt_ms": 1841.48,
+          "server_latency_ms": 624.53,
+          "model": "qwen/qwen3.8-27b",
+          "status": "success",
+          "completion_tokens": 34,
+          "error": null,
+          "sample": "```json\n{\n  \"is_food\": true,\n  \"category\": \"produce\",\n  \"shelf_life_days\": 7\n}\n```"
+        },
+        {
+          "http_status": 200,
+          "total_rtt_ms": 2016.47,
+          "server_latency_ms": 231.89,
+          "model": "qwen/qwen3.8-27b",
+          "status": "success",
+          "completion_tokens": 35,
+          "error": null,
+          "sample": "```json\n{\n  \"is_food\": true,\n  \"category\": \"Produce\",\n  \"shelf_life_days\": 7\n}\n```"
+        },
+        {
+          "http_status": 200,
+          "total_rtt_ms": 2130.79,
+          "server_latency_ms": 115.95,
+          "model": "qwen/qwen3.8-27b",
+          "status": "success",
+          "completion_tokens": 34,
+          "error": null,
+          "sample": "```json\n{\n  \"is_food\": true,\n  \"category\": \"produce\",\n  \"shelf_life_days\": 7\n}\n```"
+        }
+      ]
+    },
+    "gemini_3_concurrent": {
+      "engine": "gemini",
+      "model_requested": "default",
+      "concurrency_sent": 3,
+      "successful_count": 0,
+      "failed_count": 3,
+      "wall_elapsed_sec": 6.528,
+      "measured_rps": 0.0,
+      "client_rtt_metrics": {
+        "min_ms": 0,
+        "max_ms": 0,
+        "mean_ms": 0,
+        "p50_ms": 0,
+        "p95_ms": 0
+      },
+      "server_inference_metrics": {
+        "min_ms": 0,
+        "max_ms": 0,
+        "mean_ms": 0,
+        "p50_ms": 0,
+        "p95_ms": 0
+      },
+      "models_observed": [],
+      "errors": [
+        "HTTP 502: <!DOCTYPE html>\n<html lang=\"en\">\n  <head>\n    <meta charset=\"utf-8\">\n    <meta name=\"viewport\" content=\"width=device-wid",
+        "HTTP 502: <!DOCTYPE html>\n<html lang=\"en\">\n  <head>\n    <meta charset=\"utf-8\">\n    <meta name=\"viewport\" content=\"width=device-wid",
+        "HTTP 502: <!DOCTYPE html>\n<html lang=\"en\">\n  <head>\n    <meta charset=\"utf-8\">\n    <meta name=\"viewport\" content=\"width=device-wid"
+      ],
+      "raw_responses": [
+        {
+          "http_status": 502,
+          "total_rtt_ms": 6469.11,
+          "server_latency_ms": null,
+          "model": "unknown",
+          "status": "http_error",
+          "error": "HTTP 502: <!DOCTYPE html>\n<html lang=\"en\">\n  <head>\n    <meta charset=\"utf-8\">\n    <meta name=\"viewport\" content=\"width=device-wid"
+        },
+        {
+          "http_status": 502,
+          "total_rtt_ms": 6484.44,
+          "server_latency_ms": null,
+          "model": "unknown",
+          "status": "http_error",
+          "error": "HTTP 502: <!DOCTYPE html>\n<html lang=\"en\">\n  <head>\n    <meta charset=\"utf-8\">\n    <meta name=\"viewport\" content=\"width=device-wid"
+        },
+        {
+          "http_status": 502,
+          "total_rtt_ms": 6527.27,
+          "server_latency_ms": null,
+          "model": "unknown",
+          "status": "http_error",
+          "error": "HTTP 502: <!DOCTYPE html>\n<html lang=\"en\">\n  <head>\n    <meta charset=\"utf-8\">\n    <meta name=\"viewport\" content=\"width=device-wid"
+        }
+      ]
+    },
+    "openrouter_3_concurrent": {
+      "engine": "openrouter",
+      "model_requested": "default",
+      "concurrency_sent": 3,
+      "successful_count": 2,
+      "failed_count": 1,
+      "wall_elapsed_sec": 40.005,
+      "measured_rps": 0.05,
+      "client_rtt_metrics": {
+        "min_ms": 19488.99,
+        "max_ms": 33524.65,
+        "mean_ms": 26506.82,
+        "p50_ms": 19488.99,
+        "p95_ms": 33524.65
+      },
+      "server_inference_metrics": {
+        "min_ms": 14055.17,
+        "max_ms": 19163.59,
+        "mean_ms": 16609.38,
+        "p50_ms": 14055.17,
+        "p95_ms": 19163.59
+      },
+      "models_observed": [
+        "nvidia/nemotron-3.5-lightning:free"
+      ],
+      "errors": [
+        "HTTPSConnectionPool(host='fridge-a.onrender.com', port=443): Read timed out. (read timeout=40)"
+      ],
+      "raw_responses": [
+        {
+          "http_status": 200,
+          "total_rtt_ms": 19488.99,
+          "server_latency_ms": 19163.59,
+          "model": "nvidia/nemotron-3.5-lightning:free",
+          "status": "success",
+          "completion_tokens": null,
+          "error": null,
+          "sample": "{\n  \"is_food\": true,\n  \"category\": \"produce\",\n  \"shelf_life_days\": 7\n}"
+        },
+        {
+          "http_status": 200,
+          "total_rtt_ms": 33524.65,
+          "server_latency_ms": 14055.17,
+          "model": "nvidia/nemotron-3.5-lightning:free",
+          "status": "success",
+          "completion_tokens": null,
+          "error": null,
+          "sample": "{\n  \"is_food\": true,\n  \"category\": \"produce\",\n  \"shelf_life_days\": 14\n}"
+        },
+        {
+          "http_status": 0,
+          "total_rtt_ms": 40004.56,
+          "server_latency_ms": null,
+          "model": "unknown",
+          "status": "client_exception",
+          "error": "HTTPSConnectionPool(host='fridge-a.onrender.com', port=443): Read timed out. (read timeout=40)"
+        }
+      ]
+    },
+    "tri_engine_parallel_burst": {
+      "wall_elapsed_sec": 40.103,
+      "combined_requests_fired": 3,
+      "combined_rps": 0.07,
+      "individual_results": {
+        "groq": {
+          "http_status": 0,
+          "total_rtt_ms": 40102.5,
+          "server_latency_ms": null,
+          "model": "unknown",
+          "status": "client_exception",
+          "error": "HTTPSConnectionPool(host='fridge-a.onrender.com', port=443): Read timed out. (read timeout=40)"
+        },
+        "gemini": {
+          "http_status": 200,
+          "total_rtt_ms": 33062.73,
+          "server_latency_ms": 23122.47,
+          "model": "gemini-3.5-flash-lite",
+          "status": "success",
+          "completion_tokens": null,
+          "error": null,
+          "sample": "**Classification:** \n* **Food Group:** Vegetable (specifically, dark leafy green)\n* **Processing Level:** Unprocessed /"
+        },
+        "openrouter": {
+          "http_status": 0,
+          "total_rtt_ms": 40002.51,
+          "server_latency_ms": null,
+          "model": "unknown",
+          "status": "client_exception",
+          "error": "HTTPSConnectionPool(host='fridge-a.onrender.com', port=443): Read timed out. (read timeout=40)"
+        }
+      }
+    }
+  }
+}
