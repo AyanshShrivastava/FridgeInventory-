@@ -345,12 +345,9 @@ GEMINI_MODELS = list(dict.fromkeys([
     normalize_gemini_model_name(_primary_model),
     "gemini-3.5-flash",
     "gemini-3.1-flash-lite",
-    "gemma-4-26b-a4b-it",
     "gemini-3.5-flash-lite",
-    "gemini-flash-latest",
-    "gemini-flash-lite-latest",
-    "gemini-3.8-flash",
 ]))
+
 
 def get_gemini_client() -> Optional[Any]:
     """Retrieve or initialize singleton Google GenAI client."""
@@ -423,7 +420,7 @@ def get_groq_active_text_models() -> List[str]:
             ]
             if filtered:
                 priority = ["qwen/qwen3.8-27b", "openai/gpt-oss-120b", "openai/gpt-oss-20b", "allam-2-7b"]
-                ordered = [p for p in priority if p in filtered] + [m for m in filtered if m not in priority]
+                ordered = [p for p in priority if p in filtered] or [m for m in filtered[:3]]
                 _cached_groq_active_models = ordered
                 return _cached_groq_active_models
         except Exception as e:
@@ -2515,6 +2512,9 @@ def generate_rescue_recipe(items: List[str]) -> RescueRecipe:
                     return recipe
                 except Exception as g_err:
                     logger.warning(f"Groq how-to recipe failed on {g_model}: {g_err}. Trying next model...")
+                    if "rate_limit" in str(g_err).lower() or "429" in str(g_err):
+                        logger.warning("Groq rate limit reached. Immediately cascading to Gemini...")
+                        break
                     continue
 
         # 2. Fallback 1: Cascade through ALL Gemini models for how-to recipe
@@ -2592,6 +2592,9 @@ def generate_rescue_recipe(items: List[str]) -> RescueRecipe:
                 return recipe
             except Exception as g_err:
                 logger.warning(f"Groq rescue recipe fallback failed on {g_model}: {g_err}. Trying next model...")
+                if "rate_limit" in str(g_err).lower() or "429" in str(g_err):
+                    logger.warning("Groq rate limit reached. Immediately cascading to Gemini...")
+                    break
                 continue
 
     # 2b. Fallback 1: Cascade through Google GenAI (Gemini)
