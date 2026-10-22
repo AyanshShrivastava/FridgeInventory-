@@ -3510,7 +3510,13 @@ async def api_benchmark_ai_throughput(
         client = get_gemini_client()
         if not client or types is None:
             return {"configured": False, "status": "error", "error": "GEMINI_API_KEY or google-genai not configured"}
-        target_models = [model] if (model and eng in ("gemini", "google")) else ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-2.5-flash", "gemini-3.5-flash-lite"]
+        if model == "list":
+            try:
+                active_list = [m.name for m in client.models.list() if hasattr(m, "name")]
+                return {"configured": True, "status": "success", "available_models": active_list}
+            except Exception as e:
+                return {"configured": True, "status": "error", "error": f"Failed to list models: {e}"}
+        target_models = [model] if (model and eng in ("gemini", "google")) else ["gemini-3.5-flash-lite"]
         last_err = None
         for model_used in target_models:
             t0 = time.perf_counter()
