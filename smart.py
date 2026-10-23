@@ -2559,7 +2559,7 @@ def generate_rescue_recipe(items: List[str]) -> RescueRecipe:
         logger.error(f"All AI models (Groq, Gemini, OpenRouter) failed for dish query: '{target_dish}'")
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=f"All AI recipe services (Groq, Gemini, OpenRouter) are currently unreachable. Cannot generate recipe for '{target_dish}'. Please try again in a moment."
+            detail="AI services is not available, try again shortly"
         )
 
     # 1. Automatic culinary spelling and typo correction
@@ -2642,7 +2642,7 @@ def generate_rescue_recipe(items: List[str]) -> RescueRecipe:
     logger.error("All AI models (Groq, Gemini, OpenRouter) failed to generate zero-waste recipe.")
     raise HTTPException(
         status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-        detail="All AI recipe services (Groq, Gemini, OpenRouter) are currently unreachable. Cannot generate recipe for these ingredients. Please try again in a moment."
+        detail="AI services is not available, try again shortly"
     )
 
 
@@ -4119,7 +4119,16 @@ def api_rescue(payload: RescueRequest):
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="Please provide at least one expiring food item in the 'items' list.",
         )
-    return generate_rescue_recipe(payload.items)
+    try:
+        return generate_rescue_recipe(payload.items)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error in api_rescue: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="AI services is not available, try again shortly"
+        )
 
 
 @app.get("/api/inventory", response_model=List[InventoryItem], summary="Get All Inventory Items")
@@ -7762,7 +7771,11 @@ HTML_CONTENT = r"""<!DOCTYPE html>
           }
         }
       } catch (err) {
-        showToast(err.message, 'error');
+        if (err.message && (err.message.includes('503') || err.message.toLowerCase().includes('ai') || err.message.toLowerCase().includes('unreachable') || err.message.toLowerCase().includes('rate limit'))) {
+          showToast(currentLang === 'hi' ? 'AI सेवाएँ अभी उपलब्ध नहीं हैं, कृपया कुछ समय बाद पुनः प्रयास करें' : 'AI services is not available, try again shortly', 'error');
+        } else {
+          showToast(err.message, 'error');
+        }
       } finally {
         cmdSubmitBtn.disabled = false;
         cmdSubmitBtn.innerHTML = `<span>${i18n[currentLang].cmd_btn}</span><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"></path></svg>`;
@@ -8125,15 +8138,20 @@ HTML_CONTENT = r"""<!DOCTYPE html>
         });
 
         if (!res.ok) {
-          const err = await res.json();
-          throw new Error(err.detail || 'Recipe generation failed');
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err.detail || 'AI services is not available, try again shortly');
         }
 
         const recipe = await res.json();
         latestRecipe = recipe;
         renderRecipe(recipe);
       } catch (err) {
-        showToast(err.message, 'error');
+        showToast(
+          currentLang === 'hi' 
+            ? 'AI सेवाएँ अभी उपलब्ध नहीं हैं, कृपया कुछ समय बाद पुनः प्रयास करें' 
+            : 'AI services is not available, try again shortly', 
+          'error'
+        );
       } finally {
         recipeLoader.classList.add('hidden');
         generateRecipeBtn.disabled = false;
