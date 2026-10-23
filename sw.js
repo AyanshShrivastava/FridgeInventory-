@@ -3,6 +3,7 @@ const CACHE_NAME = 'fridge-inventory-v2.6';
 
 const OFFLINE_SHELL_ASSETS = [
   '/',
+  '/offline.html',
   '/manifest.json',
   '/favicon.ico',
   '/static/icons/icon-192.png',
@@ -56,7 +57,7 @@ self.addEventListener('fetch', (event) => {
         return caches.match(event.request).then((cached) => {
           if (cached) return cached;
           if (event.request.mode === 'navigate') {
-            return caches.match('/');
+            return caches.match('/offline.html') || caches.match('/');
           }
           return null;
         });

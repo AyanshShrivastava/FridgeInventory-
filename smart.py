@@ -2675,12 +2675,14 @@ async def security_and_https_middleware(request: Request, call_next):
 
     response = await call_next(request)
 
-    # 2. Strict Security Headers recommended by Cloudflare & OWASP
+    # 2. Strict Modern Isolation & Security Headers (Cloudflare Radar & OWASP Hardened)
     response.headers["Strict-Transport-Security"] = "max-age=63072000; includeSubDomains; preload"
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
     response.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=(self)"
+    response.headers["Cross-Origin-Opener-Policy"] = "same-origin"
+    response.headers["Cross-Origin-Resource-Policy"] = "same-origin"
     response.headers["Content-Security-Policy"] = (
         "default-src 'self'; "
         "connect-src 'self' https: wss:; "
@@ -2689,8 +2691,16 @@ async def security_and_https_middleware(request: Request, call_next):
         "font-src 'self' https://fonts.gstatic.com data:; "
         "img-src 'self' data: blob: https:; "
         "media-src 'self' blob: data:; "
-        "frame-ancestors 'self';"
+        "frame-ancestors 'none'; "
+        "base-uri 'self'; "
+        "form-action 'self'; "
+        "upgrade-insecure-requests;"
     )
+
+    # Fast HTML revalidation
+    if request.url.path == "/" and "text/html" in str(response.headers.get("content-type", "")):
+        response.headers["Cache-Control"] = "public, max-age=0, must-revalidate"
+
     return response
 
 
@@ -2715,17 +2725,94 @@ def serve_favicon():
 
 @app.get("/robots.txt", response_class=PlainTextResponse, summary="Robots Exclusion Protocol")
 def serve_robots_txt():
-    """Serve robots.txt for search crawlers and public scanners."""
+    """Serve robots.txt with agent transparency and crawler access."""
     content = (
         "User-agent: *\n"
         "Allow: /\n"
-        "Sitemap: https://fridge-a.onrender.com/sitemap.xml\n"
+        "Sitemap: https://fridge-a.onrender.com/sitemap.xml\n\n"
+        "User-agent: GPTBot\n"
+        "Allow: /\n\n"
+        "User-agent: ChatGPT-User\n"
+        "Allow: /\n\n"
+        "User-agent: Claude-Web\n"
+        "Allow: /\n\n"
+        "User-agent: PerplexityBot\n"
+        "Allow: /\n\n"
+        "User-agent: Applebot-Extended\n"
+        "Allow: /\n"
     )
     return PlainTextResponse(
         content=content,
         media_type="text/plain; charset=utf-8",
         headers={"Cache-Control": "public, max-age=86400"}
     )
+
+
+@app.get("/llms.txt", response_class=PlainTextResponse, summary="LLM Agent Manifest")
+@app.get("/.well-known/llms.txt", response_class=PlainTextResponse, summary="LLM Agent Manifest Well-Known")
+def serve_llms_txt():
+    """Serve LLM Agent documentation describing FridgeInventory capabilities."""
+    content = (
+        "# FridgeInventory\n\n"
+        "> Intelligent household fridge & pantry inventory management system with AI zero-waste cooking.\n\n"
+        "## Summary\n"
+        "FridgeInventory allows households to track food shelf-life, receive offline push notifications before items spoil, "
+        "and generate authentic zero-waste recipes using expiring ingredients via AI cascades (Groq, Gemini).\n\n"
+        "## Core Capabilities\n"
+        "- Food Inventory Management: Add, update, consume, and track food items with real-time expiry countdowns.\n"
+        "- Zero-Waste Rescue Recipes: Intelligent culinary engine formulating recipes to utilize leftovers and prevent waste.\n"
+        "- Family Fridge Sharing: Private tenant spaces with PIN authentication and 30-day session cookies.\n"
+        "- Bilingual Interface: Full English & Hindi (Devanagari) dual-language translations.\n\n"
+        "## Machine Discoverable Endpoints\n"
+        "- GET /: Main application interface.\n"
+        "- GET /health: Health check and status monitoring.\n"
+        "- GET /openapi.json: Complete OpenAPI REST specification.\n"
+        "- GET /sitemap.xml: XML Sitemap.\n"
+    )
+    return PlainTextResponse(
+        content=content,
+        media_type="text/plain; charset=utf-8",
+        headers={"Cache-Control": "public, max-age=86400"}
+    )
+
+
+@app.get("/.well-known/api-catalog", summary="API Catalog Discovery")
+def serve_api_catalog():
+    """Serve link to OpenAPI definition for machine discovery."""
+    return Response(
+        content=json.dumps({"apis": [{"type": "openapi", "url": "/openapi.json"}]}, indent=2),
+        media_type="application/json; charset=utf-8",
+        headers={"Cache-Control": "public, max-age=86400"}
+    )
+
+
+@app.get("/offline.html", response_class=HTMLResponse, summary="Offline Fallback Page")
+def serve_offline_html():
+    """Branded offline fallback screen for service worker."""
+    html = """<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Offline — FridgeInventory</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #fffbeb; color: #78350f; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; padding: 20px; text-align: center; }
+    .card { background: white; border-radius: 24px; padding: 36px 28px; max-width: 420px; box-shadow: 0 10px 25px rgba(245, 158, 11, 0.15); border: 2px solid #fde68a; }
+    h1 { font-size: 24px; margin: 16px 0 8px; color: #92400e; }
+    p { font-size: 14px; line-height: 1.5; color: #b45309; margin-bottom: 24px; }
+    button { background: linear-gradient(135deg, #f59e0b, #d97706); color: white; border: none; padding: 12px 24px; border-radius: 12px; font-weight: bold; cursor: pointer; font-size: 14px; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div style="font-size: 48px;">🍱</div>
+    <h1>You're Offline</h1>
+    <p>FridgeInventory works offline for previously loaded data. When your connection returns, your fridge will automatically sync!</p>
+    <button onclick="window.location.reload()">Retry Connection</button>
+  </div>
+</body>
+</html>"""
+    return HTMLResponse(content=html, headers={"Cache-Control": "public, max-age=86400"})
 
 
 @app.get("/sitemap.xml", summary="XML Sitemap")
@@ -4073,23 +4160,42 @@ HTML_CONTENT = r"""<!DOCTYPE html>
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>FridgeInventory - Smart Food Inventory</title>
-  <meta name="description" content="Smart household kitchen companion for food tracking and zero-waste cooking.">
+  <title>FridgeInventory — Smart Food Inventory, Expiry Alerts & AI Recipes</title>
+  <meta name="description" content="Track food in your fridge, get offline expiry push alerts, and turn expiring ingredients into recipes with FridgeInventory.">
   <meta name="author" content="FridgeInventory">
+  <link rel="canonical" href="https://fridge-a.onrender.com/">
 
   <!-- Open Graph / Meta Tags -->
   <meta property="og:type" content="website">
   <meta property="og:url" content="https://fridge-a.onrender.com">
-  <meta property="og:title" content="FridgeInventory">
-  <meta property="og:description" content="Smart household kitchen companion for food tracking and zero-waste cooking.">
+  <meta property="og:title" content="FridgeInventory — Smart Food Inventory">
+  <meta property="og:description" content="Track food, avoid waste, and cook with AI.">
   <meta property="og:image" content="https://fridge-a.onrender.com/static/icons/icon-512.png">
 
   <!-- Twitter Meta Tags -->
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:url" content="https://fridge-a.onrender.com">
-  <meta name="twitter:title" content="FridgeInventory">
-  <meta name="twitter:description" content="Smart household kitchen companion for food tracking and zero-waste cooking.">
+  <meta name="twitter:title" content="FridgeInventory — Smart Food Inventory">
+  <meta name="twitter:description" content="Track food, avoid waste, and cook with AI.">
   <meta name="twitter:image" content="https://fridge-a.onrender.com/static/icons/icon-512.png">
+
+  <!-- Schema.org WebApplication Structured Data (JSON-LD) -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "WebApplication",
+    "name": "FridgeInventory",
+    "url": "https://fridge-a.onrender.com",
+    "description": "Smart household food inventory with expiry alerts and AI-powered zero-waste recipes.",
+    "applicationCategory": "LifestyleApplication",
+    "operatingSystem": "Any",
+    "offers": {
+      "@type": "Offer",
+      "price": "0",
+      "priceCurrency": "USD"
+    }
+  }
+  </script>
 
   <!-- Progressive Web App / Mobile Optimization -->
   <meta name="application-name" content="FridgeInventory">
@@ -4497,6 +4603,8 @@ HTML_CONTENT = r"""<!DOCTYPE html>
             <input 
               type="text" 
               id="hero-login-fid" 
+              name="fridgeId"
+              autocomplete="username"
               placeholder="e.g. MyKitchen or FamilyFridge (letters/numbers)" 
               pattern="[a-zA-Z0-9]{3,30}"
               class="w-full px-4 py-2.5 rounded-xl border-2 border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-900 text-sm font-semibold focus:outline-none focus:border-amber-500 font-mono transition-all"
@@ -4515,6 +4623,8 @@ HTML_CONTENT = r"""<!DOCTYPE html>
               <input 
                 type="password" 
                 id="hero-login-pin" 
+                name="pin"
+                autocomplete="current-password"
                 placeholder="Enter family PIN (min 4 chars)" 
                 pattern="[a-zA-Z0-9]{4,30}"
                 class="w-full pl-4 pr-11 py-2.5 rounded-xl border-2 border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-900 text-sm font-semibold focus:outline-none focus:border-amber-500 font-mono transition-all"
@@ -4550,6 +4660,8 @@ HTML_CONTENT = r"""<!DOCTYPE html>
             <input 
               type="text" 
               id="hero-create-fid" 
+              name="fridgeId"
+              autocomplete="username"
               placeholder="e.g. MyKitchen or FamilyFridge (3-30 chars)" 
               pattern="[a-zA-Z0-9]{3,30}"
               class="w-full px-4 py-2.5 rounded-xl border-2 border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-900 text-sm font-semibold focus:outline-none focus:border-emerald-500 font-mono transition-all"
@@ -4568,6 +4680,8 @@ HTML_CONTENT = r"""<!DOCTYPE html>
               <input 
                 type="password" 
                 id="hero-create-pin" 
+                name="pin"
+                autocomplete="new-password"
                 placeholder="Set a 4-30 char family PIN" 
                 pattern="[a-zA-Z0-9]{4,30}"
                 class="w-full pl-4 pr-11 py-2.5 rounded-xl border-2 border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-900 text-sm font-semibold focus:outline-none focus:border-emerald-500 font-mono transition-all"
