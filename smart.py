@@ -163,7 +163,7 @@ def detect_action(tokens: List[str]) -> str:
 
 from fastapi import FastAPI, HTTPException, Request, Response, status
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, FileResponse
+from fastapi.responses import HTMLResponse, FileResponse, PlainTextResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, field_validator, model_validator
 import uvicorn
@@ -2664,6 +2664,36 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+@app.middleware("http")
+async def security_and_https_middleware(request: Request, call_next):
+    # 1. Enforce HTTPS 301 Redirect behind reverse proxies (Render, Cloudflare)
+    proto = request.headers.get("x-forwarded-proto", "").lower()
+    if proto == "http":
+        target_url = request.url.replace(scheme="https")
+        return RedirectResponse(url=str(target_url), status_code=status.HTTP_301_MOVED_PERMANENTLY)
+
+    response = await call_next(request)
+
+    # 2. Strict Security Headers recommended by Cloudflare & OWASP
+    response.headers["Strict-Transport-Security"] = "max-age=63072000; includeSubDomains; preload"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=(self)"
+    response.headers["Content-Security-Policy"] = (
+        "default-src 'self'; "
+        "connect-src 'self' https: wss:; "
+        "script-src 'self' 'unsafe-inline' https://cdn.tailwindcss.com; "
+        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+        "font-src 'self' https://fonts.gstatic.com data:; "
+        "img-src 'self' data: blob: https:; "
+        "media-src 'self' blob: data:; "
+        "frame-ancestors 'self';"
+    )
+    return response
+
+
 # Mount static asset directory for PWA icons
 os.makedirs("static/icons", exist_ok=True)
 app.mount("/static", StaticFiles(directory="static"), name="static")
@@ -2671,9 +2701,52 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 
 @app.get("/favicon.ico", summary="Browser Favicon")
 def serve_favicon():
-    """Serve favicon.ico with proper image/x-icon MIME type."""
+    """Serve favicon.ico with proper image/x-icon Content-Type."""
     fav_path = "static/favicon.ico" if os.path.exists("static/favicon.ico") else "favicon.ico"
-    return FileResponse(fav_path, media_type="image/x-icon", headers={"Cache-Control": "no-cache, must-revalidate"})
+    return FileResponse(
+        fav_path,
+        media_type="image/x-icon",
+        headers={
+            "Content-Type": "image/x-icon",
+            "Cache-Control": "public, max-age=86400"
+        }
+    )
+
+
+@app.get("/robots.txt", response_class=PlainTextResponse, summary="Robots Exclusion Protocol")
+def serve_robots_txt():
+    """Serve robots.txt for search crawlers and public scanners."""
+    content = (
+        "User-agent: *\n"
+        "Allow: /\n"
+        "Sitemap: https://fridge-a.onrender.com/sitemap.xml\n"
+    )
+    return PlainTextResponse(
+        content=content,
+        media_type="text/plain; charset=utf-8",
+        headers={"Cache-Control": "public, max-age=86400"}
+    )
+
+
+@app.get("/sitemap.xml", summary="XML Sitemap")
+def serve_sitemap_xml():
+    """Serve valid sitemap.xml for scanner and search crawler indexation."""
+    xml_content = (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
+        '  <url>\n'
+        '    <loc>https://fridge-a.onrender.com/</loc>\n'
+        '    <lastmod>' + datetime.now(timezone.utc).strftime("%Y-%m-%d") + '</lastmod>\n'
+        '    <changefreq>daily</changefreq>\n'
+        '    <priority>1.0</priority>\n'
+        '  </url>\n'
+        '</urlset>'
+    )
+    return Response(
+        content=xml_content,
+        media_type="application/xml; charset=utf-8",
+        headers={"Cache-Control": "public, max-age=86400"}
+    )
 
 
 @app.get("/apple-touch-icon.png", summary="iOS Apple Touch Icon")
@@ -4000,7 +4073,24 @@ HTML_CONTENT = r"""<!DOCTYPE html>
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>FridgeInventory - Smart Food Inventory & Zero-Waste Kitchen</title>
+  <title>FridgeInventory - Smart Food Inventory</title>
+  <meta name="description" content="Smart household kitchen companion for food tracking and zero-waste cooking.">
+  <meta name="author" content="FridgeInventory">
+
+  <!-- Open Graph / Meta Tags -->
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://fridge-a.onrender.com">
+  <meta property="og:title" content="FridgeInventory">
+  <meta property="og:description" content="Smart household kitchen companion for food tracking and zero-waste cooking.">
+  <meta property="og:image" content="https://fridge-a.onrender.com/static/icons/icon-512.png">
+
+  <!-- Twitter Meta Tags -->
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:url" content="https://fridge-a.onrender.com">
+  <meta name="twitter:title" content="FridgeInventory">
+  <meta name="twitter:description" content="Smart household kitchen companion for food tracking and zero-waste cooking.">
+  <meta name="twitter:image" content="https://fridge-a.onrender.com/static/icons/icon-512.png">
+
   <!-- Progressive Web App / Mobile Optimization -->
   <meta name="application-name" content="FridgeInventory">
   <meta name="apple-mobile-web-app-capable" content="yes">
@@ -4021,8 +4111,8 @@ HTML_CONTENT = r"""<!DOCTYPE html>
   <script src="https://cdn.tailwindcss.com"></script>
   <!-- Google Fonts: Lively Cartoon Baloo 2, Fredoka, Noto Sans Devanagari, JetBrains Mono -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@400;500;600;700;800&family=Fredoka:wght@400;500;600;700&family=Noto+Sans+Devanagari:wght@400;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous">
+  <link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@400;500;600;700;800&family=Fredoka:wght@400;500;600;700&family=Noto+Sans+Devanagari:wght@400;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet" crossorigin="anonymous">
   <script>
     tailwind.config = {
       darkMode: 'class',

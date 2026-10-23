@@ -38,6 +38,8 @@ self.addEventListener('activate', (event) => {
 // Offline Fetch Handler: Network-first with Cache fallback for app shell
 self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
+  // Only handle same-origin requests; let browser fetch cross-origin fonts and CDNs directly without header interference
+  if (!event.request.url.startsWith(self.location.origin)) return;
   // Never cache private API endpoints or cron checks to protect user privacy
   if (event.request.url.includes('/api/') || event.request.url.includes('/health') || event.request.url.includes('/rescue')) return;
 
